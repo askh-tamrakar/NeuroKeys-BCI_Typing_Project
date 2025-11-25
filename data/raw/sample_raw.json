@@ -1,0 +1,13 @@
+{
+  "sampling_rate": 250,
+  "duration": 5,
+  "channels": [
+    "EEG1",
+    "EEG2",
+    "EEG3",
+    "EOG1",
+    "EOG2",
+    "EMG1"
+  ],
+  "format": "npy"
+}
