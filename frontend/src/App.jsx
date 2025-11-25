@@ -1,5 +1,5 @@
 // frontend/src/App.jsx
-import React, { useEffect, useState, useRef } from "react";
+/*import React, { useEffect, useState, useRef } from "react";
 
 function LiveTrace({window}) {
   // window is [[ch1 samples],[ch2 samples],...]
@@ -75,4 +75,32 @@ export default function App(){
       </div>
     </div>
   );
+}
+*/
+import React from 'react'
+import { AuthProvider } from './contexts/AuthContext'
+import { useAuth } from './contexts/AuthContext'
+import LoginPage from './components/auth/LogInPage'
+import Dashboard from './components/dashboard/Dashboard'
+
+function AppContent() {
+  const { user, loading } = useAuth()
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-2xl">Loading...</div>
+      </div>
+    )
+  }
+  
+  return user ? <Dashboard /> : <LoginPage />
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  )
 }
