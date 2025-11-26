@@ -29,7 +29,7 @@ FUSION_SCRIPT = ROOT / "src" / "models" / "fusion_server.py"
 # Toggle services
 ENABLE_MOCK_BACKEND = True
 ENABLE_ACQUISITION_SIM = True
-ENABLE_FUSION_PIPELINE = False
+ENABLE_FUSION_PIPELINE = True
 ENABLE_FRONTEND = True
 
 # Frontend dev server URL (default CRA)
