@@ -146,12 +146,12 @@ def main():
         npm_cmd = "npm"
         if _is_windows():
             # Windows: npm is usually available as 'npm' or 'npm.cmd' in PATH; spawn with shell True if needed
-            frontend_cmd = "npm start"
+            frontend_cmd = "npm run dev"
         else:
             # Unix-like: use list to avoid shell
-            frontend_cmd = ["npm", "start"]
+            frontend_cmd = ["npm", "run", "dev"]
         # Start frontend in its folder
-        threads.append(launch_threaded("Frontend (npm start)", frontend_cmd, cwd=str(FRONTEND_DIR)))
+        threads.append(launch_threaded("Frontend (npm run dev)", frontend_cmd, cwd=str(FRONTEND_DIR)))
         # Try to open the browser once server is up
         print("[INFO] Waiting for frontend dev server to respond at", FRONTEND_URL)
         if wait_for_url(FRONTEND_URL, timeout=25.0):
