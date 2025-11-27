@@ -1,12 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import SignalChart from '../charts/SignalChart'
 
-/**
- * LiveView (Python-WS streaming) with multi-channel EEG support.
- * - EEG buffer is stored per-channel: eegByChannel = { 0: [{time,value}, ...], 1: [...] }
- * - UI: Single-channel (choose index) or Overlay all channels
- */
-
 export default function LiveView({ wsData }) {
   // per-channel buffers for EEG, single buffers for EOG/EMG
   const [eegByChannel, setEegByChannel] = useState({}) // {chIndex: [{time,value}, ...]}
