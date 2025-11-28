@@ -7,12 +7,6 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
  * NOW INCLUDES: Signal Quality + Samples Per Second
  */
 
-/**
- * LiveView (Python-WS streaming) with multi-channel EEG support.
- * - EEG buffer is stored per-channel: eegByChannel = { 0: [{time,value}, ...], 1: [...] }
- * - UI: Single-channel (choose index) or Overlay all channels
- */
-
 export default function LiveView({ wsData }) {
   const [channelsData, setChannelsData] = useState({})
   const [channelStats, setChannelStats] = useState({})

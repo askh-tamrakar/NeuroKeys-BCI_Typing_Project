@@ -9,7 +9,7 @@ export default function Sidebar({ currentPage, setCurrentPage, isOpen }) {
     { id: 'chat', name: 'Chat', icon: '💬' },
     { id: 'mock', name: 'Mock Signal Graph', icon: '📊' }, 
     { id: 'settings', name: 'Settings', icon: '⚙️' },
-    { id: 'test', name: 'Test', icon: '⚙️' }
+    { id: 'test', name: 'Test Page', icon: '⚙️'}
   ]
   
   return (

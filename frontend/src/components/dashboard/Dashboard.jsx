@@ -46,14 +46,14 @@ export default function Dashboard() {
         />
         
         <div className="flex-1 overflow-y-auto p-6">
-          {currentPage === 'live' && <LiveView wsData={lastMessage} />}
+          {currentPage === 'live' && <LiveView wsData={lastMessage}/>}
           {currentPage === 'commands' && <CommandVisualizer wsData={lastMessage} />}
           {currentPage === 'recordings' && <RecordingsView />}
           {currentPage === 'devices' && <DevicesView />}
           {currentPage === 'chat' && <ChatView wsData={lastMessage} />}
           {currentPage === 'mock' && <MockView />}
           {currentPage === 'settings' && <SettingsView />}
-          {currentPage === 'test' && <TestView />}
+          {currentPage === 'test' && <TestView wsData={lastMessage}/>}
         </div>
       </div>
     </div>

@@ -4,6 +4,7 @@
   "scss.validate": false,
   "files.associations": {
     "*.css": "tailwindcss"
+<<<<<<< HEAD
   },
   "C_Cpp_Runner.cCompilerPath": "gcc",
   "C_Cpp_Runner.cppCompilerPath": "g++",
@@ -64,3 +65,7 @@
   "C_Cpp_Runner.msvcSecureNoWarnings": false,
   "python.REPL.enableREPLSmartSend": false
 }
+=======
+  }
+}
+>>>>>>> 4aea55fa82e942f66ba5f615ab0836826e7ad32b

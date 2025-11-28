@@ -575,8 +575,11 @@
 [20251125_170828] Error checking app status:
 [20251125_170828] Error checking app status:
 [20251125_170828] Error checking app status:
+<<<<<<< HEAD
 <<<<<<< Updated upstream
 =======
+=======
+>>>>>>> 4aea55fa82e942f66ba5f615ab0836826e7ad32b
 [20251127_132921] Error checking app status:
 [20251127_132922] Error fetching stream status:
 [20251127_132923] Error checking app status:
@@ -840,6 +843,7 @@
 [20251127_134240] Error checking app status:
 [20251127_134240] Error checking app status:
 [20251127_134240] Error checking app status:
+<<<<<<< HEAD
 [20251127_222110] Connection polling error:
 [20251127_222121] Error checking app status:
 [20251128_012421] Connection polling error:
@@ -847,3 +851,5 @@
 [20251128_012753] Error checking app status:
 [20251128_012807] Connection polling error:
 >>>>>>> Stashed changes
+=======
+>>>>>>> 4aea55fa82e942f66ba5f615ab0836826e7ad32b

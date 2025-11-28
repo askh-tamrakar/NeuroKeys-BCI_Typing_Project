@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 
 export default function SettingsView() {
   const [apiUrl, setApiUrl] = useState('http://localhost:8000')
-  const [wsUrl, setWsUrl] = useState('ws://localhost:8765')
+  const [wsUrl, setWsUrl] = useState('ws://localhost:8000/ws')
   const [useMock, setUseMock] = useState(true)
   const [theme, setTheme] = useState('light')
   
