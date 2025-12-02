@@ -1,0 +1,86 @@
+/*.scroll-stack-scroller {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: visible;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  will-change: scroll-position;
+}
+
+.scroll-stack-inner {
+  padding: 20vh 5rem 50rem;
+  min-height: 100vh;
+}
+
+.scroll-stack-card-wrapper {
+  position: relative;
+}
+
+.scroll-stack-card {
+  transform-origin: top center;
+  will-change: transform, filter;
+  backface-visibility: hidden;
+  transform-style: preserve-3d;
+  box-shadow: 0 0 30px rgba(0, 0, 0, 0.1);
+  height: 20rem;
+  width: 100%;
+  margin: 30px 0;
+  padding: 3rem;
+  border-radius: 40px;
+  box-sizing: border-box;*/
+  /* Improve mobile performance */
+  /*-webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  position: relative;
+
+}
+
+.scroll-stack-end {
+  width: 100%;
+  height: 12px;
+}*/
+
+.dropdown-menu .scroll-stack-scroller {
+  position: relative;
+  width: 262px;
+  max-height: 48px;
+  overflow-y: hidden;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+  transform: translateZ(0);
+  will-change: scroll-position;
+}
+
+.dropdown-menu .scroll-stack-inner {
+    padding: 0px; 
+}
+
+.dropdown-menu .scroll-stack-card-wrapper {
+    position: relative;
+}
+
+.dropdown-menu .scroll-stack-card {
+  transform-origin: top center;
+  will-change: transform, filter;
+  backface-visibility: hidden;
+  transform-style: preserve-3d;
+  height: 48px;
+  width: 180px;
+  margin: 0px 0px;
+  padding: 0px 0px;
+  border-radius: 0px;
+  box-sizing: border-box;
+  transform: translateZ(0);
+  position: relative;
+  background: transparent;
+}
+
+.dropdown-menu .scroll-stack-end {
+    width: 100%;
+    height: 8px;
+}

@@ -574,4 +574,16 @@
 [20251125_170828] Error checking app status:
 [20251125_170828] Error checking app status:
 [20251125_170828] Error checking app status:
-[20251125_170828] Error checking app status:
+[20251125_170828] Error checking app status:[20251202_153642] Error checking app status:
+[20251202_153642] Error checking app status:
+[20251202_153643] Connection error:
+[20251202_153643] Error checking app status:
+[20251202_153645] Error fetching stream status:
+[20251202_153645] Error checking app status:
+[20251202_153645] Error checking app status:
+[20251202_153647] Error checking app status:
+[20251202_153647] Error checking app status:
+[20251202_153647] Error checking app status:
+[20251202_153650] Error checking app status:
+[20251202_153650] Error checking app status:
+[20251202_153650] Error checking app status:

@@ -1,0 +1,31 @@
+.encrypt-text {
+  color: var(--text, #ffffff);
+  letter-spacing: 0.05em;
+  transition: color 0.3s ease;
+}
+
+.encrypt-text:hover {
+  color: var(--primary, #23A6F2);
+}
+
+.wrapper {
+  display: inline-block;
+  white-space: pre-wrap;
+  cursor: pointer;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  border: 0;
+}
+
+.encrypted {
+  color: var(--primary, #23A6F2);
+  text-shadow: 0 0 4px var(--primary, #23A6F2);
+}

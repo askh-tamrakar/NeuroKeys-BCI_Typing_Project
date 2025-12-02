@@ -1,0 +1,198 @@
+
+.app-root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand img { 
+  width: 40px; 
+  height: 40px; 
+}
+.brand video { 
+  width: 56px; 
+  height: 56px; 
+  border-radius: 6px; 
+  object-fit: fill; 
+  pointer-events: none; 
+  user-select: none; 
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  backdrop-filter: saturate(140%) blur(8px);
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  border-bottom: 1px solid var(--border);
+  padding: 0px 55px 0px 55px;
+}
+
+.topbar-inner {
+  display: flex;
+  margin: 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0px;
+}
+
+.title { font-size: 26px; font-weight: 1000; }
+
+.nav {
+  display: none;
+  gap: 10px;
+  align-items: center;
+}
+
+.pill-nav {
+  padding: 6px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+ }
+
+.pill-nav a {
+  color: var(--muted);
+  text-decoration: none;
+  font-weight: 800;
+  font-size: 15px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  transition: color .15s ease, transform .15s ease, background-color .15s ease, box-shadow .15s ease;
+}
+
+.pill-nav a:hover { color: var(--text); background: color-mix(in srgb, var(--bg) 70%, transparent); transform: translateY(-1px); box-shadow: 0 6px 14px var(--shadow); }
+.pill-nav a:active { transform: translateY(0); }
+
+@media (min-width: 720px) {
+  .nav { display: flex; }
+}
+
+/* Dropdown wrapper */
+.dropdown {
+  position: relative;
+}
+
+.dropdown-menu {
+ position: relative;
+ right: -82px;
+ top: -48px;
+ height: 42px;
+ padding: 6px;
+}
+
+.dropdown-menu .scroll-stack-end {
+  width: 100%;
+  height: 8px;
+}
+
+/* Dropdown items (inside ScrollStack) */
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  color: var(--text);
+  border: none;
+  border-radius: 10px;
+  border-top-right-radius: 999px;
+  border-bottom-right-radius: 999px;
+  padding: 16px 20px;
+  text-align: center;
+  font-weight: 900;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+  justify-content: center;
+  flex-wrap: nowrap;
+  flex-direction: row;
+  margin: auto;
+  font-size: 14px;
+}
+
+/* Swatch (small color preview) */
+.swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.grid {
+  display: grid;
+  gap: 20px;
+}
+
+.footer { color: var(--muted); text-align: center; padding: 24px; }
+
+
+.file-drop {
+  display: grid;
+  place-items: center;
+  text-align: center;
+  border: 2px dashed var(--border);
+  border-radius: 14px;
+  padding: 28px;
+  color: var(--muted);
+}
+
+.file-name { color: var(--text); font-weight: 600; }
+
+.actions { display: flex; gap: 12px; flex-wrap: wrap; }
+
+/* Hero */
+.hero {
+  padding: 56px 0;
+}
+
+.hero-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 36px;
+  align-items: center;
+}
+
+@media (max-width: 960px) {
+  .hero-grid { grid-template-columns: 1fr; }
+}
+
+.headline {
+  font-size: clamp(44px, 8vw, 112px);
+  line-height: 0.9;
+  letter-spacing: -2px;
+  font-weight: 900;
+  margin: 0 0 18px 0;
+}
+.headline .accent {
+  background: linear-gradient(90deg, var(--primary), var(--accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.lede { color: var(--muted); font-size: clamp(16px, 2.2vw, 30px); max-width: 48ch; }
+
+.cta { display: flex; gap: 12px; margin-top: 24px; flex-wrap: wrap; }
+.btn-primary { background: var(--primary); color: #0a0a0a; font-size: 16px; }
+.btn-secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+
+.mosaic {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.mosaic-item {
+  border-radius: 22px;
+  overflow: hidden;
+  background: #0003;
+  border: 1px solid var(--border);
+  aspect-ratio: 4/3;
+}
+.mosaic video, .mosaic img { width: 100%; height: 100%; object-fit: cover; display: block; }
