@@ -36,3 +36,5 @@ pytest
 python-dotenv
 
 #
+PyQt5 
+pyserial
