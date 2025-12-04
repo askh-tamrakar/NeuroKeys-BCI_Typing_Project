@@ -243,5 +243,3 @@ class EOGAcquisitionApp:
         self.root.destroy()
     
     def create_status_bar(self):
-        # ... (rest of the class methods follow)
-# ... (rest of the file remains largely the same, with methods update_live_data_view, _get_preview_text, and log_preview replacing update_preview_display)
