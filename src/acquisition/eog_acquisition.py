@@ -256,6 +256,14 @@ class EOGAcquisitionApp:
         self.ser.reset_input_buffer()
         self.debug_log("Buffer cleared, ready for data")
         
+        try:
+            self.ser.write(b"START\n")
+            self.debug_log("Sent START command to Arduino")
+        except Exception as e:
+            self.debug_log(f"Failed to send START: {e}")
+            messagebox.showerror("Error", f"Failed to send START: {e}")
+            return
+
         self.acquisition_active = True
         self.start_btn.config(state="disabled")
         self.stop_btn.config(state="normal")

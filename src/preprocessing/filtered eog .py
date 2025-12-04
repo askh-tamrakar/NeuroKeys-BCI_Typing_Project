@@ -29,7 +29,7 @@ def detect_blink(value, threshold=0.8):
 # MAIN DINO CONTROLLER
 # -------------------------------------------------
 
-def run_eog_dino(port="COM3", fs=250):
+def run_eog_dino(port="COM7", fs=250):
     ser = serial.Serial(port, 115200)
     buffer = []
 
@@ -76,4 +76,4 @@ def run_eog_dino(port="COM3", fs=250):
 # -------------------------------------------------
 
 if __name__ == "__main__":
-    run_eog_dino("COM3")  # Change COM port for your device
+    run_eog_dino("COM7")  # Change COM port for your device
