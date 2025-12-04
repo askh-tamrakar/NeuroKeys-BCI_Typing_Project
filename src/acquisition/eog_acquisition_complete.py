@@ -243,3 +243,4 @@ class EOGAcquisitionApp:
         self.root.destroy()
     
     def create_status_bar(self):
+        pass
