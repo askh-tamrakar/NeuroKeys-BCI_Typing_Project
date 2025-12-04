@@ -419,7 +419,7 @@ class EOGAcquisitionApp:
             return
         
         try:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
             out_dir = Path("data/sessions")
             out_dir.mkdir(parents=True, exist_ok=True)
             

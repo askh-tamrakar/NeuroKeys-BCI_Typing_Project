@@ -178,7 +178,7 @@ def detect_packets(bytes_data):
             if packet[7] == 0x01:
                 print("  ✅ Valid end byte!")
             else:
-                print(f"  ❌ Invalid end byte (expected 0x01, got {packet[9]:02X})")
+                print(f"  ❌ Invalid end byte (expected 0x01, got {packet[7]:02X})")
 
 
 def test_arduino_commands(ser):
