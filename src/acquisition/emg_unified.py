@@ -1,7 +1,7 @@
 """
-EMG Signal Acquisition System - Unified v4.0
+EMG Signal Acquisition System - Unified v5.0
 Real-time visualization with JSON data logging
-Features: Live plotting, statistics, graph export, custom save paths
+Features: Scrollable panel, Pause/Resume, Latest packet details
 Author: BCI Team
 Date: 2024-12-05
 """
@@ -21,21 +21,21 @@ import matplotlib
 matplotlib.use('TkAgg')
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
-import os
-
+import queue
 
 class EMGAcquisitionApp:
-    """EMG Acquisition System with unified status, statistics & export"""
+    """EMG Acquisition System with Full Layout - Scrollable Panel, Pause/Resume, Latest Packet Details"""
     
     def __init__(self, root):
         self.root = root
-        self.root.title("EMG Signal Acquisition - v4.0")
+        self.root.title("EMG Signal Acquisition - v5.0")
         self.root.geometry("1600x950")
         self.root.configure(bg='#f0f0f0')
         
         # Serial connection
         self.ser = None
         self.acquisition_active = False
+        self.recording_active = False
         self.acquisition_thread = None
         
         # Data storage
@@ -43,8 +43,9 @@ class EMGAcquisitionApp:
         self.session_start_time = None
         self.packet_count = 0
         self.bytes_received = 0
+        self.last_packet = None
         
-        # Graph buffers (circular - last 1024 samples)
+        # Graph buffers
         self.graph_buffer_ch0 = deque(maxlen=1024)
         self.graph_buffer_ch1 = deque(maxlen=1024)
         self.graph_time_buffer = deque(maxlen=1024)
@@ -63,19 +64,46 @@ class EMGAcquisitionApp:
         # Default save path
         self.save_path = Path("data/raw/session/emg")
         
+        # Queue for thread-safe communication
+        self.data_queue = queue.Queue()
+        
         # Setup UI
         self.setup_ui()
         self.update_port_list()
         self.root.after(30, self.update_graph_display)
+        self.root.after(100, self.process_queue)
     
     def setup_ui(self):
-        """Create the user interface"""
+        """Create the user interface with scrollable left panel"""
         main_frame = ttk.Frame(self.root)
         main_frame.pack(fill="both", expand=True, padx=5, pady=5)
         
-        # LEFT COLUMN: Controls
-        left_frame = ttk.Frame(main_frame)
-        left_frame.pack(side="left", fill="both", expand=False, padx=5, ipadx=10)
+        # LEFT COLUMN: Controls (with scrollbar)
+        left_wrapper = ttk.Frame(main_frame)
+        left_wrapper.pack(side="left", fill="both", expand=False, padx=5)
+        
+        # Create canvas with scrollbar
+        self.canvas = tk.Canvas(left_wrapper, bg='#f0f0f0', highlightthickness=0, width=350)
+        scrollbar = ttk.Scrollbar(left_wrapper, orient="vertical", command=self.canvas.yview)
+        scrollable_frame = ttk.Frame(self.canvas)
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        )
+        
+        self.canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        self.canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Enable mouse wheel scrolling
+        def _on_mousewheel(event):
+            self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        self.canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        
+        self.canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        left_frame = scrollable_frame
         
         # RIGHT COLUMN: Graph
         right_frame = ttk.Frame(main_frame)
@@ -99,23 +127,23 @@ class EMGAcquisitionApp:
         status_frame = ttk.LabelFrame(left_frame, text="📊 Status", padding="10")
         status_frame.pack(fill="x", padx=0, pady=5)
         
-        ttk.Label(status_frame, text="Connection:").pack(anchor="w", padx=5, pady=1)
+        ttk.Label(status_frame, text="Connection:", font=("Arial", 9)).pack(anchor="w", padx=5, pady=1)
         self.status_label = ttk.Label(status_frame, text="❌ Disconnected", foreground="red", font=("Arial", 10, "bold"))
         self.status_label.pack(anchor="w", padx=5, pady=1)
         
-        ttk.Label(status_frame, text="Packets:").pack(anchor="w", padx=5, pady=1)
+        ttk.Label(status_frame, text="Packets:", font=("Arial", 9)).pack(anchor="w", padx=5, pady=1)
         self.packet_label = ttk.Label(status_frame, text="0", font=("Arial", 10, "bold"))
         self.packet_label.pack(anchor="w", padx=5, pady=1)
         
-        ttk.Label(status_frame, text="Duration:").pack(anchor="w", padx=5, pady=1)
+        ttk.Label(status_frame, text="Duration:", font=("Arial", 9)).pack(anchor="w", padx=5, pady=1)
         self.duration_label = ttk.Label(status_frame, text="00:00:00", font=("Arial", 10, "bold"))
         self.duration_label.pack(anchor="w", padx=5, pady=1)
         
-        ttk.Label(status_frame, text="Rate (Hz):").pack(anchor="w", padx=5, pady=1)
+        ttk.Label(status_frame, text="Rate (Hz):", font=("Arial", 9)).pack(anchor="w", padx=5, pady=1)
         self.rate_label = ttk.Label(status_frame, text="0 Hz", font=("Arial", 10, "bold"))
         self.rate_label.pack(anchor="w", padx=5, pady=1)
         
-        ttk.Label(status_frame, text="Speed (KBps):").pack(anchor="w", padx=5, pady=1)
+        ttk.Label(status_frame, text="Speed (KBps):", font=("Arial", 9)).pack(anchor="w", padx=5, pady=1)
         self.speed_label = ttk.Label(status_frame, text="0 KBps", font=("Arial", 10, "bold"))
         self.speed_label.pack(anchor="w", padx=5, pady=1)
         
@@ -135,6 +163,19 @@ class EMGAcquisitionApp:
         self.stop_btn = ttk.Button(control_frame, text="⏹️ Stop", command=self.stop_acquisition, state="disabled")
         self.stop_btn.pack(fill="x", padx=2, pady=2)
         
+        # ===== RECORDING CONTROL =====
+        recording_frame = ttk.LabelFrame(left_frame, text="⏺️ Recording", padding="10")
+        recording_frame.pack(fill="x", padx=0, pady=5)
+        
+        self.record_btn = ttk.Button(recording_frame, text="⏺️ Start Recording", command=self.start_recording, state="disabled")
+        self.record_btn.pack(fill="x", padx=2, pady=2)
+        
+        self.pause_btn = ttk.Button(recording_frame, text="⏸️ Pause", command=self.pause_recording, state="disabled")
+        self.pause_btn.pack(fill="x", padx=2, pady=2)
+        
+        self.resume_btn = ttk.Button(recording_frame, text="▶️ Resume", command=self.resume_recording, state="disabled")
+        self.resume_btn.pack(fill="x", padx=2, pady=2)
+        
         # ===== SAVE OPTIONS =====
         save_frame = ttk.LabelFrame(left_frame, text="💾 Save", padding="10")
         save_frame.pack(fill="x", padx=0, pady=5)
@@ -144,15 +185,15 @@ class EMGAcquisitionApp:
         self.path_label = ttk.Label(save_frame, text="data/raw/session/emg", font=("Arial", 8), wraplength=200, justify="left")
         self.path_label.pack(fill="x", padx=2, pady=5)
         
-        ttk.Button(save_frame, text="💾 Save Data", command=self.save_session_data, state="disabled").pack(fill="x", padx=2, pady=2)
-        self.save_btn = self.root.nametowidget(self.root.winfo_children()[-1])
+        self.save_data_btn = ttk.Button(save_frame, text="💾 Save Data", command=self.save_session_data, state="disabled")
+        self.save_data_btn.pack(fill="x", padx=2, pady=2)
         
-        ttk.Button(save_frame, text="📊 Export Graph", command=self.export_graph, state="disabled").pack(fill="x", padx=2, pady=2)
-        self.export_btn = self.root.nametowidget(self.root.winfo_children()[-1])
+        self.export_btn = ttk.Button(save_frame, text="📊 Export Graph", command=self.export_graph, state="disabled")
+        self.export_btn.pack(fill="x", padx=2, pady=2)
         
         # ===== STATISTICS =====
         stats_frame = ttk.LabelFrame(left_frame, text="📈 Stats", padding="10")
-        stats_frame.pack(fill="both", expand=True, padx=0, pady=5)
+        stats_frame.pack(fill="x", padx=0, pady=5)
         
         ttk.Label(stats_frame, text="Channel 0 (Flexor):", font=("Arial", 8, "bold")).pack(anchor="w", padx=2, pady=1)
         self.ch0_min_label = ttk.Label(stats_frame, text="Min: 0", font=("Arial", 8))
@@ -169,6 +210,17 @@ class EMGAcquisitionApp:
         self.ch1_max_label.pack(anchor="w", padx=5, pady=0)
         self.ch1_mean_label = ttk.Label(stats_frame, text="Mean: 0", font=("Arial", 8))
         self.ch1_mean_label.pack(anchor="w", padx=5, pady=2)
+        
+        # ===== LATEST PACKET DETAILS =====
+        packet_frame = ttk.LabelFrame(left_frame, text="📋 Latest Packet", padding="10")
+        packet_frame.pack(fill="both", expand=True, padx=0, pady=5)
+        
+        self.packet_tree = ttk.Treeview(packet_frame, columns=('Value',), height=8)
+        self.packet_tree.column('#0', width=120)
+        self.packet_tree.column('Value', width=80)
+        self.packet_tree.heading('#0', text='Field')
+        self.packet_tree.heading('Value', text='Value')
+        self.packet_tree.pack(fill='both', expand=True)
         
         # ===== GRAPH PANEL =====
         graph_frame = ttk.LabelFrame(right_frame, text="📡 Real-Time EMG Signal (512 Hz)", padding="5")
@@ -200,9 +252,9 @@ class EMGAcquisitionApp:
         self.fig.tight_layout()
         
         # Embed matplotlib in tkinter
-        self.canvas = FigureCanvasTkAgg(self.fig, master=graph_frame)
-        self.canvas.draw()
-        self.canvas.get_tk_widget().pack(fill="both", expand=True)
+        self.canvas_plot = FigureCanvasTkAgg(self.fig, master=graph_frame)
+        self.canvas_plot.draw()
+        self.canvas_plot.get_tk_widget().pack(fill="both", expand=True)
     
     def update_port_list(self):
         """Refresh available COM ports"""
@@ -244,6 +296,9 @@ class EMGAcquisitionApp:
         self.disconnect_btn.config(state="disabled")
         self.start_btn.config(state="disabled")
         self.stop_btn.config(state="disabled")
+        self.record_btn.config(state="disabled")
+        self.pause_btn.config(state="disabled")
+        self.resume_btn.config(state="disabled")
     
     def start_acquisition(self):
         """Start acquisition"""
@@ -255,7 +310,6 @@ class EMGAcquisitionApp:
         self.packet_count = 0
         self.bytes_received = 0
         self.session_start_time = datetime.now()
-        
         self.graph_buffer_ch0.clear()
         self.graph_buffer_ch1.clear()
         self.graph_time_buffer.clear()
@@ -272,6 +326,7 @@ class EMGAcquisitionApp:
         self.acquisition_active = True
         self.start_btn.config(state="disabled")
         self.stop_btn.config(state="normal")
+        self.record_btn.config(state="normal")
         
         self.acquisition_thread = threading.Thread(target=self.acquisition_loop, daemon=True)
         self.acquisition_thread.start()
@@ -288,10 +343,9 @@ class EMGAcquisitionApp:
                         buffer.extend(chunk)
                     
                     while len(buffer) >= self.PACKET_LEN:
-                        if (buffer[0] == self.SYNC_BYTE_1 and 
-                            buffer[1] == self.SYNC_BYTE_2):
+                        if (buffer[0] == self.SYNC_BYTE_1 and buffer[1] == self.SYNC_BYTE_2):
                             if buffer[self.PACKET_LEN - 1] == self.END_BYTE:
-                                self.parse_and_store_packet(buffer[:self.PACKET_LEN])
+                                self.data_queue.put(bytes(buffer[:self.PACKET_LEN]))
                                 del buffer[:self.PACKET_LEN]
                             else:
                                 del buffer[0]
@@ -302,6 +356,18 @@ class EMGAcquisitionApp:
             except Exception as e:
                 print(f"[❌] Error: {e}")
                 break
+    
+    def process_queue(self):
+        """Process packets from queue in main thread"""
+        try:
+            while True:
+                packet = self.data_queue.get_nowait()
+                self.parse_and_store_packet(packet)
+        except queue.Empty:
+            pass
+        
+        if self.root.winfo_exists():
+            self.root.after(10, self.process_queue)
     
     def parse_and_store_packet(self, packet):
         """Parse 8-byte packet"""
@@ -325,6 +391,9 @@ class EMGAcquisitionApp:
             self.session_data.append(data_entry)
             self.packet_count += 1
             
+            if self.recording_active:
+                self.last_packet = data_entry
+            
             self.graph_buffer_ch0.append(ch0_raw)
             self.graph_buffer_ch1.append(ch1_raw)
             self.graph_time_buffer.append(self.graph_index)
@@ -332,6 +401,7 @@ class EMGAcquisitionApp:
             
             if self.packet_count % 50 == 0:
                 self.root.after(0, self.update_status_labels)
+            
         except Exception as e:
             print(f"[❌] Parse error: {e}")
     
@@ -351,6 +421,7 @@ class EMGAcquisitionApp:
             
             self.packet_label.config(text=str(self.packet_count))
             
+            # Update stats
             if len(self.graph_buffer_ch0) > 0:
                 ch0_data = list(self.graph_buffer_ch0)
                 self.ch0_min_label.config(text=f"Min: {min(ch0_data)}")
@@ -362,6 +433,20 @@ class EMGAcquisitionApp:
                 self.ch1_min_label.config(text=f"Min: {min(ch1_data)}")
                 self.ch1_max_label.config(text=f"Max: {max(ch1_data)}")
                 self.ch1_mean_label.config(text=f"Mean: {int(np.mean(ch1_data))}")
+            
+            # Update latest packet details
+            if self.last_packet:
+                self.packet_tree.delete(*self.packet_tree.get_children())
+                details = [
+                    ('Timestamp', self.last_packet['timestamp'].split('T')[1][:8]),
+                    ('Counter', str(self.last_packet['sequence_counter'])),
+                    ('Ch0 ADC', str(self.last_packet['ch0_raw_adc'])),
+                    ('Ch1 ADC', str(self.last_packet['ch1_raw_adc'])),
+                    ('Packets', str(self.packet_count)),
+                    ('Duration', f"{int((datetime.now() - self.session_start_time).total_seconds())}s"),
+                ]
+                for field, value in details:
+                    self.packet_tree.insert('', 'end', text=field, values=(value,))
     
     def update_graph_display(self):
         """Update graph"""
@@ -378,17 +463,34 @@ class EMGAcquisitionApp:
             if len(x_data) > 1:
                 self.line_ch0.set_data(x_data, ch0_data)
                 self.ax_ch0.set_xlim(max(0, self.graph_index - 1024), max(1024, self.graph_index))
-                
                 self.line_ch1.set_data(x_data, ch1_data)
                 self.ax_ch1.set_xlim(max(0, self.graph_index - 1024), max(1024, self.graph_index))
-                
-                self.canvas.draw_idle()
-                self.last_graph_update_index = self.graph_index
+                self.canvas_plot.draw_idle()
+            
+            self.last_graph_update_index = self.graph_index
         except Exception as e:
             print(f"[❌] Graph error: {e}")
         
         if self.root.winfo_exists():
             self.root.after(30, self.update_graph_display)
+    
+    def start_recording(self):
+        """Start recording session"""
+        self.recording_active = True
+        self.record_btn.config(state="disabled")
+        self.pause_btn.config(state="normal")
+    
+    def pause_recording(self):
+        """Pause recording"""
+        self.recording_active = False
+        self.pause_btn.config(state="disabled")
+        self.resume_btn.config(state="normal")
+    
+    def resume_recording(self):
+        """Resume recording"""
+        self.recording_active = True
+        self.pause_btn.config(state="normal")
+        self.resume_btn.config(state="disabled")
     
     def stop_acquisition(self):
         """Stop acquisition"""
@@ -400,10 +502,15 @@ class EMGAcquisitionApp:
                 print(f"[❌] Failed to send STOP: {e}")
         
         self.acquisition_active = False
+        self.recording_active = False
         time.sleep(0.5)
-        
         self.start_btn.config(state="normal")
         self.stop_btn.config(state="disabled")
+        self.record_btn.config(state="disabled")
+        self.pause_btn.config(state="disabled")
+        self.resume_btn.config(state="disabled")
+        self.save_data_btn.config(state="normal")
+        self.export_btn.config(state="normal")
         self.update_status_labels()
     
     def choose_save_path(self):
@@ -422,7 +529,6 @@ class EMGAcquisitionApp:
         try:
             timestamp = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
             self.save_path.mkdir(parents=True, exist_ok=True)
-            
             filename = f"EMG_session_{timestamp}.json"
             filepath = self.save_path / filename
             
@@ -465,12 +571,10 @@ class EMGAcquisitionApp:
         except Exception as e:
             messagebox.showerror("Error", f"Export failed: {e}")
 
-
 def main():
     root = tk.Tk()
     app = EMGAcquisitionApp(root)
     root.mainloop()
-
 
 if __name__ == "__main__":
     main()
