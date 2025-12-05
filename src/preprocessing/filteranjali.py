@@ -2,11 +2,11 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import json
 import requests
-import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from scipy.signal import butter, lfilter, iirnotch
 
+import numpy as np
 # ==========================================
 # SIGNAL PROCESSING LOGIC
 # ==========================================
@@ -28,7 +28,6 @@ class SignalProcessor:
     def notch_filter(data, notch_freq, quality_factor, fs):
         if notch_freq <= 0 or notch_freq >= fs/2:
             return data # Return raw if frequency is invalid
-            
         nyq = 0.5 * fs
         freq = notch_freq / nyq
         b, a = iirnotch(freq, quality_factor)
