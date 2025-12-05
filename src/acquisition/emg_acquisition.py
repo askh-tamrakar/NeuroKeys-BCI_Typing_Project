@@ -1,15 +1,15 @@
 """
 EMG Data Acquisition with Real-Time ECG-Style Visualization
 Tkinter GUI + Matplotlib + Arduino Serial Communication
-Production-Ready Application
+Production-Ready Application (8-Byte Packet Format)
 
 Author: EMG Team
-Date: 2024-12-04
-Version: 3.0 (With Live Graph Visualization)
+Date: 2024-12-05
+Version: 3.1 (Fixed - with START/STOP and debug methods)
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog, scrolledtext
+from tkinter import ttk, messagebox
 import serial
 import serial.tools.list_ports
 import json
@@ -20,14 +20,13 @@ from datetime import datetime
 from pathlib import Path
 from collections import deque
 import matplotlib
-matplotlib.use('TkAgg')  # Must be before importing pyplot
+matplotlib.use('TkAgg')
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
-import matplotlib.pyplot as plt
 
 
 class EMGVisualizationApp:
-    """EMG Application with Real-Time ECG-Style Graph"""
+    """EMG Application with Real-Time ECG-Style Graph (8-Byte Packet)"""
     
     def __init__(self, root):
         self.root = root
@@ -39,7 +38,6 @@ class EMGVisualizationApp:
         self.ser = None
         self.acquisition_active = False
         self.acquisition_thread = None
-        self.debug_mode = tk.BooleanVar(value=False)
         
         # Data storage
         self.session_data = []
@@ -51,8 +49,9 @@ class EMGVisualizationApp:
         self.graph_buffer_ch1 = deque(maxlen=1024)
         self.graph_time_buffer = deque(maxlen=1024)
         self.graph_index = 0
+        self.last_graph_update_index = 0
         
-        # Packet format constants
+        # Packet format constants (MATCHING YOUR 8-BYTE FIRMWARE)
         self.PACKET_LEN = 8
         self.SYNC_BYTE_1 = 0xC7
         self.SYNC_BYTE_2 = 0x7C
@@ -128,13 +127,13 @@ class EMGVisualizationApp:
         self.disconnect_btn = ttk.Button(control_frame, text="❌ Disconnect", command=self.disconnect_arduino, state="disabled")
         self.disconnect_btn.pack(fill="x", padx=2, pady=2)
         
-        self.start_btn = ttk.Button(control_frame, text="▶️  Start", command=self.start_acquisition, state="disabled", width=15)
+        self.start_btn = ttk.Button(control_frame, text="▶️  Start", command=self.start_acquisition, state="disabled")
         self.start_btn.pack(fill="x", padx=2, pady=2)
         
-        self.stop_btn = ttk.Button(control_frame, text="⏹️  Stop", command=self.stop_acquisition, state="disabled", width=15)
+        self.stop_btn = ttk.Button(control_frame, text="⏹️  Stop", command=self.stop_acquisition, state="disabled")
         self.stop_btn.pack(fill="x", padx=2, pady=2)
         
-        self.save_btn = ttk.Button(control_frame, text="💾 Save", command=self.save_session_data, state="disabled", width=15)
+        self.save_btn = ttk.Button(control_frame, text="💾 Save", command=self.save_session_data, state="disabled")
         self.save_btn.pack(fill="x", padx=2, pady=2)
         
         # Statistics
@@ -212,7 +211,7 @@ class EMGVisualizationApp:
         
         try:
             self.ser = serial.Serial(port_name, self.BAUD_RATE, timeout=1)
-            time.sleep(2)  # Arduino init time
+            time.sleep(2)
             self.ser.reset_input_buffer()
             
             self.status_label.config(text="✅ Connected", foreground="green")
@@ -241,7 +240,7 @@ class EMGVisualizationApp:
         self.stop_btn.config(state="disabled")
     
     def start_acquisition(self):
-        """Start acquisition"""
+        """Start acquisition and send START command to Arduino"""
         if not self.ser or not self.ser.is_open:
             messagebox.showerror("Error", "Arduino not connected")
             return
@@ -256,8 +255,16 @@ class EMGVisualizationApp:
         self.graph_buffer_ch1.clear()
         self.graph_time_buffer.clear()
         self.graph_index = 0
-        
-        self.ser.reset_input_buffer()
+        self.last_graph_update_index = 0
+
+        try:
+            # CRITICAL: Send START command to firmware
+            self.ser.write(b"START\n")
+            print("[✅] Sent START command to Arduino")
+        except Exception as e:
+            print(f"[❌] Failed to send START: {e}")
+            messagebox.showerror("Error", f"Failed to send START: {e}")
+            return
         
         self.acquisition_active = True
         self.start_btn.config(state="disabled")
@@ -266,46 +273,55 @@ class EMGVisualizationApp:
         
         self.acquisition_thread = threading.Thread(target=self.acquisition_loop, daemon=True)
         self.acquisition_thread.start()
-    
+
     def acquisition_loop(self):
-        """Read and parse packets"""
+        """Read and parse packets (8-Byte Version)"""
         buffer = bytearray()
         
         while self.acquisition_active and self.ser and self.ser.is_open:
             try:
                 if self.ser.in_waiting > 0:
-                    byte = self.ser.read(1)
-                    if byte:
-                        buffer.extend(byte)
+                    # Read available bytes
+                    chunk = self.ser.read(self.ser.in_waiting)
+                    if chunk:
+                        buffer.extend(chunk)
                         
-                        # Check for complete packet
-                        if len(buffer) >= self.PACKET_LEN:
+                        # Process buffer for complete packets
+                        while len(buffer) >= self.PACKET_LEN:
+                            # Check for SYNC bytes
                             if buffer[0] == self.SYNC_BYTE_1 and buffer[1] == self.SYNC_BYTE_2:
+                                # Check END byte at index 7
                                 if buffer[self.PACKET_LEN - 1] == self.END_BYTE:
-                                    # Valid packet
+                                    # Valid packet found
                                     self.parse_and_store_packet(buffer[:self.PACKET_LEN])
-                                    buffer = buffer[self.PACKET_LEN:]
+                                    # Remove processed packet
+                                    del buffer[:self.PACKET_LEN]
                                 else:
-                                    buffer = buffer[1:]
+                                    # Invalid end byte, shift by 1
+                                    del buffer[0]
                             else:
-                                buffer = buffer[1:]
+                                # Not sync bytes, shift by 1
+                                del buffer[0]
                 else:
                     time.sleep(0.001)
                     
             except Exception as e:
-                print(f"Error: {e}")
+                print(f"[❌] Error in acquisition loop: {e}")
                 break
-    
+
     def parse_and_store_packet(self, packet):
-        """Parse 8-byte packet"""
+        """Parse 8-byte packet: [C7][7C][CTR][CH0_L][CH0_H][CH1_L][CH1_H][01]"""
         try:
             counter = packet[2]
+            
+            # Extract channel values (high byte << 8 | low byte)
             ch0_raw = (packet[4] << 8) | packet[3]
             ch1_raw = (packet[6] << 8) | packet[5]
             
             timestamp = datetime.now()
             elapsed_time = (timestamp - self.session_start_time).total_seconds()
             
+            # Store data
             data_entry = {
                 "timestamp": timestamp.isoformat(),
                 "elapsed_time_s": round(elapsed_time, 6),
@@ -314,7 +330,6 @@ class EMGVisualizationApp:
                 "ch0_raw_adc": ch0_raw,
                 "ch1_raw_adc": ch1_raw,
             }
-            
             self.session_data.append(data_entry)
             self.packet_count += 1
             
@@ -324,13 +339,13 @@ class EMGVisualizationApp:
             self.graph_time_buffer.append(self.graph_index)
             self.graph_index += 1
             
-            # Update status labels periodically (every 50 packets)
+            # Update status periodically
             if self.packet_count % 50 == 0:
                 self.root.after(0, self.update_status_labels)
             
         except Exception as e:
-            print(f"Parse error: {e}")
-    
+            print(f"[❌] Parse error: {e}")
+
     def update_status_labels(self):
         """Update status displays"""
         if self.acquisition_active and self.session_start_time:
@@ -360,8 +375,13 @@ class EMGVisualizationApp:
     
     def update_graph_display(self):
         """Update graph with latest data"""
+        # Only update if we have new data
+        if self.graph_index == self.last_graph_update_index:
+            if self.root.winfo_exists():
+                self.root.after(30, self.update_graph_display)
+            return
+
         try:
-            # Get data from buffers
             x_data = list(self.graph_time_buffer)
             ch0_data = list(self.graph_buffer_ch0)
             ch1_data = list(self.graph_buffer_ch1)
@@ -369,24 +389,32 @@ class EMGVisualizationApp:
             if len(x_data) > 1:
                 # Update Channel 0
                 self.line_ch0.set_data(x_data, ch0_data)
-                self.ax_ch0.set_xlim(max(0, self.graph_index - 1024), self.graph_index)
+                self.ax_ch0.set_xlim(max(0, self.graph_index - 1024), max(1024, self.graph_index))
                 
                 # Update Channel 1
                 self.line_ch1.set_data(x_data, ch1_data)
-                self.ax_ch1.set_xlim(max(0, self.graph_index - 1024), self.graph_index)
+                self.ax_ch1.set_xlim(max(0, self.graph_index - 1024), max(1024, self.graph_index))
                 
-                # Redraw canvas
+                # Redraw efficiently
                 self.canvas.draw_idle()
+                self.last_graph_update_index = self.graph_index
         
         except Exception as e:
-            print(f"Graph update error: {e}")
+            print(f"[❌] Graph update error: {e}")
         
         # Schedule next update
         if self.root.winfo_exists():
             self.root.after(30, self.update_graph_display)
-    
+
     def stop_acquisition(self):
-        """Stop acquisition"""
+        """Stop acquisition and send STOP command"""
+        if self.ser and self.ser.is_open:
+            try:
+                self.ser.write(b"STOP\n")
+                print("[✅] Sent STOP command to Arduino")
+            except Exception as e:
+                print(f"[❌] Failed to send STOP: {e}")
+
         self.acquisition_active = False
         time.sleep(0.5)
         
@@ -397,14 +425,14 @@ class EMGVisualizationApp:
         self.update_status_labels()
     
     def save_session_data(self):
-        """Save to JSON"""
+        """Save session to JSON file"""
         if not self.session_data:
             messagebox.showwarning("Empty", "No data to save")
             return
         
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            out_dir = Path("emg_sessions")
+            out_dir = Path("data\raw\sessions\emg_sessions")
             out_dir.mkdir(parents=True, exist_ok=True)
             
             filename = out_dir / f"emg_session_{timestamp}.json"
