@@ -1,6 +1,6 @@
 """
-EEG Signal Acquisition System - Unified v5.0
-Real-time visualization with JSON data logging & FFT analysis
+EOG Signal Acquisition System - Unified v5.0
+Real-time visualization with JSON data logging (NO FILTER)
 Features: Scrollable panel, Pause/Resume, Latest packet details
 Author: BCI Team
 Date: 2024-12-05
@@ -23,12 +23,12 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 import queue
 
-class EEGAcquisitionApp:
-    """EEG Acquisition System with Full Layout - Scrollable Panel, Pause/Resume, Latest Packet Details"""
+class EOGAcquisitionApp:
+    """EOG Acquisition System with Full Layout - Scrollable Panel, Pause/Resume, Latest Packet Details (NO FILTER)"""
     
     def __init__(self, root):
         self.root = root
-        self.root.title("EEG Signal Acquisition - v5.0")
+        self.root.title("EOG Signal Acquisition - v5.0")
         self.root.geometry("1600x950")
         self.root.configure(bg='#f0f0f0')
         
@@ -46,9 +46,9 @@ class EEGAcquisitionApp:
         self.last_packet = None
         
         # Graph buffers
-        self.graph_buffer_ch0 = deque(maxlen=512)
-        self.graph_buffer_ch1 = deque(maxlen=512)
-        self.graph_time_buffer = deque(maxlen=512)
+        self.graph_buffer_ch0 = deque(maxlen=1024)
+        self.graph_buffer_ch1 = deque(maxlen=1024)
+        self.graph_time_buffer = deque(maxlen=1024)
         self.graph_index = 0
         self.last_graph_update_index = 0
         
@@ -62,7 +62,7 @@ class EEGAcquisitionApp:
         self.NUM_CHANNELS = 2
         
         # Default save path
-        self.save_path = Path("data/raw/session/eeg")
+        self.save_path = Path("data/raw/session/eog")
         
         # Queue for thread-safe communication
         self.data_queue = queue.Queue()
@@ -182,7 +182,7 @@ class EEGAcquisitionApp:
         
         ttk.Button(save_frame, text="📁 Choose Path", command=self.choose_save_path).pack(fill="x", padx=2, pady=2)
         
-        self.path_label = ttk.Label(save_frame, text="data/raw/session/eeg", font=("Arial", 8), wraplength=200, justify="left")
+        self.path_label = ttk.Label(save_frame, text="data/raw/session/eog", font=("Arial", 8), wraplength=200, justify="left")
         self.path_label.pack(fill="x", padx=2, pady=5)
         
         self.save_data_btn = ttk.Button(save_frame, text="💾 Save Data", command=self.save_session_data, state="disabled")
@@ -195,7 +195,7 @@ class EEGAcquisitionApp:
         stats_frame = ttk.LabelFrame(left_frame, text="📈 Stats", padding="10")
         stats_frame.pack(fill="x", padx=0, pady=5)
         
-        ttk.Label(stats_frame, text="Channel 0 (O1):", font=("Arial", 8, "bold")).pack(anchor="w", padx=2, pady=1)
+        ttk.Label(stats_frame, text="Channel 0 (Vertical):", font=("Arial", 8, "bold")).pack(anchor="w", padx=2, pady=1)
         self.ch0_min_label = ttk.Label(stats_frame, text="Min: 0 µV", font=("Arial", 8))
         self.ch0_min_label.pack(anchor="w", padx=5, pady=0)
         self.ch0_max_label = ttk.Label(stats_frame, text="Max: 0 µV", font=("Arial", 8))
@@ -203,7 +203,7 @@ class EEGAcquisitionApp:
         self.ch0_mean_label = ttk.Label(stats_frame, text="Mean: 0 µV", font=("Arial", 8))
         self.ch0_mean_label.pack(anchor="w", padx=5, pady=2)
         
-        ttk.Label(stats_frame, text="Channel 1 (O2):", font=("Arial", 8, "bold")).pack(anchor="w", padx=2, pady=1)
+        ttk.Label(stats_frame, text="Channel 1 (Horizontal):", font=("Arial", 8, "bold")).pack(anchor="w", padx=2, pady=1)
         self.ch1_min_label = ttk.Label(stats_frame, text="Min: 0 µV", font=("Arial", 8))
         self.ch1_min_label.pack(anchor="w", padx=5, pady=0)
         self.ch1_max_label = ttk.Label(stats_frame, text="Max: 0 µV", font=("Arial", 8))
@@ -223,39 +223,31 @@ class EEGAcquisitionApp:
         self.packet_tree.pack(fill='both', expand=True)
         
         # ===== GRAPH PANEL =====
-        graph_frame = ttk.LabelFrame(right_frame, text="📡 Real-Time EEG Signal (512 Hz)", padding="5")
+        graph_frame = ttk.LabelFrame(right_frame, text="📡 Real-Time EOG Signal (512 Hz - NO FILTER)", padding="5")
         graph_frame.pack(fill="both", expand=True, padx=0, pady=0)
         
-        # Create matplotlib figure with 3 subplots
+        # Create matplotlib figure
         self.fig = Figure(figsize=(10, 6), dpi=100, facecolor='white')
         self.fig.patch.set_facecolor('#f0f0f0')
         
-        # Subplot for Ch0 waveform
-        self.ax_ch0 = self.fig.add_subplot(311)
-        self.line_ch0, = self.ax_ch0.plot([], [], color='#667eea', linewidth=1.5, label='Ch0 (O1)')
-        self.ax_ch0.set_ylabel('µV', fontsize=9)
-        self.ax_ch0.set_ylim(-2000, 2000)
+        # Subplot for Ch0
+        self.ax_ch0 = self.fig.add_subplot(211)
+        self.line_ch0, = self.ax_ch0.plot([], [], color='#FF6B6B', linewidth=1.5, label='Ch0 (Vertical)')
+        self.ax_ch0.set_ylabel('Voltage (µV)', fontsize=10)
+        self.ax_ch0.set_ylim(-100000, 100000)
         self.ax_ch0.grid(True, alpha=0.3, linestyle='--')
-        self.ax_ch0.legend(loc='upper left', fontsize=8)
-        self.ax_ch0.set_title('Channel 0: Occipital Left (O1)', fontsize=9, fontweight='bold')
+        self.ax_ch0.legend(loc='upper left', fontsize=9)
+        self.ax_ch0.set_title('Channel 0: Vertical Eye Movement', fontsize=10, fontweight='bold')
         
-        # Subplot for Ch1 waveform
-        self.ax_ch1 = self.fig.add_subplot(312)
-        self.line_ch1, = self.ax_ch1.plot([], [], color='#f56565', linewidth=1.5, label='Ch1 (O2)')
-        self.ax_ch1.set_ylabel('µV', fontsize=9)
-        self.ax_ch1.set_ylim(-2000, 2000)
+        # Subplot for Ch1
+        self.ax_ch1 = self.fig.add_subplot(212)
+        self.line_ch1, = self.ax_ch1.plot([], [], color='#4ECDC4', linewidth=1.5, label='Ch1 (Horizontal)')
+        self.ax_ch1.set_xlabel('Time (samples)', fontsize=10)
+        self.ax_ch1.set_ylabel('Voltage (µV)', fontsize=10)
+        self.ax_ch1.set_ylim(-100000, 100000)
         self.ax_ch1.grid(True, alpha=0.3, linestyle='--')
-        self.ax_ch1.legend(loc='upper left', fontsize=8)
-        self.ax_ch1.set_title('Channel 1: Occipital Right (O2)', fontsize=9, fontweight='bold')
-        
-        # Subplot for FFT
-        self.ax_fft = self.fig.add_subplot(313)
-        self.line_fft, = self.ax_fft.plot([], [], color='#48bb78', linewidth=1.5)
-        self.ax_fft.set_xlabel('Frequency (Hz)', fontsize=9)
-        self.ax_fft.set_ylabel('Magnitude (µV)', fontsize=9)
-        self.ax_fft.set_xlim(0, 60)
-        self.ax_fft.grid(True, alpha=0.3, linestyle='--')
-        self.ax_fft.set_title('Frequency Spectrum (FFT)', fontsize=9, fontweight='bold')
+        self.ax_ch1.legend(loc='upper left', fontsize=9)
+        self.ax_ch1.set_title('Channel 1: Horizontal Eye Movement', fontsize=10, fontweight='bold')
         
         self.fig.tight_layout()
         
@@ -378,15 +370,15 @@ class EEGAcquisitionApp:
             self.root.after(10, self.process_queue)
     
     def parse_and_store_packet(self, packet):
-        """Parse 8-byte packet and convert to µV"""
+        """Parse 8-byte packet and convert to µV (NO FILTER)"""
         try:
             counter = packet[2]
             ch0_raw = (packet[4] << 8) | packet[3]
             ch1_raw = (packet[6] << 8) | packet[5]
             
-            # Convert to µV (assuming 14-bit ADC, 3.3V reference)
-            ch0_uv = ((ch0_raw / 16384.0) * 3300) - 1650
-            ch1_uv = ((ch1_raw / 16384.0) * 3300) - 1650
+            # Convert to µV (assuming ADC reference) - NO FILTERING
+            ch0_uv = (ch0_raw / 16384.0) * 5.0 * 1e6
+            ch1_uv = (ch1_raw / 16384.0) * 5.0 * 1e6
             
             timestamp = datetime.now()
             elapsed_time = (timestamp - self.session_start_time).total_seconds()
@@ -396,8 +388,8 @@ class EEGAcquisitionApp:
                 "elapsed_time_s": round(elapsed_time, 6),
                 "packet_number": self.packet_count,
                 "sequence_counter": counter,
-                "ch0_raw_adc": ch0_raw,
-                "ch1_raw_adc": ch1_raw,
+                "ch0_adc": ch0_raw,
+                "ch1_adc": ch1_raw,
                 "ch0_uv": round(ch0_uv, 2),
                 "ch1_uv": round(ch1_uv, 2),
             }
@@ -463,7 +455,7 @@ class EEGAcquisitionApp:
                     self.packet_tree.insert('', 'end', text=field, values=(value,))
     
     def update_graph_display(self):
-        """Update graph with waveforms and FFT"""
+        """Update graph"""
         if self.graph_index == self.last_graph_update_index:
             if self.root.winfo_exists():
                 self.root.after(30, self.update_graph_display)
@@ -475,21 +467,10 @@ class EEGAcquisitionApp:
             ch1_data = list(self.graph_buffer_ch1)
             
             if len(x_data) > 1:
-                # Update waveforms
                 self.line_ch0.set_data(x_data, ch0_data)
-                self.ax_ch0.set_xlim(max(0, self.graph_index - 512), max(512, self.graph_index))
-                
+                self.ax_ch0.set_xlim(max(0, self.graph_index - 1024), max(1024, self.graph_index))
                 self.line_ch1.set_data(x_data, ch1_data)
-                self.ax_ch1.set_xlim(max(0, self.graph_index - 512), max(512, self.graph_index))
-                
-                # Update FFT
-                if len(ch0_data) >= 256:
-                    fft_data = np.fft.fft(ch0_data[-256:])
-                    freq = np.fft.fftfreq(256, 1/self.SAMPLING_RATE)
-                    magnitude = np.abs(fft_data)[:128]
-                    self.line_fft.set_data(freq[:128], magnitude)
-                    self.ax_fft.set_ylim(0, np.max(magnitude) * 1.2 if np.max(magnitude) > 0 else 1)
-                
+                self.ax_ch1.set_xlim(max(0, self.graph_index - 1024), max(1024, self.graph_index))
                 self.canvas_plot.draw_idle()
             
             self.last_graph_update_index = self.graph_index
@@ -554,7 +535,7 @@ class EEGAcquisitionApp:
         try:
             timestamp = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
             self.save_path.mkdir(parents=True, exist_ok=True)
-            filename = f"EEG_session_{timestamp}.json"
+            filename = f"EOG_session_{timestamp}.json"
             filepath = self.save_path / filename
             
             metadata = {
@@ -565,9 +546,10 @@ class EEGAcquisitionApp:
                     "sampling_rate_hz": self.SAMPLING_RATE,
                     "channels": self.NUM_CHANNELS,
                     "device": "Arduino Uno R4",
-                    "sensor_type": "EEG",
-                    "channel_0": "Occipital Left (O1)",
-                    "channel_1": "Occipital Right (O2)"
+                    "sensor_type": "EOG",
+                    "filter_applied": "NONE",
+                    "channel_0": "Vertical Eye Movement",
+                    "channel_1": "Horizontal Eye Movement"
                 },
                 "data": self.session_data
             }
@@ -587,7 +569,7 @@ class EEGAcquisitionApp:
         
         try:
             timestamp = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
-            filename = f"EEG_graph_{timestamp}.png"
+            filename = f"EOG_graph_{timestamp}.png"
             filepath = filedialog.asksaveasfilename(defaultextension=".png", initialfile=filename)
             
             if filepath:
@@ -598,7 +580,7 @@ class EEGAcquisitionApp:
 
 def main():
     root = tk.Tk()
-    app = EEGAcquisitionApp(root)
+    app = EOGAcquisitionApp(root)
     root.mainloop()
 
 if __name__ == "__main__":
