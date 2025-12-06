@@ -23,6 +23,17 @@ matplotlib.use('TkAgg')
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 import queue
+import sys
+import os
+
+# Ensure we can import sibling packages (like processing)
+# Add 'src' directory to sys.path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+src_dir = os.path.abspath(os.path.join(current_dir, '..'))
+if src_dir not in sys.path:
+    sys.path.insert(0, src_dir)
+
+from processing.emg_filter import EMGFilterWindow
 
 class EMGAcquisitionApp:
     def __init__(self, root):
@@ -75,6 +86,9 @@ class EMGAcquisitionApp:
 
         self.setup_ui()
         self.update_port_list()
+
+        # Integrated Filter Window
+        self.filter_window = None
         
         # Single update loop
         self.root.after(30, self.main_update_loop)
@@ -142,6 +156,8 @@ class EMGAcquisitionApp:
         # Control
         control_frame = ttk.LabelFrame(left_frame, text="⚙️ Control", padding=10)
         control_frame.pack(fill="x", pady=5, padx=5)
+        self.filter_btn = ttk.Button(control_frame, text="📈 Open Filter", command=self.toggle_filter_window)
+        self.filter_btn.pack(fill="x", padx=2, pady=2)
         self.connect_btn = ttk.Button(control_frame, text="🔌 Connect", command=self.connect_arduino)
         self.connect_btn.pack(fill="x", padx=2, pady=2)
         self.disconnect_btn = ttk.Button(control_frame, text="❌ Disconnect", command=self.disconnect_arduino, state="disabled")
@@ -323,6 +339,13 @@ class EMGAcquisitionApp:
             self.graph_index += 1
             self.latest_packet = data_entry
             self.pending_updates += 1
+            
+            # Send to filter window if open
+            if self.filter_window and self.filter_window.winfo_exists():
+                try:
+                    self.filter_window.update_data([ch0_raw])
+                except Exception:
+                    pass
         except Exception as e:
             print("Parse error:", e)
 
@@ -496,6 +519,12 @@ class EMGAcquisitionApp:
                 messagebox.showinfo("Success", f"Graph exported to:\n{filepath}")
         except Exception as e:
             messagebox.showerror("Error", f"Export failed: {e}")
+
+    def toggle_filter_window(self):
+        if self.filter_window is None or not self.filter_window.winfo_exists():
+            self.filter_window = EMGFilterWindow(self.root, fs=self.SAMPLING_RATE)
+        else:
+            self.filter_window.lift()
 
 def main():
     root = tk.Tk()
