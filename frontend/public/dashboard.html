@@ -31,9 +31,8 @@
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         .scrollbar-hide { 
             -ms-overflow-style: none;
-            scrollbar-width: none;
-            /* Fallback for browsers that don't support scrollbar-width */
-            overflow: -webkit-paged-y;
+            /* Ensure content can scroll if it overflows */
+            overflow: auto;
         }
     </style>
 </head>
