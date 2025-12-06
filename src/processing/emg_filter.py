@@ -3,16 +3,29 @@ from tkinter import ttk
 import numpy as np
 from collections import deque
 from scipy.signal import butter, filtfilt, lfilter
+import time
 
 import matplotlib
 matplotlib.use('TkAgg')
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
+# Import our new modules
+try:
+    from processing.bridge import DataBridge
+    from processing.features import EMGFeatureExtractor
+except ImportError:
+    # Fallback if running directly from file without package context
+    import sys
+    import os
+    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+    from bridge import DataBridge
+    from features import EMGFeatureExtractor
+
 class EMGFilterWindow(tk.Toplevel):
     def __init__(self, parent, fs=250):
         super().__init__(parent)
-        self.title("EMG Signal Processing")
+        self.title("EMG Signal Processing & Broadcast")
         self.geometry("1000x800")
         
         self.fs = fs
@@ -29,6 +42,11 @@ class EMGFilterWindow(tk.Toplevel):
 
         # Envelope Settings (RMS 100ms)
         self.rms_window_ms = 100
+        
+        # Pipeline Components
+        self.bridge = DataBridge()
+        self.bridge.start()
+        self.extractor = EMGFeatureExtractor()
         
         self.setup_ui()
         
@@ -50,7 +68,9 @@ class EMGFilterWindow(tk.Toplevel):
         stats_frame = ttk.Frame(self)
         stats_frame.pack(fill="x", padx=5, pady=5)
         self.lbl_stats = ttk.Label(stats_frame, text="Waiting for data...")
-        self.lbl_stats.pack()
+        self.lbl_stats.pack(side="left")
+        self.lbl_features = ttk.Label(stats_frame, text=" | Features: --")
+        self.lbl_features.pack(side="left", padx=10)
 
         # Graphs
         self.fig = Figure(figsize=(10, 8), dpi=100)
@@ -94,6 +114,27 @@ class EMGFilterWindow(tk.Toplevel):
             # Envelope
             env = self.calculate_rms(filt)
             
+            # Feature Extraction (on latest 1 second window)
+            window_size = int(self.fs) # 1 second
+            if len(filt) >= window_size:
+                latest_segment = filt[-window_size:]
+                features = self.extractor.extract(latest_segment)
+                
+                # Broadcast
+                payload = {
+                    "type": "data",
+                    "timestamp": time.time(),
+                    "features": features,
+                    # Send only the latest value for efficient real-time graph on frontend
+                    # Or a small chunk if needed. Sending 1 point for live view.
+                    "envelope": float(env[-1]),
+                    "filtered": float(filt[-1])
+                }
+                self.bridge.broadcast(payload)
+                
+                # Update UI String
+                self.lbl_features.config(text=f" | RMS: {features['rms']:.1f} MAV: {features['mav']:.1f}")
+            
             # Plot
             x = np.arange(len(data))
             
@@ -116,4 +157,6 @@ class EMGFilterWindow(tk.Toplevel):
 
     def on_close(self):
         self.running = False
+        if self.bridge:
+            self.bridge.stop()
         self.destroy()
