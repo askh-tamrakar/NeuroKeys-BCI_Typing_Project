@@ -1,3 +1,4 @@
+
 .pill-nav-container {
   position: sticky;
   z-index: 99;
@@ -12,7 +13,7 @@
 
 .pill-nav {
   --nav-h: 42px;
-  --logo: 36px 
+  --logo: 42px; 
   --pill-pad-x: 18px;
   --pill-gap: 6px;
   width: max-content;
@@ -47,23 +48,23 @@
 }
 
 .pill-logo {
-  width: 28px;
-  height: 36px;
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
   background: var(--base, #000);
   padding: 0px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  flex-shrink: 0;
 }
 
 .pill-logo img {
-  width: 190%;
-  height: 130%;
   object-fit: cover;
+  position: absolute;
+  width: 100%;
+  height: 100%;
   display: block;
-  position: sticky;
 }
 
 .pill-list {
@@ -78,7 +79,8 @@
 
 .pill-list > li {
   display: flex;
-  height: 100%;
+  height: 42px;
+  margin: inherit;
 }
 
 .custom-component-item {
@@ -161,6 +163,7 @@
 
 .desktop-only {
   display: block;
+  height: 52px;
 }
 
 .mobile-only {

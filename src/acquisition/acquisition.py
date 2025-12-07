@@ -33,7 +33,7 @@ src_dir = os.path.abspath(os.path.join(current_dir, '..'))
 if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 
-from processing.emg_filter import EMGFilterWindow
+from processing.bridge import DataBridge
 
 class EMGAcquisitionApp:
     def __init__(self, root):
@@ -87,8 +87,9 @@ class EMGAcquisitionApp:
         self.setup_ui()
         self.update_port_list()
 
-        # Integrated Filter Window
-        self.filter_window = None
+        # Bridge Integration
+        self.bridge = DataBridge()
+        self.bridge.start()
         
         # Single update loop
         self.root.after(30, self.main_update_loop)
@@ -156,8 +157,11 @@ class EMGAcquisitionApp:
         # Control
         control_frame = ttk.LabelFrame(left_frame, text="⚙️ Control", padding=10)
         control_frame.pack(fill="x", pady=5, padx=5)
-        self.filter_btn = ttk.Button(control_frame, text="📈 Open Filter", command=self.toggle_filter_window)
+        self.filter_btn = ttk.Button(control_frame, text="📡 Show Server Status", command=self.toggle_server)
         self.filter_btn.pack(fill="x", padx=2, pady=2)
+        
+        self.server_label = ttk.Label(control_frame, text="Server: Off", foreground="gray", font=("Consolas", 9))
+        self.server_label.pack(fill="x", padx=5, pady=2)
         self.connect_btn = ttk.Button(control_frame, text="🔌 Connect", command=self.connect_arduino)
         self.connect_btn.pack(fill="x", padx=2, pady=2)
         self.disconnect_btn = ttk.Button(control_frame, text="❌ Disconnect", command=self.disconnect_arduino, state="disabled")
@@ -316,9 +320,15 @@ class EMGAcquisitionApp:
 
     def parse_and_store_packet(self, packet):
         try:
+            # Packet: C7 7C CTR CH0H CH0L CH1H CH1L END
             counter = packet[2]
-            ch0_raw = (packet[4] << 8) | packet[3]
-            ch1_raw = (packet[6] << 8) | packet[5]
+            # User specified: [3] Ch0_H, [4] Ch0_L -> Big Endian for channels?
+            # Or standard Arduino analogRead (usually Sent as H/L). 
+            # Previous code used (L << 8) | H which is wrong if [3]=H.
+            # Assuming User is correct: [3]=High, [4]=Low.
+            ch0_raw = (packet[3] << 8) | packet[4]
+            ch1_raw = (packet[5] << 8) | packet[6]
+            
             timestamp = datetime.now()
             elapsed = (timestamp - self.session_start_time).total_seconds() if self.session_start_time else 0.0
             data_entry = {
@@ -340,12 +350,19 @@ class EMGAcquisitionApp:
             self.latest_packet = data_entry
             self.pending_updates += 1
             
-            # Send to filter window if open
-            if self.filter_window and self.filter_window.winfo_exists():
-                try:
-                    self.filter_window.update_data([ch0_raw])
-                except Exception:
-                    pass
+            # Broadcast to WebSocket
+            # Format for LiveView: { "source": "EMG", "fs": 512, "timestamp": ts, "window": [ [ch0], [ch1] ] } or similar
+            # LiveView expects window to be array of channels, each array of samples.
+            # Sending one sample at a time:
+            msg = {
+                "source": "EMG",
+                "fs": self.SAMPLING_RATE,
+                "timestamp": int(time.time() * 1000),
+                "window": [[ch0_raw], [ch1_raw]] 
+            }
+            if self.bridge.running:
+                self.bridge.broadcast(msg)
+
         except Exception as e:
             print("Parse error:", e)
 
@@ -427,6 +444,27 @@ class EMGAcquisitionApp:
             self.pause_rec_btn.config(text="⏸️ Pause Recording")
         else:
             self.pause_rec_btn.config(text="▶️ Resume Recording")
+
+    def set_sampling_rate(self, rate):
+        """Called by children (e.g. filter window) to update rate"""
+        print(f"Acquisition: Setting sampling rate to {rate} Hz")
+        self.SAMPLING_RATE = float(rate)
+        # Update UI
+        # self.baud_label.config... (if it existed separately)
+        # Re-send start command or specific config command if Arduino supports it
+        # For now, we just update the internal variable
+        if self.ser and self.ser.is_open:
+            try:
+                # Example: send "RATE 500\n"
+                cmd = f"RATE {int(rate)}\n"
+                self.ser.write(cmd.encode())
+            except Exception as e:
+                print(f"Failed to send rate command: {e}")
+        
+        # Update integrated filter if open
+        if self.filter_window and self.filter_window.winfo_exists():
+            self.filter_window.fs = self.SAMPLING_RATE
+            self.filter_window.buffer_size = int(self.filter_window.fs * self.filter_window.window_seconds)
 
     # Status / graph updates
     def update_status_labels(self):
@@ -520,11 +558,11 @@ class EMGAcquisitionApp:
         except Exception as e:
             messagebox.showerror("Error", f"Export failed: {e}")
 
-    def toggle_filter_window(self):
-        if self.filter_window is None or not self.filter_window.winfo_exists():
-            self.filter_window = EMGFilterWindow(self.root, fs=self.SAMPLING_RATE)
-        else:
-            self.filter_window.lift()
+    def toggle_server(self):
+        # Server is started in __init__ now, but we can toggle broadcasting or just show status
+        # For simplicity, we just update the label since it's always running in this new mode
+        self.server_label.config(text="Server: ws://localhost:8765 (Active)", foreground="green")
+        self.filter_btn.config(state="disabled")
 
 def main():
     root = tk.Tk()

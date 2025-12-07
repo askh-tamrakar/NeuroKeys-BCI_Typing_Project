@@ -60,9 +60,12 @@ export default function LiveView({ wsData }) {
 
     let payload = null
     try {
-      const jsonText = typeof wsData === 'string' ? wsData : (wsData.data ?? null)
-      if (!jsonText) return
-      payload = JSON.parse(jsonText)
+      // wsData might be string or object
+      if (typeof wsData === 'object' && wsData !== null) {
+        payload = wsData.data ? JSON.parse(wsData.data) : wsData;
+      } else if (typeof wsData === 'string') {
+        payload = JSON.parse(wsData);
+      }
     } catch (err) {
       console.error('LiveView: failed to parse wsData', err, wsData)
       return
@@ -162,8 +165,8 @@ export default function LiveView({ wsData }) {
               <button
                 onClick={() => setIsPaused(!isPaused)}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm transition-all duration-200 ${isPaused
-                    ? 'bg-accent/20 text-accent hover:bg-accent/30 border border-accent/20'
-                    : 'bg-primary/20 text-primary hover:bg-primary/30 border border-primary/20 shadow-glow'
+                  ? 'bg-accent/20 text-accent hover:bg-accent/30 border border-accent/20'
+                  : 'bg-primary/20 text-primary hover:bg-primary/30 border border-primary/20 shadow-glow'
                   }`}
               >
                 {isPaused ? '▶ Resume Stream' : '⏸ Pause Stream'}
