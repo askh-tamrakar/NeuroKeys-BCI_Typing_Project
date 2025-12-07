@@ -111,34 +111,19 @@ export function useWebSocket(url) {
     }
   }
 
+  const sendMessage = (data) => {
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('message', data)
+      console.log('📤 Sent message:', data)
+    } else {
+      console.warn('⚠️  WebSocket not connected, cannot send message:', data)
+    }
+  }
+
   useEffect(() => {
     return () => disconnect()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  const sendMessage = useCallback(
-    (data) => {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        try {
-          wsRef.current.send(JSON.stringify(data))
-          console.log('📤 Sent message:', data)
-        } catch (e) {
-          console.error('❌ Failed to send message:', e)
-        }
-      } else {
-        console.warn('⚠️  WebSocket not connected, cannot send message:', data)
-      }
-    },
-    []
-  )
-
-  // Auto-connect on mount, cleanup on unmount
-  useEffect(() => {
-    connect()
-
-    return () => {
-      disconnect()
-    }
-  }, [connect, disconnect])
 
   return {
     status,
@@ -147,6 +132,7 @@ export function useWebSocket(url) {
     channels,
     connect,
     disconnect,
+    sendMessage,
     requestBuffer,
     requestAllChannels
   }
