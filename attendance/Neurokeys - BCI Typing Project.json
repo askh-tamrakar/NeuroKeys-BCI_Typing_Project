@@ -1,0 +1,110 @@
+{
+  "members": [
+    "Abhishek Goyal",
+    "Akshansh Tamrakar",
+    "Anjali Thakur",
+    "Anuj Dangi",
+    "Deepesh Vishwakarma",
+    "Dev Choubey",
+    "Krishna Lodhi",
+    "Mansi Namdev",
+    "Nansi Kori",
+    "Nosheen Bee",
+    "Pankaj Rathore",
+    "Pinky Sahu",
+    "Piyush Choubey",
+    "Pooja soni",
+    "Sanjana Prajapati",
+    "Shubham Vishwakarma",
+    "Soumya Tamrkar"
+  ],
+  "attendance": {
+    "Akshansh Tamrakar": {
+      "2025-11-27": "P",
+      "2025-11-30": "P",
+      "2025-11-28": "P",
+      "2025-11-29": "P",
+      "2025-12-01": "P"
+    },
+    "Anuj Dangi": {
+      "2025-12-01": "A"
+    },
+    "Anjali Thakur": {
+      "2025-11-30": "L",
+      "2025-11-27": "L",
+      "2025-11-28": "L",
+      "2025-11-29": "L",
+      "2025-12-01": "P"
+    },
+    "Abhishek Goyal": {
+      "2025-11-30": "A",
+      "2025-12-01": "P"
+    },
+    "Deepesh Vishwakarma": {
+      "2025-11-27": "P",
+      "2025-11-28": "P",
+      "2025-12-01": "P",
+      "2025-11-29": "L"
+    },
+    "Dev Choubey": {
+      "2025-12-01": "A"
+    },
+    "Krishna Lodhi": {
+      "2025-11-27": "P",
+      "2025-12-01": "P"
+    },
+    "Mansi Namdev": {
+      "2025-11-28": "P",
+      "2025-12-01": "P"
+    },
+    "Nansi Kori": {
+      "2025-12-01": "P"
+    },
+    "Soumya Tamrkar": {
+      "2025-11-30": "P",
+      "2025-11-28": "P",
+      "2025-12-01": "P"
+    },
+    "Nosheen Bee": {
+      "2025-11-30": "L",
+      "2025-11-27": "L",
+      "2025-11-28": "L",
+      "2025-11-29": "P",
+      "2025-12-01": "L"
+    },
+    "Pankaj Rathore": {
+      "2025-12-01": "A"
+    },
+    "Piyush Choubey": {
+      "2025-11-27": "P",
+      "2025-11-28": "P",
+      "2025-11-29": "P",
+      "2025-12-01": "P"
+    },
+    "Pinky Sahu": {
+      "2025-11-28": "P",
+      "2025-12-01": "P"
+    },
+    "Pooja soni": {
+      "2025-11-28": "P",
+      "2025-12-01": "P"
+    },
+    "Sanjana Prajapati": {
+      "2025-11-30": "A",
+      "2025-11-28": "P",
+      "2025-12-01": "P"
+    },
+    "Shubham Vishwakarma": {
+      "2025-11-27": "P",
+      "2025-11-28": "P",
+      "2025-12-01": "P"
+    }
+  },
+  "holidays": [
+    "2025-11-30",
+    "2025-12-07",
+    "2025-12-14",
+    "2025-12-21",
+    "2025-12-28"
+  ]
+}

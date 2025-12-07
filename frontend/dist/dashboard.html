@@ -1,0 +1,917 @@
+
+BCI Dashboard
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BCI Dashboard - Brain-Computer Interface</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/recharts@2.5.0/dist/Recharts.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        .sidebar { transition: transform 0.3s ease; }
+        .sidebar.collapsed { transform: translateX(-100%); }
+        @media (max-width: 768px) {
+            .sidebar { position: fixed; z-index: 50; }
+        }
+        .chart-container { height: 300px; }
+        .command-key { transition: all 0.2s; }
+        .command-key.active { transform: scale(1.1); background: #3b82f6; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .pulse { animation: pulse 2s infinite; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; }
+        .status-connected { background: #10b981; }
+        .status-disconnected { background: #ef4444; }
+        .status-connecting { background: #f59e0b; animation: pulse 1s infinite; }
+        .message-bubble { max-width: 80%; }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
+        const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } = Recharts;
+
+        // ==================== MOCK DATA & WEBSOCKET ====================
+        
+        class MockWebSocket {
+            constructor(url) {
+                this.url = url;
+                this.readyState = 1; // OPEN
+                this.onopen = null;
+                this.onmessage = null;
+                this.onerror = null;
+                this.onclose = null;
+                
+                setTimeout(() => {
+                    if (this.onopen) this.onopen({ type: 'open' });
+                    this.startMockStream();
+                }, 500);
+            }
+            
+            startMockStream() {
+                // Signal data every 40ms (25 Hz)
+                this.signalInterval = setInterval(() => {
+                    const timestamp = Date.now();
+                    const data = {
+                        type: 'signal',
+                        timestamp,
+                        channels: {
+                            EEG: Array(8).fill(0).map(() => Math.sin(timestamp / 1000) * 0.5 + Math.random() * 0.2 - 0.1),
+                            EOG: Array(2).fill(0).map(() => Math.sin(timestamp / 800) * 0.3 + Math.random() * 0.15 - 0.075),
+                            EMG: Array(2).fill(0).map(() => Math.random() * 0.8 - 0.4)
+                        }
+                    };
+                    if (this.onmessage) this.onmessage({ data: JSON.stringify(data) });
+                }, 40);
+                
+                // Command data every 2-5 seconds
+                this.commandInterval = setInterval(() => {
+                    const commands = ['A', 'B', 'C', 'D', 'E', 'ENTER', 'BACKSPACE'];
+                    const command = commands[Math.floor(Math.random() * commands.length)];
+                    const data = {
+                        type: 'command',
+                        timestamp: Date.now(),
+                        command,
+                        confidence: 0.75 + Math.random() * 0.25
+                    };
+                    if (this.onmessage) this.onmessage({ data: JSON.stringify(data) });
+                }, 2000 + Math.random() * 3000);
+            }
+            
+            send(data) {
+                console.log('WS Send:', data);
+            }
+            
+            close() {
+                clearInterval(this.signalInterval);
+                clearInterval(this.commandInterval);
+                this.readyState = 3; // CLOSED
+                if (this.onclose) this.onclose({ type: 'close' });
+            }
+        }
+
+        // ==================== AUTH CONTEXT ====================
+        
+        const AuthContext = React.createContext(null);
+        
+        function AuthProvider({ children }) {
+            const [user, setUser] = useState(null);
+            const [loading, setLoading] = useState(true);
+            
+            useEffect(() => {
+                const token = localStorage.getItem('bci_token');
+                const userData = localStorage.getItem('bci_user');
+                if (token && userData) {
+                    setUser(JSON.parse(userData));
+                }
+                setLoading(false);
+            }, []);
+            
+            const login = (email, password) => {
+                // Mock auth
+                const mockUser = { email, name: email.split('@')[0], avatar: '👤' };
+                const mockToken = 'mock_jwt_token_' + Date.now();
+                localStorage.setItem('bci_token', mockToken);
+                localStorage.setItem('bci_user', JSON.stringify(mockUser));
+                setUser(mockUser);
+                return Promise.resolve(mockUser);
+            };
+            
+            const logout = () => {
+                localStorage.removeItem('bci_token');
+                localStorage.removeItem('bci_user');
+                setUser(null);
+            };
+            
+            return (
+                <AuthContext.Provider value={{ user, loading, login, logout }}>
+                    {children}
+                </AuthContext.Provider>
+            );
+        }
+
+        // ==================== LOGIN PAGE ====================
+        
+        function LoginPage() {
+            const { login } = React.useContext(AuthContext);
+            const [email, setEmail] = useState('');
+            const [password, setPassword] = useState('');
+            const [remember, setRemember] = useState(false);
+            const [errors, setErrors] = useState({});
+            
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                const newErrors = {};
+                
+                if (!email.includes('@')) newErrors.email = 'Invalid email';
+                if (password.length < 6) newErrors.password = 'Password must be 6+ characters';
+                
+                if (Object.keys(newErrors).length > 0) {
+                    setErrors(newErrors);
+                    return;
+                }
+                
+                await login(email, password);
+            };
+            
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
+                        <div className="text-center mb-8">
+                            <div className="text-5xl mb-4">🧠</div>
+                            <h1 className="text-3xl font-bold text-gray-800">BCI Dashboard</h1>
+                            <p className="text-gray-600 mt-2">Sign in to access your neural interface</p>
+                        </div>
+                        
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                                <input
+                                    type="email"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    placeholder="user@example.com"
+                                />
+                                {errors.email && <p className="text-red-500 text-sm mt-1">{errors.email}</p>}
+                            </div>
+                            
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                                <input
+                                    type="password"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    placeholder="••••••••"
+                                />
+                                {errors.password && <p className="text-red-500 text-sm mt-1">{errors.password}</p>}
+                            </div>
+                            
+                            <div className="flex items-center">
+                                <input
+                                    type="checkbox"
+                                    checked={remember}
+                                    onChange={(e) => setRemember(e.target.checked)}
+                                    className="w-4 h-4 text-blue-600 rounded"
+                                />
+                                <label className="ml-2 text-sm text-gray-600">Remember me</label>
+                            </div>
+                            
+                            <button
+                                type="submit"
+                                className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition"
+                            >
+                                Sign In
+                            </button>
+                        </form>
+                        
+                        <p className="text-center text-sm text-gray-600 mt-6">
+                            Demo: Use any email and password (6+ chars)
+                        </p>
+                    </div>
+                </div>
+            );
+        }
+
+        // ==================== WEBSOCKET HOOK ====================
+        
+        function useWebSocket(url) {
+            const [status, setStatus] = useState('disconnected');
+            const [lastMessage, setLastMessage] = useState(null);
+            const [latency, setLatency] = useState(0);
+            const wsRef = useRef(null);
+            const pingRef = useRef(null);
+            
+            const connect = () => {
+                if (wsRef.current?.readyState === 1) return;
+                
+                setStatus('connecting');
+                wsRef.current = new MockWebSocket(url);
+                
+                wsRef.current.onopen = () => {
+                    setStatus('connected');
+                    // Start ping/pong for latency
+                    pingRef.current = setInterval(() => {
+                        const start = Date.now();
+                        setLatency(Math.random() * 30 + 10); // Mock 10-40ms
+                    }, 1000);
+                };
+                
+                wsRef.current.onmessage = (event) => {
+                    setLastMessage({ data: event.data, timestamp: Date.now() });
+                };
+                
+                wsRef.current.onerror = () => setStatus('error');
+                wsRef.current.onclose = () => {
+                    setStatus('disconnected');
+                    clearInterval(pingRef.current);
+                };
+            };
+            
+            const disconnect = () => {
+                wsRef.current?.close();
+            };
+            
+            useEffect(() => {
+                return () => disconnect();
+            }, []);
+            
+            return { status, lastMessage, latency, connect, disconnect, ws: wsRef.current };
+        }
+
+        // ==================== CHART COMPONENT ====================
+        
+        function SignalChart({ title, data, color, channels, visibleChannels, timeWindow }) {
+            const displayData = useMemo(() => {
+                return data.slice(-timeWindow);
+            }, [data, timeWindow]);
+            
+            return (
+                <div className="bg-white rounded-lg shadow p-4">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-lg font-semibold text-gray-800">{title}</h3>
+                        <div className="text-sm text-gray-600">
+                            {displayData.length > 0 && (
+                                <>
+                                    <span>Min: {Math.min(...displayData.map(d => d.value)).toFixed(3)}</span>
+                                    <span className="mx-2">|</span>
+                                    <span>Max: {Math.max(...displayData.map(d => d.value)).toFixed(3)}</span>
+                                    <span className="mx-2">|</span>
+                                    <span>Mean: {(displayData.reduce((a, b) => a + b.value, 0) / displayData.length).toFixed(3)}</span>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                    
+                    <div className="chart-container">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={displayData}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis 
+                                    dataKey="time" 
+                                    domain={['dataMin', 'dataMax']}
+                                    tickFormatter={(t) => new Date(t).toLocaleTimeString()}
+                                />
+                                <YAxis domain={[-1, 1]} />
+                                <Tooltip 
+                                    labelFormatter={(t) => new Date(t).toLocaleTimeString()}
+                                    formatter={(value) => value.toFixed(4)}
+                                />
+                                <Legend />
+                                <Line 
+                                    type="monotone" 
+                                    dataKey="value" 
+                                    stroke={color} 
+                                    dot={false}
+                                    isAnimationActive={false}
+                                />
+                            </LineChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+            );
+        }
+
+        // ==================== LIVE VIEW ====================
+        
+        function LiveView({ wsData }) {
+            const [eegData, setEegData] = useState([]);
+            const [eogData, setEogData] = useState([]);
+            const [emgData, setEmgData] = useState([]);
+            const [timeWindow, setTimeWindow] = useState(250); // 10 seconds at 25Hz
+            const [isPaused, setIsPaused] = useState(false);
+            
+            useEffect(() => {
+                if (!wsData || isPaused) return;
+                
+                try {
+                    const parsed = JSON.parse(wsData.data);
+                    if (parsed.type !== 'signal') return;
+                    
+                    const timestamp = parsed.timestamp;
+                    
+                    setEegData(prev => [...prev, { time: timestamp, value: parsed.channels.EEG[0] }].slice(-500));
+                    setEogData(prev => [...prev, { time: timestamp, value: parsed.channels.EOG[0] }].slice(-500));
+                    setEmgData(prev => [...prev, { time: timestamp, value: parsed.channels.EMG[0] }].slice(-500));
+                } catch (e) {
+                    console.error('Parse error:', e);
+                }
+            }, [wsData, isPaused]);
+            
+            return (
+                <div className="space-y-4">
+                    <div className="bg-white rounded-lg shadow p-4">
+                        <div className="flex justify-between items-center">
+                            <h2 className="text-2xl font-bold text-gray-800">Live Signal Monitoring</h2>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => setIsPaused(!isPaused)}
+                                    className={`px-4 py-2 rounded-lg font-medium ${isPaused ? 'bg-green-600' : 'bg-yellow-600'} text-white`}
+                                >
+                                    {isPaused ? '▶ Resume' : '⏸ Pause'}
+                                </button>
+                                <select
+                                    value={timeWindow}
+                                    onChange={(e) => setTimeWindow(Number(e.target.value))}
+                                    className="px-4 py-2 border border-gray-300 rounded-lg"
+                                >
+                                    <option value={125}>5s</option>
+                                    <option value={250}>10s</option>
+                                    <option value={750}>30s</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <SignalChart title="EEG - Brain Waves" data={eegData} color="#3b82f6" timeWindow={timeWindow} />
+                    <SignalChart title="EOG - Eye Movement" data={eogData} color="#10b981" timeWindow={timeWindow} />
+                    <SignalChart title="EMG - Muscle Activity" data={emgData} color="#f59e0b" timeWindow={timeWindow} />
+                </div>
+            );
+        }
+
+        // ==================== COMMAND VISUALIZER ====================
+        
+        function CommandVisualizer({ wsData }) {
+            const [commands, setCommands] = useState([]);
+            const [liveText, setLiveText] = useState('');
+            const [activeKey, setActiveKey] = useState(null);
+            
+            const keyboard = [
+                ['A', 'B', 'C', 'D', 'E'],
+                ['F', 'G', 'H', 'I', 'J'],
+                ['K', 'L', 'M', 'N', 'O'],
+                ['P', 'Q', 'R', 'S', 'T'],
+                ['U', 'V', 'W', 'X', 'Y', 'Z']
+            ];
+            
+            useEffect(() => {
+                if (!wsData) return;
+                
+                try {
+                    const parsed = JSON.parse(wsData.data);
+                    if (parsed.type !== 'command') return;
+                    
+                    const cmd = { ...parsed, id: Date.now() };
+                    setCommands(prev => [cmd, ...prev].slice(0, 20));
+                    
+                    setActiveKey(parsed.command);
+                    setTimeout(() => setActiveKey(null), 300);
+                    
+                    if (parsed.command === 'ENTER') {
+                        // Trigger enter animation
+                    } else if (parsed.command === 'BACKSPACE') {
+                        setLiveText(prev => prev.slice(0, -1));
+                    } else {
+                        setLiveText(prev => prev + parsed.command);
+                    }
+                } catch (e) {}
+            }, [wsData]);
+            
+            return (
+                <div className="space-y-4">
+                    <div className="bg-white rounded-lg shadow p-6">
+                        <h2 className="text-2xl font-bold text-gray-800 mb-4">Command Recognition</h2>
+                        
+                        <div className="bg-gray-100 rounded-lg p-4 mb-4">
+                            <div className="text-sm text-gray-600 mb-2">Live Text Preview:</div>
+                            <div className="text-2xl font-mono min-h-[3rem] bg-white rounded p-3">
+                                {liveText || <span className="text-gray-400">Waiting for input...</span>}
+                            </div>
+                        </div>
+                        
+                        <div className="space-y-2 mb-4">
+                            {keyboard.map((row, i) => (
+                                <div key={i} className="flex justify-center gap-2">
+                                    {row.map(key => (
+                                        <div
+                                            key={key}
+                                            className={`command-key w-12 h-12 flex items-center justify-center rounded-lg border-2 font-semibold
+                                                ${activeKey === key ? 'active border-blue-500 text-white' : 'border-gray-300 bg-white text-gray-700'}`}
+                                        >
+                                            {key}
+                                        </div>
+                                    ))}
+                                </div>
+                            ))}
+                            <div className="flex justify-center gap-2 mt-4">
+                                <div className={`command-key px-6 h-12 flex items-center justify-center rounded-lg border-2 font-semibold
+                                    ${activeKey === 'BACKSPACE' ? 'active border-blue-500 text-white' : 'border-gray-300 bg-white text-gray-700'}`}>
+                                    ⌫ BACK
+                                </div>
+                                <div className={`command-key px-12 h-12 flex items-center justify-center rounded-lg border-2 font-semibold
+                                    ${activeKey === 'ENTER' ? 'active border-green-500 text-white' : 'border-gray-300 bg-white text-gray-700'}`}>
+                                    ↵ ENTER
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div className="bg-white rounded-lg shadow p-6">
+                        <h3 className="text-lg font-semibold text-gray-800 mb-4">Command Timeline</h3>
+                        <div className="space-y-2 max-h-64 overflow-y-auto scrollbar-hide">
+                            {commands.map(cmd => (
+                                <div key={cmd.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-2xl font-bold text-blue-600">{cmd.command}</span>
+                                        <span className="text-sm text-gray-600">
+                                            {new Date(cmd.timestamp).toLocaleTimeString()}
+                                        </span>
+                                    </div>
+                                    <div className="text-sm font-medium text-gray-700">
+                                        {(cmd.confidence * 100).toFixed(1)}%
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ==================== RECORDINGS ====================
+        
+        function RecordingsView() {
+            const [recordings, setRecordings] = useState([]);
+            const [isRecording, setIsRecording] = useState(false);
+            const [recordingName, setRecordingName] = useState('');
+            
+            const startRecording = () => {
+                const name = recordingName || `Recording ${recordings.length + 1}`;
+                setIsRecording(true);
+                // Mock recording start
+            };
+            
+            const stopRecording = () => {
+                setIsRecording(false);
+                const newRecording = {
+                    id: Date.now(),
+                    name: recordingName || `Recording ${recordings.length + 1}`,
+                    timestamp: Date.now(),
+                    duration: 10,
+                    size: '2.5 MB'
+                };
+                setRecordings(prev => [newRecording, ...prev]);
+                setRecordingName('');
+            };
+            
+            const downloadRecording = (recording, format) => {
+                alert(`Downloading ${recording.name} as ${format}`);
+            };
+            
+            const deleteRecording = (id) => {
+                setRecordings(prev => prev.filter(r => r.id !== id));
+            };
+            
+            return (
+                <div className="space-y-4">
+                    <div className="bg-white rounded-lg shadow p-6">
+                        <h2 className="text-2xl font-bold text-gray-800 mb-4">Signal Recordings</h2>
+                        
+                        <div className="flex gap-4 mb-6">
+                            <input
+                                type="text"
+                                value={recordingName}
+                                onChange={(e) => setRecordingName(e.target.value)}
+                                placeholder="Recording name..."
+                                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg"
+                                disabled={isRecording}
+                            />
+                            <button
+                                onClick={isRecording ? stopRecording : startRecording}
+                                className={`px-6 py-2 rounded-lg font-semibold text-white ${
+                                    isRecording ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'
+                                }`}
+                            >
+                                {isRecording ? '⏹ Stop Recording' : '⏺ Start Recording'}
+                            </button>
+                        </div>
+                        
+                        {isRecording && (
+                            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-4 h-4 bg-red-600 rounded-full pulse"></div>
+                                    <span className="text-red-800 font-semibold">Recording in progress...</span>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                    
+                    <div className="bg-white rounded-lg shadow p-6">
+                        <h3 className="text-lg font-semibold text-gray-800 mb-4">Saved Recordings</h3>
+                        <div className="space-y-3">
+                            {recordings.length === 0 ? (
+                                <p className="text-gray-500 text-center py-8">No recordings yet. Start recording to save signal data.</p>
+                            ) : (
+                                recordings.map(rec => (
+                                    <div key={rec.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                                        <div>
+                                            <div className="font-semibold text-gray-800">{rec.name}</div>
+                                            <div className="text-sm text-gray-600">
+                                                {new Date(rec.timestamp).toLocaleString()} • {rec.duration}s • {rec.size}
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700">▶</button>
+                                            <button 
+                                                onClick={() => downloadRecording(rec, 'JSON')}
+                                                className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700"
+                                            >
+                                                JSON
+                                            </button>
+                                            <button 
+                                                onClick={() => downloadRecording(rec, 'CSV')}
+                                                className="px-3 py-1 bg-purple-600 text-white rounded hover:bg-purple-700"
+                                            >
+                                                CSV
+                                            </button>
+                                            <button 
+                                                onClick={() => deleteRecording(rec.id)}
+                                                className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+                                            >
+                                                🗑
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ==================== DEVICES ====================
+        
+        function DevicesView() {
+            const [selectedSensors, setSelectedSensors] = useState(['EEG', 'EOG', 'EMG']);
+            const [samplingRate, setSamplingRate] = useState(250);
+            const [filterLow, setFilterLow] = useState(1);
+            const [filterHigh, setFilterHigh] = useState(45);
+            
+            return (
+                <div className="space-y-4">
+                    <div className="bg-white rounded-lg shadow p-6">
+                        <h2 className="text-2xl font-bold text-gray-800 mb-6">Device Configuration</h2>
+                        
+                        <div className="space-y-6">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-3">Sensor Selection</label>
+                                <div className="flex gap-4">
+                                    {['EEG', 'EOG', 'EMG'].map(sensor => (
+                                        <label key={sensor} className="flex items-center gap-2 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedSensors.includes(sensor)}
+                                                onChange={(e) => {
+                                                    if (e.target.checked) {
+                                                        setSelectedSensors(prev => [...prev, sensor]);
+                                                    } else {
+                                                        setSelectedSensors(prev => prev.filter(s => s !== sensor));
+                                                    }
+                                                }}
+                                                className="w-5 h-5"
+                                            />
+                                            <span className="font-medium">{sensor}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+                            
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Sampling Rate (Hz)</label>
+                                <select 
+                                    value={samplingRate}
+                                    onChange={(e) => setSamplingRate(Number(e.target.value))}
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                                >
+                                    <option value={125}>125 Hz</option>
+                                    <option value={250}>250 Hz</option>
+                                    <option value={500}>500 Hz</option>
+                                    <option value={1000}>1000 Hz</option>
+                                </select>
+                            </div>
+                            
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">High-pass Filter (Hz)</label>
+                                    <input
+                                        type="number"
+                                        value={filterLow}
+                                        onChange={(e) => setFilterLow(Number(e.target.value))}
+                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Low-pass Filter (Hz)</label>
+                                    <input
+                                        type="number"
+                                        value={filterHigh}
+                                        onChange={(e) => setFilterHigh(Number(e.target.value))}
+                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                                    />
+                                </div>
+                            </div>
+                            
+                            <button className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700">
+                                🧪 Test Stream
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div className="bg-white rounded-lg shadow p-6">
+                        <h3 className="text-lg font-semibold text-gray-800 mb-4">Saved Profiles</h3>
+                        <p className="text-gray-600">No saved device profiles. Configure and save a profile above.</p>
+                    </div>
+                </div>
+            );
+        }
+
+        // ==================== CHAT ====================
+        
+        function ChatView({ wsData }) {
+            const [messages, setMessages] = useState([]);
+            const [input, setInput] = useState('');
+            const messagesEndRef = useRef(null);
+            
+            useEffect(() => {
+                if (!wsData) return;
+                
+                try {
+                    const parsed = JSON.parse(wsData.data);
+                    if (parsed.type === 'command' && parsed.command === 'ENTER') {
+                        // Auto-send when ENTER detected
+                        if (input.trim()) {
+                            sendMessage();
+                        }
+                    }
+                } catch (e) {}
+            }, [wsData]);
+            
+            useEffect(() => {
+                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }, [messages]);
+            
+            const sendMessage = () => {
+                if (!input.trim()) return;
+                
+                const userMsg = {
+                    id: Date.now(),
+                    text: input,
+                    sender: 'user',
+                    timestamp: Date.now()
+                };
+                
+                setMessages(prev => [...prev, userMsg]);
+                setInput('');
+                
+                // Mock bot response
+                setTimeout(() => {
+                    const botMsg = {
+                        id: Date.now() + 1,
+                        text: `Echo: ${input}`,
+                        sender: 'bot',
+                        timestamp: Date.now()
+                    };
+                    setMessages(prev => [...prev, botMsg]);
+                }, 500);
+            };
+            
+            return (
+                <div className="bg-white rounded-lg shadow h-[600px] flex flex-col">
+                    <div className="p-4 border-b">
+                        <h2 className="text-2xl font-bold text-gray-800">BCI Chat</h2>
+                        <p className="text-sm text-gray-600">Messages are sent automatically when ENTER command is recognized</p>
+                    </div>
+                    
+                    <div className="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-hide">
+                        {messages.map(msg => (
+                            <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                <div className={`message-bubble rounded-lg p-3 ${
+                                    msg.sender === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-800'
+                                }`}>
+                                    <div className="text-sm">{msg.text}</div>
+                                    <div className={`text-xs mt-1 ${msg.sender === 'user' ? 'text-blue-100' : 'text-gray-600'}`}>
+                                        {new Date(msg.timestamp).toLocaleTimeString()}
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                        <div ref={messagesEndRef} />
+                    </div>
+                    
+                    <div className="p-4 border-t">
+                        <div className="flex gap-2">
+                            <input
+                                type="text"
+                                value={input}
+                                onChange={(e) => setInput(e.target.value)}
+                                onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                                placeholder="Type a message..."
+                                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg"
+                            />
+                            <button
+                                onClick={sendMessage}
+                                className="px-6 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700"
+                            >
+                                Send
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ==================== MAIN DASHBOARD ====================
+        
+        function Dashboard() {
+            const { user, logout } = React.useContext(AuthContext);
+            const [currentPage, setCurrentPage] = useState('live');
+            const [sidebarOpen, setSidebarOpen] = useState(true);
+            const { status, lastMessage, latency, connect, disconnect } = useWebSocket('ws://localhost:8765');
+            
+            useEffect(() => {
+                connect();
+            }, []);
+            
+            const pages = [
+                { id: 'live', name: 'Live Signals', icon: '📊' },
+                { id: 'commands', name: 'Commands', icon: '⌨️' },
+                { id: 'recordings', name: 'Recordings', icon: '💾' },
+                { id: 'devices', name: 'Devices', icon: '🔌' },
+                { id: 'chat', name: 'Chat', icon: '💬' }
+            ];
+            
+            return (
+                <div className="flex h-screen bg-gray-100">
+                    {/* Sidebar */}
+                    <div className={`sidebar bg-gray-900 text-white w-64 ${!sidebarOpen && 'collapsed'}`}>
+                        <div className="p-4 border-b border-gray-700">
+                            <div className="text-2xl font-bold">🧠 BCI</div>
+                        </div>
+                        <nav className="p-4 space-y-2">
+                            {pages.map(page => (
+                                <button
+                                    key={page.id}
+                                    onClick={() => setCurrentPage(page.id)}
+                                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${
+                                        currentPage === page.id ? 'bg-blue-600' : 'hover:bg-gray-800'
+                                    }`}
+                                >
+                                    <span className="text-xl">{page.icon}</span>
+                                    <span className="font-medium">{page.name}</span>
+                                </button>
+                            ))}
+                        </nav>
+                    </div>
+                    
+                    {/* Main Content */}
+                    <div className="flex-1 flex flex-col">
+                        {/* Topbar */}
+                        <div className="bg-white shadow px-6 py-4">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-4">
+                                    <button 
+                                        onClick={() => setSidebarOpen(!sidebarOpen)}
+                                        className="text-2xl"
+                                    >
+                                        ☰
+                                    </button>
+                                    <h1 className="text-xl font-bold text-gray-800">
+                                        {pages.find(p => p.id === currentPage)?.name}
+                                    </h1>
+                                </div>
+                                
+                                <div className="flex items-center gap-4">
+                                    {/* WebSocket Status */}
+                                    <div className="flex items-center gap-2 px-3 py-2 bg-gray-100 rounded-lg">
+                                        <div className={`status-dot status-${status}`}></div>
+                                        <span className="text-sm font-medium">{status}</span>
+                                        {status === 'connected' && (
+                                            <span className="text-xs text-gray-600">| {latency.toFixed(0)}ms</span>
+                                        )}
+                                    </div>
+                                    
+                                    {status === 'connected' ? (
+                                        <button 
+                                            onClick={disconnect}
+                                            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                                        >
+                                            Disconnect
+                                        </button>
+                                    ) : (
+                                        <button 
+                                            onClick={connect}
+                                            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                                        >
+                                            Connect
+                                        </button>
+                                    )}
+                                    
+                                    {/* User Menu */}
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-2xl">{user.avatar}</span>
+                                        <span className="font-medium">{user.name}</span>
+                                        <button 
+                                            onClick={logout}
+                                            className="ml-2 px-3 py-1 bg-gray-200 rounded hover:bg-gray-300"
+                                        >
+                                            Logout
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        {/* Page Content */}
+                        <div className="flex-1 overflow-y-auto p-6">
+                            {currentPage === 'live' && <LiveView wsData={lastMessage} />}
+                            {currentPage === 'commands' && <CommandVisualizer wsData={lastMessage} />}
+                            {currentPage === 'recordings' && <RecordingsView />}
+                            {currentPage === 'devices' && <DevicesView />}
+                            {currentPage === 'chat' && <ChatView wsData={lastMessage} />}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ==================== APP ROOT ====================
+        
+        function App() {
+            const { user, loading } = React.useContext(AuthContext);
+            
+            if (loading) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center">
+                        <div className="text-2xl">Loading...</div>
+                    </div>
+                );
+            }
+            
+            return user ? <Dashboard /> : <LoginPage />;
+        }
+
+        // ==================== RENDER ====================
+        
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(
+            <AuthProvider>
+                <App />
+            </AuthProvider>
+        );
+    </script>
+</body>
+</html>

@@ -18,6 +18,7 @@ export function useWebSocket(url) {
   const connect = () => {
     if (socketRef.current?.connected) return
 
+    console.log(`🔌 Connecting to WebSocket: ${url}`)
     setStatus('connecting')
 
     // Extract base URL (remove /api/stream if present)
@@ -113,6 +114,31 @@ export function useWebSocket(url) {
   useEffect(() => {
     return () => disconnect()
   }, [])
+
+  const sendMessage = useCallback(
+    (data) => {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        try {
+          wsRef.current.send(JSON.stringify(data))
+          console.log('📤 Sent message:', data)
+        } catch (e) {
+          console.error('❌ Failed to send message:', e)
+        }
+      } else {
+        console.warn('⚠️  WebSocket not connected, cannot send message:', data)
+      }
+    },
+    []
+  )
+
+  // Auto-connect on mount, cleanup on unmount
+  useEffect(() => {
+    connect()
+
+    return () => {
+      disconnect()
+    }
+  }, [connect, disconnect])
 
   return {
     status,

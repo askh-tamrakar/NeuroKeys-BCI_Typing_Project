@@ -29,7 +29,10 @@ export default function SignalChart({
   byChannel = null,
   color = '#3b82f6',
   timeWindowMs = 10000,
-  channelLabelPrefix = 'Ch'
+  channelLabelPrefix = 'Ch',
+  height = 300,
+  yDomainProp = null,
+  showGrid = true
 }) {
   // If byChannel present -> merge into single array
   const merged = useMemo(() => {
@@ -43,7 +46,7 @@ export default function SignalChart({
       // sort
       filtered.sort((a, b) => a.time - b.time)
       // map to same shape (time & value)
-      return { dataArray: filtered.map(d => ({ time: Number(d.time), value: Number(d.value) })) , channelKeys: [] }
+      return { dataArray: filtered.map(d => ({ time: Number(d.time), value: Number(d.value) })), channelKeys: [] }
     }
 
     // Multi-channel: get each channel array, filter by time window relative to their newest
@@ -125,51 +128,86 @@ export default function SignalChart({
       if (Number.isFinite(v)) values.push(v)
     })
   }
+
+  // Calculate stats
   const min = values.length ? Math.min(...values) : -1
   const max = values.length ? Math.max(...values) : 1
-  const pad = Math.max((max - min) * 0.1, 0.01)
-  const yDomain = [min - pad, max + pad]
   const mean = values.length ? (values.reduce((a, b) => a + b, 0) / values.length) : 0
 
+  // Determine domain
+  const pad = Math.max((max - min) * 0.1, 0.01)
+  const calculatedDomain = [min - pad, max + pad]
+  const finalYDomain = yDomainProp || calculatedDomain
+
   return (
-    <div className="bg-white rounded-lg shadow p-4">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-semibold text-gray-800">{title}</h3>
-        <div className="text-sm text-gray-600">
+    <div className="bg-card surface-panel border border-border shadow-sm rounded-xl overflow-hidden flex flex-col h-full bg-surface">
+      <div className="px-5 py-3 border-b border-border bg-bg/50 backdrop-blur-sm flex justify-between items-center">
+        <h3 className="font-bold text-text flex items-center gap-2">
+          <span className="w-2 h-6 rounded-full" style={{ backgroundColor: color }}></span>
+          {title}
+        </h3>
+
+        <div className="flex gap-4 text-xs font-mono text-muted">
           {dataArray.length > 0 && (
             <>
-              <span>Min: {min.toFixed(3)}</span>
-              <span className="mx-2">|</span>
-              <span>Max: {max.toFixed(3)}</span>
-              <span className="mx-2">|</span>
-              <span>Mean: {mean.toFixed(3)}</span>
+              <div className="flex flex-col items-end">
+                <span className="opacity-50 text-[10px] uppercase tracking-wider">Min</span>
+                <span className="font-medium text-text">{min.toFixed(2)}</span>
+              </div>
+              <div className="w-[1px] h-6 bg-border/50"></div>
+              <div className="flex flex-col items-end">
+                <span className="opacity-50 text-[10px] uppercase tracking-wider">Max</span>
+                <span className="font-medium text-text">{max.toFixed(2)}</span>
+              </div>
+              <div className="w-[1px] h-6 bg-border/50"></div>
+              <div className="flex flex-col items-end">
+                <span className="opacity-50 text-[10px] uppercase tracking-wider">Mean</span>
+                <span className="font-medium text-text">{mean.toFixed(2)}</span>
+              </div>
             </>
           )}
         </div>
       </div>
 
-      <div className="chart-container" style={{ width: '100%', height: 260 }}>
+      <div className="relative w-full p-2 flex-grow" style={{ height: height }}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={dataArray}>
-            <CartesianGrid strokeDasharray="3 3" />
+            {showGrid && <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />}
             <XAxis
               dataKey="time"
               type="number"
               domain={['dataMin', 'dataMax']}
-              tickFormatter={(t) => {
-                const n = Number(t)
-                return Number.isFinite(n) ? new Date(n).toLocaleTimeString() : String(t)
-              }}
+              tickFormatter={(t) => new Date(t).toLocaleTimeString([], { hour12: false, minute: '2-digit', second: '2-digit' })}
+              stroke="var(--muted)"
+              fontSize={10}
+              tickLine={false}
+              axisLine={false}
+              dy={10}
             />
-            <YAxis domain={yDomain} />
+            <YAxis
+              domain={finalYDomain}
+              stroke="var(--muted)"
+              fontSize={10}
+              tickLine={false}
+              axisLine={false}
+              tickFormatter={(v) => v.toFixed(1)}
+              width={40}
+            />
             <Tooltip
-              labelFormatter={(t) => {
-                const n = Number(t)
-                return Number.isFinite(n) ? new Date(n).toLocaleTimeString() : String(t)
+              contentStyle={{
+                backgroundColor: 'var(--surface)',
+                borderColor: 'var(--border)',
+                borderRadius: '8px',
+                color: 'var(--text)',
+                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
               }}
-              formatter={(v) => (Number.isFinite(Number(v)) ? Number(v).toFixed(4) : v)}
+              labelStyle={{ color: 'var(--muted)', marginBottom: '0.5rem', fontSize: '12px' }}
+              itemStyle={{ fontSize: '12px', padding: '2px 0' }}
+              labelFormatter={(t) => new Date(Number(t)).toLocaleTimeString() + `.${new Date(Number(t)).getMilliseconds()}`}
+              formatter={(v) => [Number(v).toFixed(3), '']}
             />
-            <Legend />
+            <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+
             {byChannel && channelKeys.length ? (
               channelKeys.map((k, idx) => (
                 <Line
@@ -179,6 +217,7 @@ export default function SignalChart({
                   name={`${channelLabelPrefix ?? 'Ch'} ${k}`}
                   stroke={DEFAULT_PALETTE[idx % DEFAULT_PALETTE.length]}
                   dot={false}
+                  strokeWidth={1.5}
                   isAnimationActive={false}
                   connectNulls={false}
                 />
@@ -187,9 +226,12 @@ export default function SignalChart({
               <Line
                 type="monotone"
                 dataKey="value"
+                name="Signal"
                 stroke={color}
                 dot={false}
+                strokeWidth={2}
                 isAnimationActive={false}
+                fill={`url(#gradient-${title})`}
               />
             )}
           </LineChart>

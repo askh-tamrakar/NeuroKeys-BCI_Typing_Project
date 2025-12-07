@@ -29,226 +29,227 @@ export default function TestView() {
 
 =======
 >>>>>>> 4aea55fa82e942f66ba5f615ab0836826e7ad32b
-import { motion } from "framer-motion";
-import {
-  LineChart,
-  Line,
-  ResponsiveContainer,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Legend,
-} from "recharts";
+  import { motion } from "framer-motion";
+  import {
+    LineChart,
+    Line,
+    ResponsiveContainer,
+    XAxis,
+    YAxis,
+    Tooltip,
+    Legend,
+  } from "recharts";
 <<<<<<< HEAD
 
 
-// ----- CONFIG -----
-const DEFAULT_WS = 'http://localhost:5000';
-const SAMPLE_RATE = 250; // Hz (assumption) - adjust to your hardware
-const MAX_POINTS = 1024; // points kept per channel for plotting
-const EEG_CHANNELS = ["Fp1", "Fp2", "F7", "F8", "C3", "C4", "P3", "P4", "O1", "O2"];
-const EOG_CHANNELS = ["Left", "Right"];
-const EMG_CHANNELS = ["Arm", "Forearm"];
+  // ----- CONFIG -----
+  const DEFAULT_WS = 'http://localhost:5000';
+  const SAMPLE_RATE = 250; // Hz (assumption) - adjust to your hardware
+  const MAX_POINTS = 1024; // points kept per channel for plotting
+  const EEG_CHANNELS = ["Fp1", "Fp2", "F7", "F8", "C3", "C4", "P3", "P4", "O1", "O2"];
+  const EOG_CHANNELS = ["Left", "Right"];
+  const EMG_CHANNELS = ["Arm", "Forearm"];
 
 
-// ----- Small Biquad implementation (RBJ cookbook) -----
-class Biquad {
-  constructor(type = "bandpass", fs = SAMPLE_RATE, f0 = 50, Q = 1) {
-    this.type = type;
-    this.fs = fs;
-    this.f0 = f0;
-    this.Q = Q;
-    this.x1 = 0; // previous input
-    this.x2 = 0; // input-2
-    this.y1 = 0; // previous output
-    this.y2 = 0; // output-2
-    this.updateCoeffs();
-  }
-
-
-  updateCoeffs() {
-    const omega = (2 * Math.PI * this.f0) / this.fs;
-    const alpha = Math.sin(omega) / (2 * this.Q);
-    const cosw = Math.cos(omega);
-    let b0, b1, b2, a0, a1, a2;
-
-
-    switch (this.type) {
-      case "notch":
-        b0 = 1; b1 = -2 * cosw; b2 = 1;
-        a0 = 1 + alpha; a1 = -2 * cosw; a2 = 1 - alpha;
-        break;
-      case "bandpass":
-        b0 = alpha; b1 = 0; b2 = -alpha;
-        a0 = 1 + alpha; a1 = -2 * cosw; a2 = 1 - alpha;
-        break;
-      default:
-        // bypass
-        b0 = 1; b1 = 0; b2 = 0; a0 = 1; a1 = 0; a2 = 0; break;
+  // ----- Small Biquad implementation (RBJ cookbook) -----
+  class Biquad {
+    constructor(type = "bandpass", fs = SAMPLE_RATE, f0 = 50, Q = 1) {
+      this.type = type;
+      this.fs = fs;
+      this.f0 = f0;
+      this.Q = Q;
+      this.x1 = 0; // previous input
+      this.x2 = 0; // input-2
+      this.y1 = 0; // previous output
+      this.y2 = 0; // output-2
+      this.updateCoeffs();
     }
 
 
-    this.b0 = b0 / a0; this.b1 = b1 / a0; this.b2 = b2 / a0;
-    this.a1 = a1 / a0; this.a2 = a2 / a0;
+    updateCoeffs() {
+      const omega = (2 * Math.PI * this.f0) / this.fs;
+      const alpha = Math.sin(omega) / (2 * this.Q);
+      const cosw = Math.cos(omega);
+      let b0, b1, b2, a0, a1, a2;
+
+
+      switch (this.type) {
+        case "notch":
+          b0 = 1; b1 = -2 * cosw; b2 = 1;
+          a0 = 1 + alpha; a1 = -2 * cosw; a2 = 1 - alpha;
+          break;
+        case "bandpass":
+          b0 = alpha; b1 = 0; b2 = -alpha;
+          a0 = 1 + alpha; a1 = -2 * cosw; a2 = 1 - alpha;
+          break;
+        default:
+          // bypass
+          b0 = 1; b1 = 0; b2 = 0; a0 = 1; a1 = 0; a2 = 0; break;
+      }
+
+
+      this.b0 = b0 / a0; this.b1 = b1 / a0; this.b2 = b2 / a0;
+      this.a1 = a1 / a0; this.a2 = a2 / a0;
+    }
+
+
+    setParams({ type, f0, Q, fs }) {
+      if (type) this.type = type;
+      if (f0) this.f0 = f0;
+      if (Q) this.Q = Q;
+      if (fs) this.fs = fs;
+      this.updateCoeffs();
+    }
+
+
+    processSample(x) {
+      // Direct Form 1 (using stored x1,x2,y1,y2 properly)
+      const y = this.b0 * x + this.b1 * this.x1 + this.b2 * this.x2 - this.a1 * this.y1 - this.a2 * this.y2;
+      this.x2 = this.x1;
+      this.x1 = x;
+      this.y2 = this.y1;
+      this.y1 = y;
+      return y;
+    }
+
+
+    processBlock(xs) {
+      return xs.map((v) => this.processSample(v));
+    }
   }
 
 
-  setParams({ type, f0, Q, fs }) {
-    if (type) this.type = type;
-    if (f0) this.f0 = f0;
-    if (Q) this.Q = Q;
-    if (fs) this.fs = fs;
-    this.updateCoeffs();
-  }
-
-
-  processSample(x) {
-    // Direct Form 1 (using stored x1,x2,y1,y2 properly)
-    const y = this.b0 * x + this.b1 * this.x1 + this.b2 * this.x2 - this.a1 * this.y1 - this.a2 * this.y2;
-    this.x2 = this.x1;
-    this.x1 = x;
-    this.y2 = this.y1;
-    this.y1 = y;
-    return y;
-  }
-
-
-  processBlock(xs) {
-    return xs.map((v) => this.processSample(v));
-  }
-}
-
-
-// ----- Simple FFT (radix-2, iterative) -----
-function fft(re, im) {
-  const n = re.length;
-  if ((n & (n - 1)) !== 0) throw new Error("FFT size must be power of two");
-  let j = 0;
-  for (let i = 1; i < n - 1; i++) {
-    let bit = n >> 1;
-    while (j & bit) {
+  // ----- Simple FFT (radix-2, iterative) -----
+  function fft(re, im) {
+    const n = re.length;
+    if ((n & (n - 1)) !== 0) throw new Error("FFT size must be power of two");
+    let j = 0;
+    for (let i = 1; i < n - 1; i++) {
+      let bit = n >> 1;
+      while (j & bit) {
+        j ^= bit;
+        bit >>= 1;
+      }
       j ^= bit;
-      bit >>= 1;
+      if (i < j) {
+        [re[i], re[j]] = [re[j], re[i]];
+        [im[i], im[j]] = [im[j], im[i]];
+      }
     }
-    j ^= bit;
-    if (i < j) {
-      [re[i], re[j]] = [re[j], re[i]];
-      [im[i], im[j]] = [im[j], im[i]];
-    }
-  }
-  for (let len = 2; len <= n; len <<= 1) {
-    const ang = (-2 * Math.PI) / len;
-    const wlen_r = Math.cos(ang);
-    const wlen_i = Math.sin(ang);
-    for (let i = 0; i < n; i += len) {
-      let wr = 1;
-      let wi = 0;
-      for (let k = 0; k < len / 2; k++) {
-        const u_r = re[i + k];
-        const u_i = im[i + k];
-        const v_r = re[i + k + len / 2] * wr - im[i + k + len / 2] * wi;
-        const v_i = re[i + k + len / 2] * wi + im[i + k + len / 2] * wr;
-        re[i + k] = u_r + v_r;
-        im[i + k] = u_i + v_i;
-        re[i + k + len / 2] = u_r - v_r;
-        im[i + k + len / 2] = u_i - v_i;
-        const tmp_r = wr * wlen_r - wi * wlen_i;
-        wi = wr * wlen_i + wi * wlen_r;
-        wr = tmp_r;
+    for (let len = 2; len <= n; len <<= 1) {
+      const ang = (-2 * Math.PI) / len;
+      const wlen_r = Math.cos(ang);
+      const wlen_i = Math.sin(ang);
+      for (let i = 0; i < n; i += len) {
+        let wr = 1;
+        let wi = 0;
+        for (let k = 0; k < len / 2; k++) {
+          const u_r = re[i + k];
+          const u_i = im[i + k];
+          const v_r = re[i + k + len / 2] * wr - im[i + k + len / 2] * wi;
+          const v_i = re[i + k + len / 2] * wi + im[i + k + len / 2] * wr;
+          re[i + k] = u_r + v_r;
+          im[i + k] = u_i + v_i;
+          re[i + k + len / 2] = u_r - v_r;
+          im[i + k + len / 2] = u_i - v_i;
+          const tmp_r = wr * wlen_r - wi * wlen_i;
+          wi = wr * wlen_i + wi * wlen_r;
+          wr = tmp_r;
+        }
       }
     }
   }
-}
 
 
-function computeMagnitudeSpectrum(samples) {
-  if (!samples || samples.length === 0) return [];
-  // Zero-pad to next power of two
-  let n = 1;
-  while (n < samples.length) n <<= 1;
-  const re = new Array(n).fill(0);
-  const im = new Array(n).fill(0);
-  for (let i = 0; i < samples.length; i++) re[i] = samples[i];
-  fft(re, im);
-  const mags = new Array(n / 2);
-  for (let i = 0; i < n / 2; i++) mags[i] = Math.sqrt(re[i] * re[i] + im[i] * im[i]) / n;
-  return mags;
-}
-
-
-// ----- Helper: downsample for plotting -----
-// returns array of objects { index, value } so Recharts XAxis can use 'index'
-function downsample(data, maxPoints) {
-  const arr = data || [];
-  if (arr.length <= maxPoints) return arr.map((d, i) => ({ index: i, value: d.value }));
-  const step = arr.length / maxPoints;
-  const out = [];
-  for (let i = 0; i < maxPoints; i++) {
-    const idx = Math.floor(i * step);
-    out.push({ index: i, value: arr[idx].value });
+  function computeMagnitudeSpectrum(samples) {
+    if (!samples || samples.length === 0) return [];
+    // Zero-pad to next power of two
+    let n = 1;
+    while (n < samples.length) n <<= 1;
+    const re = new Array(n).fill(0);
+    const im = new Array(n).fill(0);
+    for (let i = 0; i < samples.length; i++) re[i] = samples[i];
+    fft(re, im);
+    const mags = new Array(n / 2);
+    for (let i = 0; i < n / 2; i++) mags[i] = Math.sqrt(re[i] * re[i] + im[i] * im[i]) / n;
+    return mags;
   }
-  return out;
-}
 
 
-// ----- Main Component -----
-export default function TestView() {
-  const [wsUrl, setWsUrl] = useState(DEFAULT_WS);
-  const socketRef = useRef(null);
-  const [connected, setConnected] = useState(false);
-  const [debugLog, setDebugLog] = useState([]);
-  const [messagesReceived, setMessagesReceived] = useState(0);
-  const channelsRef = useRef({});
+  // ----- Helper: downsample for plotting -----
+  // returns array of objects { index, value } so Recharts XAxis can use 'index'
+  function downsample(data, maxPoints) {
+    const arr = data || [];
+    if (arr.length <= maxPoints) return arr.map((d, i) => ({ index: i, value: d.value }));
+    const step = arr.length / maxPoints;
+    const out = [];
+    for (let i = 0; i < maxPoints; i++) {
+      const idx = Math.floor(i * step);
+      out.push({ index: i, value: arr[idx].value });
+    }
+    return out;
+  }
 
 
-  // channel data store: { channelName: [{time, value}, ...] }
-  const [channels, setChannels] = useState(() => {
-    const m = {};
-    [...EEG_CHANNELS, ...EOG_CHANNELS, ...EMG_CHANNELS].forEach((c) => (m[c] = []));
-    return m;
-  });
-
-  // Keep ref updated with latest channels
-  useEffect(() => {
-    channelsRef.current = channels;
-  }, [channels]);
+  // ----- Main Component -----
+  export default function TestView() {
+    const [wsUrl, setWsUrl] = useState(DEFAULT_WS);
+    const socketRef = useRef(null);
+    const [connected, setConnected] = useState(false);
+    const [debugLog, setDebugLog] = useState([]);
+    const [messagesReceived, setMessagesReceived] = useState(0);
+    const channelsRef = useRef({});
 
 
-  const [selectedGroup, setSelectedGroup] = useState("EEG");
-  const [selectedChannels, setSelectedChannels] = useState(EEG_CHANNELS.slice(0, 3));
-
-
-  // filters
-  const [bandpassEnabled, setBandpassEnabled] = useState(false);
-  const [bpLow, setBpLow] = useState(1);
-  const [bpHigh, setBpHigh] = useState(40);
-  const [notchEnabled, setNotchEnabled] = useState(false);
-  const [notchFreq, setNotchFreq] = useState(50);
-
-
-  // biquad instances per channel (kept in ref so they're persistent between renders)
-  const filtersRef = useRef({});
-  useEffect(() => {
-    // (re)create filters when params change
-    Object.keys(filtersRef.current).forEach((ch) => {
-      const obj = filtersRef.current[ch];
-      if (!obj) return;
-      if (bandpassEnabled) obj.bandpass.setParams({ type: "bandpass", f0: (bpLow + bpHigh) / 2, Q: Math.max(0.1, (bpHigh - bpLow) / ((bpLow + bpHigh) / 2)) });
-      if (notchEnabled) obj.notch.setParams({ type: "notch", f0: notchFreq, Q: 30 });
+    // channel data store: { channelName: [{time, value}, ...] }
+    const [channels, setChannels] = useState(() => {
+      const m = {};
+      [...EEG_CHANNELS, ...EOG_CHANNELS, ...EMG_CHANNELS].forEach((c) => (m[c] = []));
+      return m;
     });
-  }, [bpLow, bpHigh, notchFreq, bandpassEnabled, notchEnabled]);
+
+    // Keep ref updated with latest channels
+    useEffect(() => {
+      channelsRef.current = channels;
+    }, [channels]);
+
+
+    const [selectedGroup, setSelectedGroup] = useState("EEG");
+    const [selectedChannels, setSelectedChannels] = useState(EEG_CHANNELS.slice(0, 3));
+
+
+    // filters
+    const [bandpassEnabled, setBandpassEnabled] = useState(false);
+    const [bpLow, setBpLow] = useState(1);
+    const [bpHigh, setBpHigh] = useState(40);
+    const [notchEnabled, setNotchEnabled] = useState(false);
+    const [notchFreq, setNotchFreq] = useState(50);
+
+
+    // biquad instances per channel (kept in ref so they're persistent between renders)
+    const filtersRef = useRef({});
+    useEffect(() => {
+      // (re)create filters when params change
+      Object.keys(filtersRef.current).forEach((ch) => {
+        const obj = filtersRef.current[ch];
+        if (!obj) return;
+        if (bandpassEnabled) obj.bandpass.setParams({ type: "bandpass", f0: (bpLow + bpHigh) / 2, Q: Math.max(0.1, (bpHigh - bpLow) / ((bpLow + bpHigh) / 2)) });
+        if (notchEnabled) obj.notch.setParams({ type: "notch", f0: notchFreq, Q: 30 });
+      });
+    }, [bpLow, bpHigh, notchFreq, bandpassEnabled, notchEnabled]);
 >>>>>>> Stashed changes
 
 =======
 >>>>>>> 4aea55fa82e942f66ba5f615ab0836826e7ad32b
 
-// ----- CONFIG -----
-const DEFAULT_WS = (typeof process !== "undefined" && process?.env?.NEXT_PUBLIC_BCI_WS) ? process.env.NEXT_PUBLIC_BCI_WS : "ws://localhost:8000/ws";
-const SAMPLE_RATE = 250; // Hz (assumption) - adjust to your hardware
-const MAX_POINTS = 1024; // points kept per channel for plotting
-const EEG_CHANNELS = ["Fp1", "Fp2", "F7", "F8", "C3", "C4", "P3", "P4", "O1", "O2"];
-const EOG_CHANNELS = ["Left", "Right"];
-const EMG_CHANNELS = ["Arm", "Forearm"];
+    // ----- CONFIG -----
+    const DEFAULT_WS = 'http://localhost:5000';
+    const SAMPLE_RATE = 250; // Hz (assumption) - adjust to your hardware
+    const MAX_POINTS = 1024; // points kept per channel for plotting
+    const EEG_CHANNELS = ["Fp1", "Fp2", "F7", "F8", "C3", "C4", "P3", "P4", "O1", "O2"];
+    const EOG_CHANNELS = ["Left", "Right"];
+    const EMG_CHANNELS = ["Arm", "Forearm"];
+
 
 <<<<<<< HEAD
 <<<<<<< Updated upstream
@@ -283,11 +284,13 @@ class Biquad {
     this.updateCoeffs();
   }
 
+
   updateCoeffs() {
     const omega = (2 * Math.PI * this.f0) / this.fs;
     const alpha = Math.sin(omega) / (2 * this.Q);
     const cosw = Math.cos(omega);
     let b0, b1, b2, a0, a1, a2;
+
 
     switch (this.type) {
       case "notch":
@@ -303,9 +306,11 @@ class Biquad {
         b0 = 1; b1 = 0; b2 = 0; a0 = 1; a1 = 0; a2 = 0; break;
     }
 
+
     this.b0 = b0 / a0; this.b1 = b1 / a0; this.b2 = b2 / a0;
     this.a1 = a1 / a0; this.a2 = a2 / a0;
   }
+
 
   setParams({ type, f0, Q, fs }) {
     if (type) this.type = type;
@@ -314,6 +319,7 @@ class Biquad {
     if (fs) this.fs = fs;
     this.updateCoeffs();
   }
+
 
   processSample(x) {
     // Direct Form 1 (using stored x1,x2,y1,y2 properly)
@@ -325,10 +331,12 @@ class Biquad {
     return y;
   }
 
+
   processBlock(xs) {
     return xs.map((v) => this.processSample(v));
   }
 }
+
 
 // ----- Simple FFT (radix-2, iterative) -----
 function fft(re, im) {
@@ -391,7 +399,7 @@ function fft(re, im) {
     // FIXED: Accept current WebSocket format with BETTER debugging
     addDebugLog(`📨 RAW: received data object`);
     setMessagesReceived(prev => prev + 1);
-    
+
     try {
       const ts = data.timestamp || Date.now();
       const source = (data.source || 'EEG').toUpperCase();
@@ -448,7 +456,7 @@ function fft(re, im) {
           const offsetMs = Math.round((i - (maxSamples - 1)) * (1000 / fs));
           const sampleTime = ts + offsetMs;
           const rawValue = Number(samples[i]);
-          
+
           // Apply filters
           let value = rawValue;
           const fset = filtersRef.current[channelName];
@@ -460,7 +468,7 @@ function fft(re, im) {
           if (!updates[channelName]) {
             updates[channelName] = [];
           }
-          
+
           updates[channelName].push({ time: sampleTime, value: value });
         }
       }
@@ -475,10 +483,10 @@ function fft(re, im) {
             addDebugLog(`⚠️ Channel ${ch} not in map (init?)`);
             copy[ch] = [];
           }
-          
+
           const arr = (copy[ch] ? [...copy[ch]] : []);
           arr.push(...points);
-          
+
           if (arr.length > MAX_POINTS) {
             arr.splice(0, arr.length - MAX_POINTS);
           }
@@ -490,11 +498,11 @@ function fft(re, im) {
           if (sb.length > 256) sb.splice(0, sb.length - 256);
           specBufferRef.current[ch] = sb;
         });
-        
+
         // Log update
         const fp1len = copy['Fp1']?.length || 0;
         addDebugLog(`💾 Stored: Fp1=${fp1len} samples`);
-        
+
         return copy;
       });
 
@@ -507,7 +515,7 @@ function fft(re, im) {
 
 <<<<<<< HEAD
 <<<<<<< Updated upstream
-    return () => { if (ws && ws.close) ws.close() }
+return () => { if (ws && ws.close) ws.close() }
   }, [])
 =======
 
@@ -517,10 +525,10 @@ function fft(re, im) {
       addDebugLog(`⚠️ Already connected`);
       return;
     }
-    
+
     try {
       addDebugLog(`🔌 Connecting to ${wsUrl}...`);
-      
+
       const socket = io(wsUrl, {
         reconnection: true,
         reconnectionDelay: 1000,
@@ -585,8 +593,8 @@ function computeMagnitudeSpectrum(samples) {
   return mags;
 }
 
+
 // ----- Helper: downsample for plotting -----
-// returns array of objects { index, value } so Recharts XAxis can use 'index'
 function downsample(data, maxPoints) {
   const arr = data || [];
   if (arr.length <= maxPoints) return arr.map((d, i) => ({ index: i, value: d.value }));
@@ -744,143 +752,199 @@ export default function TestView() {
   };
 
 >>>>>>> 4aea55fa82e942f66ba5f615ab0836826e7ad32b
-  // spectrogram draw loop
-  useEffect(() => {
-    let raf = null;
-    const canvas = specCanvasRef.current;
-    const ctx = canvas ? canvas.getContext("2d") : null;
-    const draw = () => {
-      if (!ctx) return;
-      const width = canvas.width;
-      const height = canvas.height;
-      ctx.fillStyle = "#0b1220";
-      ctx.fillRect(0, 0, width, height);
+// spectrogram draw loop
+useEffect(() => {
+  let raf = null;
+  const canvas = specCanvasRef.current;
+  const ctx = canvas ? canvas.getContext("2d") : null;
+  const draw = () => {
+    if (!ctx) return;
+    const width = canvas.width;
+    const height = canvas.height;
+    ctx.fillStyle = "#0b1220";
+    ctx.fillRect(0, 0, width, height);
 
 <<<<<<< HEAD
 
 =======
 >>>>>>> 4aea55fa82e942f66ba5f615ab0836826e7ad32b
-      // draw spectrogram for the first selected channel (if any)
-      const ch = selectedChannels[0];
-      if (ch && specBufferRef.current[ch] && specBufferRef.current[ch].length >= 32) {
-        // compute spectrum
-        const mags = computeMagnitudeSpectrum(specBufferRef.current[ch]);
-        const binCount = mags.length || 0;
-        if (binCount > 0) {
-          // draw as vertical bars
-          const barW = Math.max(1, Math.floor(width / binCount));
-          for (let i = 0; i < binCount; i++) {
-            const m = mags[i];
-            const intensity = Math.min(1, m * 10);
-            const hue = Math.floor(240 - intensity * 240);
-            // use CSS hsl with commas for broader compatibility
-            ctx.fillStyle = `hsl(${hue}, 100%, ${10 + intensity * 80}%)`;
-            ctx.fillRect(i * barW, height - intensity * height, barW, intensity * height);
-          }
+    // draw spectrogram for the first selected channel (if any)
+    const ch = selectedChannels[0];
+    if (ch && specBufferRef.current[ch] && specBufferRef.current[ch].length >= 32) {
+      // compute spectrum
+      const mags = computeMagnitudeSpectrum(specBufferRef.current[ch]);
+      const binCount = mags.length || 0;
+      if (binCount > 0) {
+        // draw as vertical bars
+        const barW = Math.max(1, Math.floor(width / binCount));
+        for (let i = 0; i < binCount; i++) {
+          const m = mags[i];
+          const intensity = Math.min(1, m * 10);
+          const hue = Math.floor(240 - intensity * 240);
+          ctx.fillStyle = `hsl(${hue}, 100%, ${10 + intensity * 80}%)`;
+          ctx.fillRect(i * barW, height - intensity * height, barW, intensity * height);
         }
-      } else {
-        // placeholder text
-        ctx.fillStyle = "rgba(255,255,255,0.12)";
-        ctx.font = "14px Inter, Arial";
-        ctx.fillText("Spectrogram (select a channel and stream data to see FFT)", 10, height / 2);
       }
+    } else {
+      // placeholder text
+      ctx.fillStyle = "rgba(255,255,255,0.12)";
+      ctx.font = "14px Inter, Arial";
+      ctx.fillText("Spectrogram (select a channel and stream data to see FFT)", 10, height / 2);
+    }
 
 <<<<<<< HEAD
 
 =======
 >>>>>>> 4aea55fa82e942f66ba5f615ab0836826e7ad32b
-      raf = requestAnimationFrame(draw);
-    };
     raf = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(raf);
-  }, [selectedChannels]);
-
-<<<<<<< HEAD
-
-=======
->>>>>>> 4aea55fa82e942f66ba5f615ab0836826e7ad32b
-  // prepare recharts data for multi-line plot
-  const chartData = (() => {
-    // align by index, take last N points and build points object with channel keys
-    const chs = selectedChannels;
-    const maxLen = Math.max(...chs.map((c) => channels[c]?.length || 0), 0);
-    const out = [];
-    for (let i = Math.max(0, maxLen - 200); i < maxLen; i++) {
-      const point = {};
-      chs.forEach((c) => {
-        const arr = channels[c] || [];
-        const idx = i - (maxLen - (arr.length));
-        point[c] = idx >= 0 && arr[idx] ? arr[idx].value : null;
-      });
-      out.push(point);
-    }
-    return out;
-  })();
-
-<<<<<<< HEAD
-
-=======
->>>>>>> 4aea55fa82e942f66ba5f615ab0836826e7ad32b
-  // UI helpers
-  const getGroupChannels = () => {
-    switch (selectedGroup) {
-      case "EEG": return EEG_CHANNELS;
-      case "EOG": return EOG_CHANNELS;
-      case "EMG": return EMG_CHANNELS;
-      default: return [];
-    }
   };
+  raf = requestAnimationFrame(draw);
+  return () => cancelAnimationFrame(raf);
+}, [selectedChannels]);
 
 <<<<<<< HEAD
 
 =======
 >>>>>>> 4aea55fa82e942f66ba5f615ab0836826e7ad32b
-  const toggleChannel = (ch) => {
-    setSelectedChannels((prev) => {
-      if (prev.includes(ch)) return prev.filter((p) => p !== ch);
-      return [...prev.slice(0, 7), ch]; // limit to 8 channels on chart
+// prepare recharts data for multi-line plot
+const chartData = (() => {
+  // align by index, take last N points and build points object with channel keys
+  const chs = selectedChannels;
+  const maxLen = Math.max(...chs.map((c) => channels[c]?.length || 0), 0);
+  const out = [];
+  for (let i = Math.max(0, maxLen - 200); i < maxLen; i++) {
+    const point = {};
+    chs.forEach((c) => {
+      const arr = channels[c] || [];
+      const idx = i - (maxLen - (arr.length));
+      point[c] = idx >= 0 && arr[idx] ? arr[idx].value : null;
     });
-  };
+    out.push(point);
+  }
+  return out;
+})();
+
+<<<<<<< HEAD
+
+=======
+>>>>>>> 4aea55fa82e942f66ba5f615ab0836826e7ad32b
+// UI helpers
+const getGroupChannels = () => {
+  switch (selectedGroup) {
+    case "EEG": return EEG_CHANNELS;
+    case "EOG": return EOG_CHANNELS;
+    case "EMG": return EMG_CHANNELS;
+    default: return [];
+  }
+};
+
+<<<<<<< HEAD
+
+=======
+>>>>>>> 4aea55fa82e942f66ba5f615ab0836826e7ad32b
+const toggleChannel = (ch) => {
+  setSelectedChannels((prev) => {
+    if (prev.includes(ch)) return prev.filter((p) => p !== ch);
+    return [...prev.slice(0, 7), ch]; // limit to 8 channels on chart
+  });
+};
 <<<<<<< HEAD
 >>>>>>> Stashed changes
 
 
-  return (
+return (
+  <div className="space-y-6">
+    {/* Connection Card */}
+    <div className="card bg-surface border border-border shadow-card rounded-2xl p-6">
+      <h2 className="text-2xl font-bold text-text mb-6 flex items-center gap-3">
+        <span className={`w-3 h-3 rounded-full ${connected ? 'bg-primary' : 'bg-muted'} animate-pulse`}></span>
+        Test View - Advanced Signal Analysis
+      </h2>
+
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-bold text-text mb-3">WebSocket URL</label>
+          <div className="flex gap-2">
+            <input
+              value={wsUrl}
+              onChange={(e) => setWsUrl(e.target.value)}
+              className="flex-1 px-4 py-3 bg-bg border border-border text-text rounded-xl focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all"
+              placeholder="ws://localhost:8000/ws"
+            />
+            {connected ? (
+              <button
+                onClick={disconnectWS}
+                className="px-6 py-3 bg-accent text-primary-contrast rounded-xl font-bold hover:opacity-90 transition-all shadow-glow"
+              >
+                Disconnect
+              </button>
+            ) : (
+              <button
+                onClick={connectWS}
+                className="px-6 py-3 bg-primary text-primary-contrast rounded-xl font-bold hover:opacity-90 hover:translate-y-[-2px] active:translate-y-[0px] transition-all shadow-glow"
+              >
+                Connect
+              </button>
+            )}
+          </div>
+          <p className="mt-2 text-sm text-muted">
+            Status: <span className={`font-bold ${connected ? 'text-primary' : 'text-muted'}`}>
+              {connected ? "Connected" : "Disconnected"}
+            </span>
+          </p>
 <<<<<<< Updated upstream
-    <div style={{ padding: 20 }}>
-      <h1>Test LiveView</h1>
-      <LiveView wsData={wsData} />
+<div style={{ padding: 20 }}>
+  <h1>Test LiveView</h1>
+  <LiveView wsData={wsData} />
 =======
 =======
 
   return (
 >>>>>>> 4aea55fa82e942f66ba5f615ab0836826e7ad32b
-    <div className="p-4 grid grid-cols-1 lg:grid-cols-4 gap-4">
-      {/* LEFT: Controls */}
-      <div className="col-span-1">
-        <Card className="rounded-2xl p-4">
+  <div className="p-4 grid grid-cols-1 lg:grid-cols-4 gap-4">
+    {/* LEFT: Controls */}
+    <div className="col-span-1">
+      <Card className="rounded-2xl p-4">
 <<<<<<< HEAD
           <h3 className="text-lg font-semibold mb-2">Connection (Socket.IO)</h3>
           <div className="flex gap-2">
             <input value={wsUrl} onChange={(e) => setWsUrl(e.target.value)} className="flex-1 p-2 rounded-md bg-slate-800 text-white" placeholder="http://localhost:5000" />
 =======
           <h3 className="text-lg font-semibold mb-2">Connection</h3>
-          <div className="flex gap-2">
-            <input value={wsUrl} onChange={(e) => setWsUrl(e.target.value)} className="flex-1 p-2 rounded-md bg-slate-800 text-white" />
+    <div className="flex gap-2">
+      <input value={wsUrl} onChange={(e) => setWsUrl(e.target.value)} className="flex-1 p-2 rounded-md bg-slate-800 text-white" />
 >>>>>>> 4aea55fa82e942f66ba5f615ab0836826e7ad32b
-            {connected ? (
-              <Button onClick={disconnectWS}>Disconnect</Button>
-            ) : (
-              <Button onClick={connectWS}>Connect</Button>
-            )}
-          </div>
+      {connected ? (
+        <Button onClick={disconnectWS}>Disconnect</Button>
+      ) : (
+        <Button onClick={connectWS}>Connect</Button>
+      )}
+    </div>
+
+    {/* Signal Groups */}
+    <div>
+      <label className="block text-sm font-bold text-text mb-3">Signal Group</label>
+      <div className="flex gap-2">
+        {['EEG', 'EOG', 'EMG'].map((group) => (
+          <button
+            key={group}
+            onClick={() => setSelectedGroup(group)}
+            className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${selectedGroup === group
+              ? 'bg-primary text-primary-contrast shadow-sm'
+              : 'bg-bg border border-border text-muted hover:text-text hover:border-primary/50'
+              }`}
+          >
+            {group}
+          </button>
+        ))}
+      </div>
 <<<<<<< HEAD
           <p className="mt-2 text-sm text-muted-foreground">Status: {connected ? "🟢 Connected" : "🔴 Disconnected"} | Msgs: {messagesReceived}</p>
 
 
           <hr className="my-4" />
 
-          {/* DEBUG PANEL - EXPANDED */}
+{/* DEBUG PANEL - EXPANDED */ }
           <div className="bg-slate-950 p-3 rounded-md text-xs max-h-64 overflow-y-auto font-mono border border-yellow-900">
             <h4 className="font-semibold text-yellow-400 mb-2">📋 Debug Log (latest first):</h4>
             {debugLog.length === 0 ? (
@@ -908,23 +972,68 @@ export default function TestView() {
             <Button variant={selectedGroup === "EMG" ? "default" : "ghost"} onClick={() => setSelectedGroup("EMG")}>EMG</Button>
           </div>
 
+{/* Channel Selection */ }
 <<<<<<< HEAD
 
 =======
 >>>>>>> 4aea55fa82e942f66ba5f615ab0836826e7ad32b
+<div>
+  <label className="block text-sm font-bold text-text mb-3">
+    Channels (select up to 8)
+  </label>
+  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
+    {getGroupChannels().map((ch) => (
+      <button
+        key={ch}
+        onClick={() => toggleChannel(ch)}
+        className={`p-2 rounded-lg text-sm font-bold transition-all ${selectedChannels.includes(ch)
+          ? 'bg-primary text-primary-contrast'
+          : 'bg-bg border border-border text-muted hover:text-text hover:border-primary/50'
+          }`}
+      >
+        {ch}
+      </button>
+    ))}
+  </div>
+</div>
+        </div >
+      </div >
+            </div >
+          </div >
+
+<<<<<<< HEAD
+
+  {/* Filters Card */ }
+  < div className = "card bg-surface border border-border shadow-card rounded-2xl p-6" >
+        <h3 className="text-xl font-bold text-text mb-4">Signal Filters</h3>
+
+        <div className="space-y-4">
+          {/* Notch Filter */}
           <div>
-            <h4 className="font-medium">Channels (select up to 8)</h4>
-            <div className="grid grid-cols-2 gap-2 mt-2">
-              {getGroupChannels().map((ch) => (
-                <button key={ch} onClick={() => toggleChannel(ch)} className={`p-2 rounded-md text-sm ${selectedChannels.includes(ch) ? 'bg-slate-700' : 'bg-slate-900'}`}>
-                  {ch}
-                </button>
-              ))}
+            <label className="flex items-center gap-3 cursor-pointer group mb-2">
+              <input
+                type="checkbox"
+                checked={notchEnabled}
+                onChange={(e) => setNotchEnabled(e.target.checked)}
+                className="w-6 h-6 text-primary rounded-lg focus:ring-2 focus:ring-primary/50 border-border bg-bg"
+              />
+              <span className="font-bold text-text group-hover:text-primary transition-colors">
+                Notch Filter
+              </span>
+            </label>
+            <div className="flex items-center gap-3 ml-9">
+              <input
+                type="range"
+                min={40}
+                max={60}
+                value={notchFreq}
+                onChange={(e) => setNotchFreq(Number(e.target.value))}
+                disabled={!notchEnabled}
+                className="flex-1"
+              />
+              <span className="w-16 text-right text-text font-bold">{notchFreq} Hz</span>
             </div>
           </div>
-
-<<<<<<< HEAD
-
           <hr className="my-4" />
 
 
@@ -932,14 +1041,48 @@ export default function TestView() {
           <hr className="my-4" />
 
 >>>>>>> 4aea55fa82e942f66ba5f615ab0836826e7ad32b
-          <h3 className="text-lg font-semibold">Filters</h3>
-          <div className="mt-2">
-            <label className="flex items-center gap-2"><input type="checkbox" checked={notchEnabled} onChange={(e) => setNotchEnabled(e.target.checked)} /> Notch filter</label>
-            <div className="flex items-center gap-2 mt-2">
-              <input type="range" min={40} max={60} value={notchFreq} onChange={(e) => setNotchFreq(Number(e.target.value))} />
-              <span className="w-12 text-right">{notchFreq}Hz</span>
-            </div>
+      <h3 className="text-lg font-semibold">Filters</h3>
+      <div className="mt-2">
+        <label className="flex items-center gap-2"><input type="checkbox" checked={notchEnabled} onChange={(e) => setNotchEnabled(e.target.checked)} /> Notch filter</label>
+        <div className="flex items-center gap-2 mt-2">
+          <input type="range" min={40} max={60} value={notchFreq} onChange={(e) => setNotchFreq(Number(e.target.value))} />
+          <span className="w-12 text-right">{notchFreq}Hz</span>
+        </div>
 
+        {/* Bandpass Filter */}
+        <div>
+          <label className="flex items-center gap-3 cursor-pointer group mb-2">
+            <input
+              type="checkbox"
+              checked={bandpassEnabled}
+              onChange={(e) => setBandpassEnabled(e.target.checked)}
+              className="w-6 h-6 text-primary rounded-lg focus:ring-2 focus:ring-primary/50 border-border bg-bg"
+            />
+            <span className="font-bold text-text group-hover:text-primary transition-colors">
+              Bandpass Filter
+            </span>
+          </label>
+          <div className="flex items-center gap-3 ml-9">
+            <input
+              type="number"
+              value={bpLow}
+              onChange={(e) => setBpLow(Number(e.target.value))}
+              disabled={!bandpassEnabled}
+              className="w-20 px-3 py-2 bg-bg border border-border text-text rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+              min="0.1"
+              step="0.1"
+            />
+            <span className="text-muted">—</span>
+            <input
+              type="number"
+              value={bpHigh}
+              onChange={(e) => setBpHigh(Number(e.target.value))}
+              disabled={!bandpassEnabled}
+              className="w-20 px-3 py-2 bg-bg border border-border text-text rounded-lg focus:ring-2 focus:ring-primary/50 outline-none"
+              min="1"
+              step="1"
+            />
+            <span className="text-text font-bold">Hz</span>
 <<<<<<< HEAD
 
 =======
@@ -957,100 +1100,191 @@ export default function TestView() {
 =======
 >>>>>>> 4aea55fa82e942f66ba5f615ab0836826e7ad32b
             <p className="mt-2 text-sm text-muted-foreground">Filters are applied to the visualization stream using lightweight Biquad approximations. For production you may want to validate with offline filtering or use a DSP library.</p>
-          </div>
-        </Card>
+          </div >
+
+  <p className="text-sm text-muted mt-4">
+    Filters are applied in real-time using Biquad approximations. For production use, validate with offline filtering or a DSP library.
+  </p>
+        </div >
+      </div >
+
+  {/* Spectrogram Card */ }
+  < div className = "card bg-surface border border-border shadow-card rounded-2xl p-6" >
+        <h3 className="text-xl font-bold text-text mb-4">Spectrogram (FFT)</h3>
+        <canvas
+          ref={specCanvasRef}
+          width={800}
+          height={200}
+          className="w-full rounded-xl bg-bg border border-border"
+        />
+        <p className="mt-3 text-sm text-muted">
+          Real-time frequency spectrum for the first selected channel ({selectedChannels[0] || 'none'})
+        </p>
+        </Card >
 
 <<<<<<< HEAD
 
 =======
 >>>>>>> 4aea55fa82e942f66ba5f615ab0836826e7ad32b
-        <Card className="rounded-2xl p-4 mt-4">
-          <h3 className="text-lg font-semibold mb-2">Spectrogram</h3>
-          <canvas ref={specCanvasRef} width={400} height={150} className="w-full rounded-md bg-black" />
-          <p className="mt-2 text-sm">Spectrogram shows magnitude spectrum for the first selected channel and updates in real-time.</p>
-        </Card>
+  <Card className="rounded-2xl p-4 mt-4">
+    <h3 className="text-lg font-semibold mb-2">Spectrogram</h3>
+    <canvas ref={specCanvasRef} width={400} height={150} className="w-full rounded-md bg-black" />
+    <p className="mt-2 text-sm">Spectrogram shows magnitude spectrum for the first selected channel and updates in real-time.</p>
+  </Card>
+      </div >
+
+  {/* Live Signals Chart */ }
+  < motion.div initial = {{ opacity: 0, y: 12 }} animate = {{ opacity: 1, y: 0 }}>
+    <div className="card bg-surface border border-border shadow-card rounded-2xl p-6">
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-xl font-bold text-text">Live Signals</h2>
+        <div className="text-sm text-muted">
+          Showing: <span className="text-text font-bold">{selectedChannels.join(', ') || 'none'}</span>
+<<<<<<< HEAD
+
+=======
+>>>>>>> 4aea55fa82e942f66ba5f615ab0836826e7ad32b
+{/* RIGHT: Charts */ }
+<div className="col-span-3 space-y-4">
+  <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+    <Card className="rounded-2xl p-4">
+      <div className="flex justify-between items-center mb-2">
+        <h2 className="text-xl font-semibold">Live Signals</h2>
+<<<<<<< HEAD
+<div className="text-sm text-muted-foreground">Showing: {selectedChannels.join(', ')} | Data: {channels[selectedChannels[0]]?.length || 0} pts</div>
+            </div >
+  <div style={{ width: '100%', height: 280 }}>
+    {chartData.length === 0 ? (
+      <div className="flex items-center justify-center h-full text-gray-500">
+        No data yet - connect and wait for Stream...
       </div>
-
-<<<<<<< HEAD
-
-=======
->>>>>>> 4aea55fa82e942f66ba5f615ab0836826e7ad32b
-      {/* RIGHT: Charts */}
-      <div className="col-span-3 space-y-4">
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
-          <Card className="rounded-2xl p-4">
-            <div className="flex justify-between items-center mb-2">
-              <h2 className="text-xl font-semibold">Live Signals</h2>
-<<<<<<< HEAD
-              <div className="text-sm text-muted-foreground">Showing: {selectedChannels.join(', ')} | Data: {channels[selectedChannels[0]]?.length || 0} pts</div>
-            </div>
-            <div style={{ width: '100%', height: 280 }}>
-              {chartData.length === 0 ? (
-                <div className="flex items-center justify-center h-full text-gray-500">
-                  No data yet - connect and wait for Stream...
-                </div>
-              ) : (
-                <ResponsiveContainer>
-                  <LineChart data={chartData}>
-                    <XAxis dataKey={(d, idx) => idx} hide />
-                    <YAxis domain={[-200, 200]} />
-                    <Tooltip />
-                    <Legend />
-                    {selectedChannels.map((ch, i) => (
-                      <Line key={ch} type="monotone" dataKey={ch} dot={false} strokeWidth={2} stroke={`hsl(${(i * 70) % 360}, 80%, 60%)`} />
-                    ))}
-                  </LineChart>
-                </ResponsiveContainer>
-              )}
+    ) : (
+      <ResponsiveContainer>
+        <LineChart data={chartData}>
+          <XAxis dataKey={(d, idx) => idx} hide />
+          <YAxis domain={[-200, 200]} />
+          <Tooltip />
+          <Legend />
+          {selectedChannels.map((ch, i) => (
+            <Line key={ch} type="monotone" dataKey={ch} dot={false} strokeWidth={2} stroke={`hsl(${(i * 70) % 360}, 80%, 60%)`} />
+          ))}
+        </LineChart>
+      </ResponsiveContainer>
+    )}
 =======
               <div className="text-sm text-muted-foreground">Showing: {selectedChannels.join(', ')}</div>
+  </div>
+          </div >
+  <div style={{ width: '100%', height: 320 }}>
+    <ResponsiveContainer>
+      <LineChart data={chartData}>
+        <XAxis dataKey={(d, idx) => idx} hide />
+        <YAxis domain={[-200, 200]} stroke="var(--muted)" />
+        <Tooltip
+          contentStyle={{
+            backgroundColor: 'var(--surface)',
+            border: '1px solid var(--border)',
+            borderRadius: '8px',
+            color: 'var(--text)'
+          }}
+        />
+        <Legend />
+        {selectedChannels.map((ch, i) => (
+          <Line
+            key={ch}
+            type="monotone"
+            dataKey={ch}
+            dot={false}
+            strokeWidth={2}
+            stroke={`hsl(${(i * 70) % 360}, 80%, 60%)`}
+          />
+        ))}
+      </LineChart>
+    </ResponsiveContainer>
+  </div>
+        </div >
+      </motion.div >
+  <div style={{ width: '100%', height: 280 }}>
+    <ResponsiveContainer>
+      <LineChart data={chartData}>
+        <XAxis dataKey={(d, idx) => idx} hide />
+        <YAxis domain={[-200, 200]} />
+        <Tooltip />
+        <Legend />
+        {selectedChannels.map((ch, i) => (
+          <Line key={ch} type="monotone" dataKey={ch} dot={false} strokeWidth={2} stroke={`hsl(${(i * 70) % 360}, 80%, 60%)`} />
+        ))}
+      </LineChart>
+    </ResponsiveContainer>
+>>>>>>> 4aea55fa82e942f66ba5f615ab0836826e7ad32b
+  </div>
+          </Card >
+        </motion.div >
+
+  {/* Per-Channel Preview */ }
+  < motion.div initial = {{ opacity: 0, y: 12 }} animate = {{ opacity: 1, y: 0 }}>
+    <div className="card bg-surface border border-border shadow-card rounded-2xl p-6">
+      <h2 className="text-xl font-bold text-text mb-4">Per-Channel Preview</h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {selectedChannels.map((ch) => (
+          <div key={ch} className="bg-bg/50 backdrop-blur-sm rounded-xl p-4 border border-border">
+            <div className="flex justify-between items-center mb-3">
+              <strong className="text-text">{ch}</strong>
+              <span className="text-sm text-muted">
+                {channels[ch]?.length || 0} samples
+              </span>
             </div>
-            <div style={{ width: '100%', height: 280 }}>
+            <div style={{ width: '100%', height: 120 }}>
               <ResponsiveContainer>
-                <LineChart data={chartData}>
-                  <XAxis dataKey={(d, idx) => idx} hide />
-                  <YAxis domain={[-200, 200]} />
-                  <Tooltip />
-                  <Legend />
-                  {selectedChannels.map((ch, i) => (
-                    <Line key={ch} type="monotone" dataKey={ch} dot={false} strokeWidth={2} stroke={`hsl(${(i * 70) % 360}, 80%, 60%)`} />
-                  ))}
+                <LineChart data={downsample((channels[ch] || []).map(pt => ({ value: pt.value })), 120)}>
+                  <XAxis dataKey="index" hide />
+                  <YAxis domain={[-200, 200]} hide />
+                  <Line
+                    type="monotone"
+                    dataKey="value"
+                    dot={false}
+                    strokeWidth={2}
+                    stroke="var(--primary)"
+                  />
                 </LineChart>
               </ResponsiveContainer>
->>>>>>> 4aea55fa82e942f66ba5f615ab0836826e7ad32b
             </div>
-          </Card>
-        </motion.div>
-
+          </div>
+        ))}
+      </div>
+    </div>
+      </motion.div >
 <<<<<<< HEAD
 
 =======
 >>>>>>> 4aea55fa82e942f66ba5f615ab0836826e7ad32b
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
-          <Card className="rounded-2xl p-4">
-            <h2 className="text-xl font-semibold mb-2">Per-Channel Preview</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {selectedChannels.map((ch) => (
-                <Card key={ch} className="rounded-lg p-3 bg-slate-900">
-                  <CardContent>
-                    <div className="flex justify-between items-center mb-2">
-                      <strong>{ch}</strong>
-                      <span className="text-sm text-muted-foreground">samples: {channels[ch]?.length || 0}</span>
-                    </div>
+  <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+    <Card className="rounded-2xl p-4">
+      <h2 className="text-xl font-semibold mb-2">Per-Channel Preview</h2>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {selectedChannels.map((ch) => (
+          <Card key={ch} className="rounded-lg p-3 bg-slate-900">
+            <CardContent>
+              <div className="flex justify-between items-center mb-2">
+                <strong>{ch}</strong>
+                <span className="text-sm text-muted-foreground">samples: {channels[ch]?.length || 0}</span>
+              </div>
 <<<<<<< HEAD
-                    {channels[ch]?.length === 0 ? (
-                      <div className="text-xs text-gray-500">No data</div>
-                    ) : (
-                      <div style={{ width: '100%', height: 120 }}>
-                        <ResponsiveContainer>
-                          <LineChart data={downsample((channels[ch] || []).map(pt => ({ value: pt.value })), 120)}>
-                            <XAxis dataKey="index" hide />
-                            <YAxis domain={[-200,200]} />
-                            <Line type="monotone" dataKey="value" dot={false} strokeWidth={2} />
-                          </LineChart>
-                        </ResponsiveContainer>
-                      </div>
-                    )}
+{
+  channels[ch]?.length === 0 ? (
+    <div className="text-xs text-gray-500">No data</div>
+  ) : (
+  <div style={{ width: '100%', height: 120 }}>
+    <ResponsiveContainer>
+      <LineChart data={downsample((channels[ch] || []).map(pt => ({ value: pt.value })), 120)}>
+        <XAxis dataKey="index" hide />
+        <YAxis domain={[-200, 200]} />
+        <Line type="monotone" dataKey="value" dot={false} strokeWidth={2} />
+      </LineChart>
+    </ResponsiveContainer>
+  </div>
+)
+}
 =======
                     <div style={{ width: '100%', height: 120 }}>
                       <ResponsiveContainer>
@@ -1062,21 +1296,21 @@ export default function TestView() {
                       </ResponsiveContainer>
                     </div>
 >>>>>>> 4aea55fa82e942f66ba5f615ab0836826e7ad32b
-                  </CardContent>
-                </Card>
+                  </CardContent >
+                </Card >
               ))}
-            </div>
-          </Card>
-        </motion.div>
+            </div >
+          </Card >
+        </motion.div >
 
 <<<<<<< HEAD
 
-      </div>
+      </div >
 >>>>>>> Stashed changes
 =======
       </div>
 >>>>>>> 4aea55fa82e942f66ba5f615ab0836826e7ad32b
-    </div>
+    </div >
   );
 }
 <<<<<<< HEAD
