@@ -2,45 +2,10 @@ import numpy as np
 from collections import deque
 from scipy.signal import butter, filtfilt, lfilter
 
-<<<<<<< HEAD
-class EMGFilter:
-    def __init__(self, sampling_rate=512):
-        self.sampling_rate = sampling_rate
-        
-        # Design high-pass Butterworth filter
-        # Cutoff at 70 Hz
-        nyquist_freq = sampling_rate / 2
-        normalized_cutoff = 70.0 / nyquist_freq
-        
-        self.b, self.a = butter(
-            N=4,                          # 4th order
-            Wn=normalized_cutoff,         # Normalized frequency
-            btype='high'                  # High-pass
-        )
-    
-    def filter_signal(self, signal):
-        """
-        Apply high-pass filter to EMG signal
-        
-        Args:
-            signal: numpy array of EMG data
-        
-        Returns:
-            filtered_signal: numpy array of filtered EMG
-        """
-        # Use filtfilt for zero-phase filtering
-        filtered = filtfilt(self.b, self.a, signal)
-        return filtered
-    
-    def get_filter_coefficients(self):
-        """Return filter coefficients for analysis"""
-        return {'b': self.b, 'a': self.a}
-=======
 import matplotlib
 matplotlib.use('TkAgg')
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
->>>>>>> parent of 4932077f (feat: Implement EMG signal processing pipeline with filtering, feature extraction, real-time plotting, and WebSocket broadcasting.)
 
 class EMGFilterWindow(tk.Toplevel):
     def __init__(self, parent, fs=250):
