@@ -1,108 +1,118 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import io from 'socket.io-client'
 
 /**
- * Custom React hook for WebSocket connection
- * Handles connection lifecycle, message parsing, and latency monitoring
+ * WebSocket Hook for Multi-Channel EEG Streaming
+ * Much lower latency than HTTP polling
  */
 export function useWebSocket(url) {
   const [status, setStatus] = useState('disconnected')
   const [lastMessage, setLastMessage] = useState(null)
   const [latency, setLatency] = useState(0)
+  const [channels, setChannels] = useState(1)
 
-  const wsRef = useRef(null)
+  const socketRef = useRef(null)
   const pingTimer = useRef(null)
-  const reconnectTimer = useRef(null)
+  const lastPingTime = useRef(0)
 
-  const connect = useCallback(() => {
-    // Don't reconnect if already connecting or connected
-    if (wsRef.current?.readyState === WebSocket.OPEN || wsRef.current?.readyState === WebSocket.CONNECTING) {
-      return
-    }
+  const connect = () => {
+    if (socketRef.current?.connected) return
 
     console.log(`🔌 Connecting to WebSocket: ${url}`)
     setStatus('connecting')
 
-    try {
-      wsRef.current = new WebSocket(url)
+    // Extract base URL (remove /api/stream if present)
+    const baseUrl = url.replace(/\/api\/.*/, '')
 
-      wsRef.current.onopen = () => {
-        console.log('✅ WebSocket connected')
-        setStatus('connected')
+    socketRef.current = io(baseUrl, {
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      reconnectionAttempts: 5,
+      transports: ['websocket', 'polling']
+    })
 
-        // Send ping every 1 second to measure latency
-        pingTimer.current = setInterval(() => {
-          if (wsRef.current?.readyState === WebSocket.OPEN) {
-            const id = Math.random().toString(36).slice(2, 10)
-            const t0 = performance.now()
+    socketRef.current.on('connect', () => {
+      setStatus('connected')
+      console.log('✅ WebSocket connected')
 
-            wsRef.current.send(
-              JSON.stringify({
-                type: 'ping',
-                id,
-                t0
-              })
-            )
-          }
-        }, 1000)
-      }
+      // Start ping/pong for latency measurement
+      pingTimer.current = setInterval(() => {
+        lastPingTime.current = performance.now()
+        socketRef.current.emit('ping')
+      }, 1000)
+    })
 
-      wsRef.current.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data)
+    socketRef.current.on('disconnect', () => {
+      setStatus('disconnected')
+      if (pingTimer.current) clearInterval(pingTimer.current)
+      console.log('❌ WebSocket disconnected')
+    })
 
-          // Handle pong responses (ping/pong for latency)
-          if (msg.type === 'pong') {
-            const rtt = performance.now() - msg.t0
-            setLatency(parseFloat(rtt.toFixed(2)))
-            return
-          }
-
-          // Handle actual EMG data
-          setLastMessage({
-            data: event.data,
-            parsed: msg,
-            timestamp: Date.now()
-          })
-
-          // Log EMG data for debugging
-          if (msg.source === 'EMG') {
-            console.log('📨 Received EMG packet:', msg)
-          }
-        } catch (e) {
-          console.error('❌ Failed to parse WebSocket message:', e)
-          console.log('Raw message:', event.data)
-        }
-      }
-
-      wsRef.current.onerror = (error) => {
-        console.error('❌ WebSocket error:', error)
-        setStatus('error')
-      }
-
-      wsRef.current.onclose = (event) => {
-        console.log(`🔌 WebSocket closed: Code=${event.code}, Reason=${event.reason}`)
-        setStatus('disconnected')
-        clearInterval(pingTimer.current)
-
-        // Auto-reconnect after 3 seconds
-        reconnectTimer.current = setTimeout(() => {
-          console.log('🔄 Attempting to reconnect...')
-          connect()
-        }, 3000)
-      }
-    } catch (e) {
-      console.error('❌ Failed to create WebSocket:', e)
+    socketRef.current.on('error', (error) => {
       setStatus('error')
-    }
-  }, [url])
+      console.error('WebSocket error:', error)
+    })
 
-  const disconnect = useCallback(() => {
-    console.log('🛑 Disconnecting WebSocket')
-    clearInterval(pingTimer.current)
-    clearTimeout(reconnectTimer.current)
-    wsRef.current?.close()
-    wsRef.current = null
+    // Receive EEG data (realtime @ 250 Hz)
+    socketRef.current.on('eeg_data', (data) => {
+      setLatency(Math.round(performance.now() - lastPingTime.current))
+      setChannels(data.channels)
+
+      setLastMessage({
+        data: JSON.stringify(data),
+        timestamp: Date.now()
+      })
+    })
+
+    // Receive buffered data
+    socketRef.current.on('buffer_data', (data) => {
+      setLastMessage({
+        data: JSON.stringify(data),
+        timestamp: Date.now()
+      })
+    })
+
+    // Receive all channels data
+    socketRef.current.on('all_channels_data', (data) => {
+      setLastMessage({
+        data: JSON.stringify(data),
+        timestamp: Date.now()
+      })
+    })
+
+    // Response from server
+    socketRef.current.on('response', (data) => {
+      console.log('Server response:', data)
+      setChannels(data.channels)
+    })
+  }
+
+  const disconnect = () => {
+    if (socketRef.current) {
+      socketRef.current.disconnect()
+      socketRef.current = null
+    }
+    if (pingTimer.current) {
+      clearInterval(pingTimer.current)
+    }
     setStatus('disconnected')
+  }
+
+  const requestBuffer = (channel = 0, n = 500) => {
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('request_buffer', { channel, n })
+    }
+  }
+
+  const requestAllChannels = (n = 500) => {
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('request_all_channels', { n })
+    }
+  }
+
+  useEffect(() => {
+    return () => disconnect()
   }, [])
 
   const sendMessage = useCallback(
@@ -131,12 +141,15 @@ export function useWebSocket(url) {
   }, [connect, disconnect])
 
   return {
-    status,           // 'disconnected' | 'connecting' | 'connected' | 'error'
-    lastMessage,      // { data: string, parsed: object, timestamp: number }
-    latency,          // Ping-pong latency in ms
-    connect,          // Manual connect function
-    disconnect,       // Manual disconnect function
-    sendMessage,      // Send data to server
-    ws: wsRef.current // Raw WebSocket reference (if needed)
+    status,
+    lastMessage,
+    latency,
+    channels,
+    connect,
+    disconnect,
+    requestBuffer,
+    requestAllChannels
   }
 }
+
+export default useWebSocket

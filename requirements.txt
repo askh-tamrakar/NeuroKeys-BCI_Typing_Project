@@ -35,6 +35,9 @@ black
 pytest
 python-dotenv
 
+pip install flask flask-socketio python-socketio python-engineio
+npm install socket.io-client
+openpyxl twilio flask python-dotenv
 #
 PyQt5 
 pyserial
