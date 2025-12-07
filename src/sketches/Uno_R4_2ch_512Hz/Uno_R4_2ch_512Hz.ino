@@ -5,7 +5,7 @@
 // ===== CONFIGURATION =====
 #define NUM_CHANNELS 2              // REDUCED to 2 channels
 #define HEADER_LEN 3
-#define PACKET_LEN (NUM_CHANNELS * 2 + HEADER_LEN + 1)  // = 8 bytes (was 16)
+#define PACKET_LEN (NUM_CHANNELS * 2 + HEADER_LEN + 1)  // = 10 bytes (was 16)
 #define SAMP_RATE 512.0             // INCREASED to 512 Hz (was 500)
 #define SYNC_BYTE_1 0xC7
 #define SYNC_BYTE_2 0x7C
