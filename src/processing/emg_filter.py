@@ -1,10 +1,6 @@
 import numpy as np
-<<<<<<< HEAD
-from scipy.signal import butter, filtfilt
-=======
 from collections import deque
 from scipy.signal import butter, filtfilt, lfilter
->>>>>>> parent of 4932077f (feat: Implement EMG signal processing pipeline with filtering, feature extraction, real-time plotting, and WebSocket broadcasting.)
 
 class EMGFilter:
     def __init__(self, sampling_rate=512):
@@ -39,12 +35,6 @@ class EMGFilter:
         """Return filter coefficients for analysis"""
         return {'b': self.b, 'a': self.a}
 
-<<<<<<< HEAD
-
-# Usage
-emg_filter = EMGFilter(sampling_rate=512)
-filtered_emg = emg_filter.filter_signal(raw_emg_data)
-=======
 class EMGFilterWindow(tk.Toplevel):
     def __init__(self, parent, fs=250):
         super().__init__(parent)
@@ -153,4 +143,3 @@ class EMGFilterWindow(tk.Toplevel):
     def on_close(self):
         self.running = False
         self.destroy()
->>>>>>> parent of 4932077f (feat: Implement EMG signal processing pipeline with filtering, feature extraction, real-time plotting, and WebSocket broadcasting.)
