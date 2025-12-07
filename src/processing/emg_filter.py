@@ -2,6 +2,7 @@ import numpy as np
 from collections import deque
 from scipy.signal import butter, filtfilt, lfilter
 
+<<<<<<< HEAD
 class EMGFilter:
     def __init__(self, sampling_rate=512):
         self.sampling_rate = sampling_rate
@@ -34,6 +35,12 @@ class EMGFilter:
     def get_filter_coefficients(self):
         """Return filter coefficients for analysis"""
         return {'b': self.b, 'a': self.a}
+=======
+import matplotlib
+matplotlib.use('TkAgg')
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
+>>>>>>> parent of 4932077f (feat: Implement EMG signal processing pipeline with filtering, feature extraction, real-time plotting, and WebSocket broadcasting.)
 
 class EMGFilterWindow(tk.Toplevel):
     def __init__(self, parent, fs=250):
