@@ -8,8 +8,11 @@ Features:
 - Comprehensive data logging and session management
 - Production-ready error handling and recovery
 
-Added:
-- Real-time bandpass & notch filters with UI sliders (requires scipy)
+Modifications for pipeline:
+- Publishes raw ADC stream "BioSignals-Raw" for external filter processes.
+- Publishes processed µV stream "BioSignals" (if LSL available).
+- Duplicate suppression (by packet counter).
+- Session data now stores raw ADC values + converted µV.
 """
 
 import tkinter as tk
@@ -22,36 +25,36 @@ import time
 import numpy as np
 from datetime import datetime
 from pathlib import Path
-from collections import deque
 import matplotlib
 matplotlib.use('TkAgg')
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 import queue
 import sys
-import os
-import struct
 from dataclasses import dataclass, asdict
-from typing import Optional, Dict, Tuple
+from typing import Optional, Dict
 
 # LSL integration (optional - graceful fallback)
 try:
     import pylsl
     LSL_AVAILABLE = True
-except ImportError:
+except Exception:
     LSL_AVAILABLE = False
     print("⚠️  LSL not available - install with: pip install pylsl")
 
 # Filtering (optional)
 try:
-    from scipy import signal
     from scipy.signal import butter, sosfilt, sosfilt_zi, iirnotch, tf2sos
     SCIPY_AVAILABLE = True
 except Exception:
     SCIPY_AVAILABLE = False
     print("⚠️  scipy not available - filters disabled. Install with: pip install scipy")
 
-sys.stdout.reconfigure(encoding='utf-8')
+# Ensure UTF-8 output
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+except Exception:
+    pass
 
 
 # ============================================================================
@@ -104,8 +107,8 @@ class SignalProcessing:
         """Check if value is physically reasonable"""
         limits = {
             'EMG': (-5000, 5000),      # ±5mV typical
-            'EOG': (-2000, 2000),       # ±2mV typical
-            'EEG': (-1000, 1000)   # ±1mV typical
+            'EOG': (-2000, 2000),      # ±2mV typical
+            'EEG': (-1000, 1000)       # ±1mV typical
         }
         if signal_type in limits:
             low, high = limits[signal_type]
@@ -134,6 +137,7 @@ class SerialPacketReader:
         self.packets_dropped = 0
         self.sync_errors = 0
         self.crc_errors = 0
+        self.duplicates = 0
         self.bytes_received = 0
         self.last_packet_time = None
 
@@ -164,7 +168,7 @@ class SerialPacketReader:
             try:
                 self.ser.close()
                 print("✅ Disconnected")
-            except:
+            except Exception:
                 pass
 
     def start(self):
@@ -259,6 +263,7 @@ class SerialPacketReader:
             'packets_received': self.packets_received,
             'packets_dropped': self.packets_dropped,
             'sync_errors': self.sync_errors,
+            'duplicates': self.duplicates,
             'rate_hz': rate,
             'speed_kbps': speed_kbps,
             'queue_size': self.data_queue.qsize()
@@ -303,13 +308,14 @@ class PacketParser:
 class LSLStreamer:
     """Stream data via Lab Streaming Layer"""
 
-    def __init__(self, name: str, channel_types: list):
+    def __init__(self, name: str, channel_types: list, channel_count: int = 2):
         self.name = name
         self.channel_types = channel_types
+        self.channel_count = channel_count
         self.outlet: Optional[pylsl.StreamOutlet] = None
 
         if not LSL_AVAILABLE:
-            print("⚠️  LSL not available")
+            print(f"⚠️  LSL not available - cannot create stream '{name}'")
             return
 
         try:
@@ -317,31 +323,34 @@ class LSLStreamer:
             info = pylsl.StreamInfo(
                 name=name,
                 type='EEG',
-                channel_count=len(channel_types),
+                channel_count=self.channel_count,
                 nominal_srate=PacketConfig.SAMPLING_RATE,
                 channel_format='float32',
-                source_id='acquisition_system'
+                source_id=name
             )
 
             # Add channel names
             channels = info.desc().append_child("channels")
-            for i, ch_type in enumerate(channel_types):
+            for i, ch_type in enumerate(self.channel_types):
                 channels.append_child("channel") \
                     .append_child_value("label", f"{ch_type}_{i}") \
                     .append_child_value("type", ch_type)
 
             self.outlet = pylsl.StreamOutlet(info)
-            print(f"✅ LSL stream '{name}' created")
+            print(f"✅ LSL stream '{name}' created (channels={self.channel_count})")
         except Exception as e:
-            print(f"❌ LSL setup failed: {e}")
+            print(f"❌ LSL setup failed for '{name}': {e}")
 
-    def push_sample(self, sample: list):
+    def push_sample(self, sample: list, ts: float = None):
         """Push data sample to LSL"""
         if self.outlet:
             try:
-                self.outlet.push_sample(sample)
+                if ts is not None:
+                    self.outlet.push_sample(sample, ts)
+                else:
+                    self.outlet.push_sample(sample)
             except Exception as e:
-                print(f"LSL push error: {e}")
+                print(f"LSL push error ({self.name}): {e}")
 
 
 # ============================================================================
@@ -362,8 +371,9 @@ class UnifiedAcquisitionApp:
         self.serial_reader: Optional[SerialPacketReader] = None
         self.packet_parser = PacketParser(self.config)
 
-        # LSL streamer
-        self.lsl_streamer: Optional[LSLStreamer] = None
+        # LSL streamers
+        self.lsl_raw = None       # publishes raw ADC values to BioSignals-Raw
+        self.lsl_streamer = None  # publishes processed µV to BioSignals
 
         # State
         self.is_connected = False
@@ -371,7 +381,10 @@ class UnifiedAcquisitionApp:
         self.is_recording = False
         self.session_start_time = None
         self.packet_count = 0
-        self.latest_packet: Optional[Packet] = None
+        self.latest_packet: Optional[dict] = None
+
+        # Packet deduplication
+        self.last_packet_counter: Optional[int] = None
 
         # Channel mapping
         self.channel_mapping = {0: 'EEG', 1: 'EOG'}
@@ -388,9 +401,6 @@ class UnifiedAcquisitionApp:
         self.session_data = []
         self.save_path = Path("data/raw/session")
 
-        # Duplicate packet detection
-        self.last_packet_counter = None
-
         # Batch update control
         self.pending_updates = 0
         self.last_update_time = time.time()
@@ -404,6 +414,7 @@ class UnifiedAcquisitionApp:
         self.notch_q_var = tk.DoubleVar(value=30.0)
         self.sos_bandpass = None
         self.sos_notch = None
+        self.sos_combined = None
         self.zi_ch0 = None
         self.zi_ch1 = None
 
@@ -659,10 +670,13 @@ class UnifiedAcquisitionApp:
                 self.disconnect_btn.config(state="normal")
                 self.start_btn.config(state="normal")
 
-                # Initialize LSL
+                # Initialize LSL outlets
                 if LSL_AVAILABLE:
                     ch_types = [self.channel_mapping[0], self.channel_mapping[1]]
-                    self.lsl_streamer = LSLStreamer("BioSignals", ch_types)
+                    # raw ADC stream for pipeline consumers
+                    self.lsl_raw = LSLStreamer("BioSignals-Raw", ch_types, channel_count=2)
+                    # processed µV stream
+                    self.lsl_streamer = LSLStreamer("BioSignals", ch_types, channel_count=2)
 
                 messagebox.showinfo("Success", f"Connected to {port_name}")
             else:
@@ -703,17 +717,10 @@ class UnifiedAcquisitionApp:
             self.session_start_time = datetime.now()
             self.packet_count = 0
             self.session_data = []
-            self.last_packet_counter = None  # Reset duplicate detection
             self.vis_ch0.fill(0)
             self.vis_ch1.fill(0)
             self.vis_ptr = 0
-
-            self.start_btn.config(state="disabled")
-            self.stop_btn.config(state="normal")
-            self.rec_btn.config(state="normal", text="Stop Recording")
-            self.save_btn.config(state="normal")
-            self.status_label.config(text="Acquiring", foreground="green")
-
+            self.last_packet_counter = None
             # reset filter states
             if SCIPY_AVAILABLE:
                 self.reset_filter_state()
@@ -726,7 +733,7 @@ class UnifiedAcquisitionApp:
         try:
             if self.serial_reader:
                 self.serial_reader.send_command("STOP")
-        except:
+        except Exception:
             pass
 
         self.is_acquiring = False
@@ -812,7 +819,7 @@ class UnifiedAcquisitionApp:
         # Called continuously as sliders move; re-design filters but not too often
         if SCIPY_AVAILABLE and self.filter_enabled_var.get():
             self.design_filters()
-            # do not reset zi on parameter change to avoid transients; but we will reset to avoid weird artifacts:
+            # reset to avoid transient artifacts
             self.reset_filter_state()
 
     def design_filters(self):
@@ -844,7 +851,6 @@ class UnifiedAcquisitionApp:
 
         # Notch
         try:
-            # iirnotch returns b,a
             b, a = iirnotch(notch_freq / nyq, q)
             notch_sos = tf2sos(b, a)
             self.sos_notch = notch_sos
@@ -855,7 +861,6 @@ class UnifiedAcquisitionApp:
         # Compose combined SOS (notch -> bandpass)
         if self.sos_bandpass is not None and self.sos_notch is not None:
             try:
-                # Stacking sos blocks (notch first then bandpass)
                 self.sos_combined = np.vstack((self.sos_notch, self.sos_bandpass))
             except Exception:
                 self.sos_combined = self.sos_bandpass
@@ -868,7 +873,7 @@ class UnifiedAcquisitionApp:
 
     def reset_filter_state(self):
         """Initialize zi (filter states) for streaming sosfilt"""
-        if not hasattr(self, 'sos_combined') or self.sos_combined is None:
+        if not SCIPY_AVAILABLE or self.sos_combined is None:
             self.zi_ch0 = None
             self.zi_ch1 = None
             return
@@ -887,19 +892,15 @@ class UnifiedAcquisitionApp:
 
         try:
             if ch == 0:
-                zi = self.zi_ch0
-                if zi is None:
+                if self.zi_ch0 is None:
                     self.reset_filter_state()
-                    zi = self.zi_ch0
-                y, zf = sosfilt(self.sos_combined, [sample_value], zi=zi)
+                y, zf = sosfilt(self.sos_combined, [sample_value], zi=self.zi_ch0)
                 self.zi_ch0 = zf
                 return float(y[0])
             else:
-                zi = self.zi_ch1
-                if zi is None:
+                if self.zi_ch1 is None:
                     self.reset_filter_state()
-                    zi = self.zi_ch1
-                y, zf = sosfilt(self.sos_combined, [sample_value], zi=zi)
+                y, zf = sosfilt(self.sos_combined, [sample_value], zi=self.zi_ch1)
                 self.zi_ch1 = zf
                 return float(y[0])
         except Exception as e:
@@ -941,14 +942,16 @@ class UnifiedAcquisitionApp:
 
     def _handle_packet(self, packet: Packet):
         """Process single packet"""
-        # Duplicate detection: skip if same counter as last packet
-        if self.last_packet_counter is not None:
-            if packet.counter == self.last_packet_counter:
-                # Duplicate packet - skip processing
-                return
+
+        # Simple duplicate suppression: ignore exact repeated counter values
+        if self.last_packet_counter is not None and packet.counter == self.last_packet_counter:
+            # register duplicate and skip processing
+            if self.serial_reader:
+                self.serial_reader.duplicates += 1
+            return
         self.last_packet_counter = packet.counter
 
-        # Convert to µV with validation
+        # Convert to µV
         ch0_uv = SignalProcessing.adc_to_uv(packet.ch0_raw)
         ch1_uv = SignalProcessing.adc_to_uv(packet.ch1_raw)
 
@@ -965,7 +968,7 @@ class UnifiedAcquisitionApp:
         self.vis_ch1[self.vis_ptr] = ch1_uv
         self.vis_ptr = (self.vis_ptr + 1) % self.buffer_size
 
-        # Create data entry (store both raw ADC and filtered µV)
+        # Create data entry with both raw ADC and µV (processed)
         data_entry = {
             "timestamp": packet.timestamp.isoformat(),
             "packet_seq": int(packet.counter),
@@ -981,9 +984,20 @@ class UnifiedAcquisitionApp:
         if self.is_recording:
             self.session_data.append(data_entry)
 
-        # LSL streaming
+        # LSL streaming:
+        # - push raw ADC to BioSignals-Raw for external filter processors
+        if self.lsl_raw:
+            try:
+                self.lsl_raw.push_sample([float(packet.ch0_raw), float(packet.ch1_raw)], None)
+            except Exception as e:
+                print(f"LSL raw push error: {e}")
+
+        # - push processed µV to BioSignals
         if self.lsl_streamer:
-            self.lsl_streamer.push_sample([ch0_uv, ch1_uv])
+            try:
+                self.lsl_streamer.push_sample([float(ch0_uv), float(ch1_uv)], None)
+            except Exception as e:
+                print(f"LSL processed push error: {e}")
 
         self.latest_packet = data_entry
         self.packet_count += 1
@@ -1011,7 +1025,7 @@ class UnifiedAcquisitionApp:
                 self.latest_text.delete("1.0", "end")
                 self.latest_text.insert("1.0", json.dumps(self.latest_packet, indent=2))
                 self.latest_text.configure(state="disabled")
-            except:
+            except Exception:
                 pass
 
         # Graph update

@@ -1,10 +1,6 @@
 {
   "dependencies": {
-<<<<<<< HEAD
     "framer-motion": "^12.23.24",
     "socket.io-client": "^4.8.1"
-=======
-    "framer-motion": "^12.23.24"
->>>>>>> 4aea55fa82e942f66ba5f615ab0836826e7ad32b
   }
 }
