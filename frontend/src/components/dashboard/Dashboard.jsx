@@ -5,10 +5,10 @@ import LiveDashboard from '../views/LiveDashboard'
 import CommandVisualizer from '../views/CommandVisualizer'
 import RecordingsView from '../views/RecordingsView'
 import DevicesView from '../views/DevicesView'
-import ChatView from '../views/ChatView'
-import MockView from '../views/MockView'
-import SettingsView from '../views/SettingsView'
-import TestView from '../views/TestView'
+//import ChatView from '../views/ChatView'
+//import SettingsView from '../views/SettingsView'
+//import TestView from '../views/TestView'
+import DinoView from '../views/DinoView'
 
 import '../../styles/App.css';
 import themePresets from '../themes/presets';
@@ -78,9 +78,10 @@ export default function Dashboard() {
     { label: 'Commands', onClick: () => setCurrentPage('commands'), href: '#commands' },
     { label: 'Recordings', onClick: () => setCurrentPage('recordings'), href: '#recordings' },
     { label: 'Devices', onClick: () => setCurrentPage('devices'), href: '#devices' },
-    { label: 'Chat', onClick: () => setCurrentPage('chat'), href: '#chat' },
-    { label: 'Settings', onClick: () => setCurrentPage('settings'), href: '#settings' },
-    { label: 'Test', onClick: () => setCurrentPage('test'), href: '#test' },
+    //{ label: 'Chat', onClick: () => setCurrentPage('chat'), href: '#chat' },
+    //{ label: 'Settings', onClick: () => setCurrentPage('settings'), href: '#settings' },
+    //{ label: 'Test', onClick: () => setCurrentPage('test'), href: '#test' },
+    { label: 'Dino', onClick: () => setCurrentPage('dino'), href: '#dino' },
     {
       label: 'Theme',
       type: 'pill',
@@ -181,6 +182,7 @@ export default function Dashboard() {
         {currentPage === 'mock' && <MockView />}
         {currentPage === 'settings' && <SettingsView />}
         {currentPage === 'test' && <TestView />}
+        {currentPage === 'dino' && <DinoView />}
       </div>
 
       {/* Footer */}
