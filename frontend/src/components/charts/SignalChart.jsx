@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts'
 
 /**
  * SignalChart supports:
@@ -32,7 +32,8 @@ export default function SignalChart({
   channelLabelPrefix = 'Ch',
   height = 300,
   yDomainProp = null,
-  showGrid = true
+  showGrid = true,
+  scannerX = null // if provided, draws a vertical scanner bar
 }) {
   // If byChannel present -> merge into single array
   const merged = useMemo(() => {
@@ -173,6 +174,9 @@ export default function SignalChart({
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={dataArray}>
             {showGrid && <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />}
+            {scannerX !== null && (
+              <ReferenceLine x={scannerX} stroke="var(--accent)" strokeOpacity={0.8} />
+            )}
             <XAxis
               dataKey="time"
               type="number"

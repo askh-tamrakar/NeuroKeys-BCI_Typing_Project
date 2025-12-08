@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
-import LiveView from '../views/LiveView'
+import LiveDashboard from '../views/LiveDashboard'
 import CommandVisualizer from '../views/CommandVisualizer'
 import RecordingsView from '../views/RecordingsView'
 import DevicesView from '../views/DevicesView'
@@ -173,7 +173,7 @@ export default function Dashboard() {
 
       {/* Main Content Area */}
       <div className="container" style={{ flex: 1, padding: '24px 0', overflowY: 'auto' }}>
-        {currentPage === 'live' && <LiveView wsData={lastMessage} />}
+        {currentPage === 'live' && <LiveDashboard wsData={lastMessage} />}
         {currentPage === 'commands' && <CommandVisualizer wsData={lastMessage} />}
         {currentPage === 'recordings' && <RecordingsView />}
         {currentPage === 'devices' && <DevicesView sendMessage={sendMessage} />}
