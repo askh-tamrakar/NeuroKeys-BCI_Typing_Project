@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import SignalChart from '../charts/SignalChart'
+// *** CHANGED: Import a simple brain/tech icon for the new visual element ***
+import { Brain, Zap, Play, Pause } from 'lucide-react'
 
 /**
  * LiveView (Python-WS streaming) with multi-channel EEG support.
@@ -18,6 +20,8 @@ export default function LiveView({ wsData }) {
   const [isPaused, setIsPaused] = useState(false)
   const [displayMode, setDisplayMode] = useState('single') // 'single' | 'overlay'
   const [selectedChannel, setSelectedChannel] = useState(0)
+  const [showEog, setShowEog] = useState(true)
+  const [showEmg, setShowEmg] = useState(true)
 
   // limits
   const MAX_POINTS_PER_MESSAGE = 120
@@ -58,9 +62,12 @@ export default function LiveView({ wsData }) {
 
     let payload = null
     try {
-      const jsonText = typeof wsData === 'string' ? wsData : (wsData.data ?? null)
-      if (!jsonText) return
-      payload = JSON.parse(jsonText)
+      // wsData might be string or object
+      if (typeof wsData === 'object' && wsData !== null) {
+        payload = wsData.data ? JSON.parse(wsData.data) : wsData;
+      } else if (typeof wsData === 'string') {
+        payload = JSON.parse(wsData);
+      }
     } catch (err) {
       console.error('LiveView: failed to parse wsData', err, wsData)
       return
@@ -139,88 +146,176 @@ export default function LiveView({ wsData }) {
   }, [displayMode, selectedChannel, eegByChannel])
 
   return (
-    <div className="space-y-6">
-      <div className="card bg-surface border border-border shadow-card rounded-2xl p-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div className="flex gap-3 items-center flex-wrap">
-            <button
-              onClick={() => setIsPaused(!isPaused)}
-              className={`px-6 py-3 rounded-xl font-bold transition-all shadow-glow ${isPaused
-                  ? 'bg-accent text-primary-contrast hover:opacity-90'
-                  : 'bg-primary text-primary-contrast hover:opacity-90'
-                }`}
-            >
-              {isPaused ? '▶ Resume' : '⏸ Pause'}
-            </button>
+    // *** CHANGED: Added 'min-h-screen' for better responsiveness on small screens, ensuring content takes full height ***
+    <div className="flex flex-col min-h-screen bg-bg gap-6 p-4 md:p-6 overflow-y-auto">
+      {/* Top Banner / Controls */}
+      <div className="card bg-surface border border-border shadow-card rounded-2xl p-5 sticky top-0 z-20 backdrop-blur-md bg-opacity-95">
+        
+        {/* *** CHANGED: Flex layout changed to ensure better stacking on small screens *** */}
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
 
-            <label className="text-sm font-bold text-text">Time window:</label>
-            <select
-              value={timeWindowMs}
-              onChange={(e) => setTimeWindowMs(Number(e.target.value))}
-              className="px-4 py-3 bg-bg border border-border text-text rounded-xl focus:ring-2 focus:ring-primary/50 outline-none"
-            >
-              <option value={5000}>5 s</option>
-              <option value={10000}>10 s</option>
-              <option value={30000}>30 s</option>
-              <option value={60000}>60 s</option>
-            </select>
+          {/* *** CHANGED: Tech Brain Icon & Animation *** */}
+          <div className="flex items-center gap-4">
+            <div className={`bg-primary/10 p-3 rounded-xl border border-primary/20 transition-all duration-300 ${isPaused ? 'opacity-50' : 'opacity-100'}`}>
+              <Brain className={`w-6 h-6 ${isPaused ? 'text-accent' : 'text-primary'} ${!isPaused ? 'animate-pulse-fast' : ''}`} />
+              {/* Custom animation class (needs to be defined in main CSS, or use Tailwind's `animate-pulse` like I did) */}
+              <Zap className={`w-3 h-3 absolute -top-1 -right-1 ${isPaused ? 'text-accent/50' : 'text-primary'} ${!isPaused ? 'animate-ping-slow' : ''}`} />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-text tracking-tight">Live Monitoring</h2>
+              <p className="text-xs text-muted font-mono uppercase tracking-widest">{isPaused ? 'PAUSED' : 'STREAMING ACTIVE'}</p>
+            </div>
           </div>
+          {/* *** END CHANGED: Tech Brain Icon & Animation *** */}
 
-          <div className="flex gap-6 items-center flex-wrap">
-            <div className="flex items-center gap-3">
-              <label className="text-sm font-bold text-text">EEG Display:</label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="displayMode"
-                  value="single"
-                  checked={displayMode === 'single'}
-                  onChange={() => setDisplayMode('single')}
-                  className="w-5 h-5 text-primary"
-                />
-                <span className="text-sm font-medium text-text">Single</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="displayMode"
-                  value="overlay"
-                  checked={displayMode === 'overlay'}
-                  onChange={() => setDisplayMode('overlay')}
-                  className="w-5 h-5 text-primary"
-                />
-                <span className="text-sm font-medium text-text">Overlay all</span>
-              </label>
+          {/* *** CHANGED: Control Group - Added responsive wrap/stack and stylized Pause/Resume button (connecting button) *** */}
+          <div className="flex flex-wrap items-center gap-4">
+            
+            {/* Control Group - Pause/Resume Button (Now stylized and larger) */}
+            <div className="flex items-center gap-2 bg-bg/50 p-1.5 rounded-xl border border-border shadow-md">
+              <button
+                onClick={() => setIsPaused(!isPaused)}
+                // *** CHANGED: Increased padding (py-3.5) and font size (text-base) for a larger, more prominent button ***
+                className={`flex items-center gap-2 px-5 py-3.5 rounded-xl font-extrabold text-base transition-all duration-300 ${isPaused
+                  ? 'bg-accent/20 text-accent hover:bg-accent/30 border border-accent/20 shadow-lg shadow-accent/20'
+                  : 'bg-primary text-primary-contrast hover:bg-primary/90 border border-primary shadow-xl shadow-primary/30'
+                  }`}
+              >
+                {isPaused ? <Play className="w-5 h-5" /> : <Pause className="w-5 h-5" />}
+                {isPaused ? 'RESUME STREAM' : 'PAUSE STREAM'}
+              </button>
             </div>
 
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-bold text-text">Channel:</label>
+            <div className="h-10 w-[1px] bg-border mx-2 hidden lg:block"></div> {/* Separator for desktop */}
+            
+            {/* Time Window (Moved inside the same responsive div) */}
+            <div className="flex flex-col gap-1 w-full sm:w-auto"> {/* Added w-full/sm:w-auto for better stacking */}
+              <label className="text-[10px] font-bold text-muted uppercase tracking-wider ml-1">Time Window</label>
+              <select
+                value={timeWindowMs}
+                onChange={(e) => setTimeWindowMs(Number(e.target.value))}
+                className="px-4 py-3 bg-bg border border-border text-text text-sm rounded-lg focus:ring-2 focus:ring-primary/50 outline-none hover:border-primary/50 transition-colors w-full sm:w-[150px]" // Added responsive width
+              >
+                <option value={5000}>5 Seconds</option>
+                <option value={10000}>10 Seconds</option>
+                <option value={30000}>30 Seconds</option>
+                <option value={60000}>60 Seconds</option>
+              </select>
+            </div>
+          </div>
+          {/* *** END CHANGED: Control Group *** */}
+        </div>
+
+        {/* Filters / Toggles Row */}
+        {/* *** CHANGED: Added 'flex-col sm:flex-row' and adjusted gap/margin for better responsiveness on smaller screens *** */}
+        <div className="mt-6 pt-4 border-t border-border flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
+          
+          {/* EEG Mode (Single/Overlay) */}
+          <div className="flex items-center gap-4">
+            <span className="text-xs font-bold text-text uppercase tracking-wider bg-bg/50 px-2 py-1 rounded">EEG Mode:</span>
+            <div className="flex bg-bg/50 p-1 rounded-lg border border-border">
+              <button
+                onClick={() => setDisplayMode('single')}
+                className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${displayMode === 'single' ? 'bg-primary text-primary-contrast shadow-sm' : 'text-muted hover:text-text'}`}
+              >
+                Single Ch
+              </button>
+              <button
+                onClick={() => setDisplayMode('overlay')}
+                className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${displayMode === 'overlay' ? 'bg-primary text-primary-contrast shadow-sm' : 'text-muted hover:text-text'}`}
+              >
+                Overlay All
+              </button>
+            </div>
+          </div>
+
+          {/* Select Channel Dropdown (only visible in single mode) */}
+          {displayMode === 'single' && (
+            <div className="flex items-center gap-2 animate-in fade-in slide-in-from-left-4 duration-300">
+              <span className="text-xs font-bold text-muted uppercase">Select Channel:</span>
               <select
                 value={selectedChannel}
                 onChange={(e) => setSelectedChannel(Number(e.target.value))}
-                className="px-3 py-2 bg-bg border border-border text-text rounded-lg outline-none"
-                disabled={displayMode === 'overlay'}
+                className="px-3 py-1.5 bg-bg border border-border text-text text-xs rounded-lg outline-none cursor-pointer hover:border-primary/50"
               >
-                {knownEegChannels.length === 0 && <option value={0}>0</option>}
+                {knownEegChannels.length === 0 && <option value={0}>Waiting for data...</option>}
                 {knownEegChannels.map(ch => (
-                  <option key={ch} value={ch}>Ch {ch}</option>
+                  <option key={ch} value={ch}>Channel {ch}</option>
                 ))}
               </select>
             </div>
+          )}
+
+          {/* Pushes EOG/EMG toggles to the right on larger screens */}
+          <div className="flex-grow"></div> 
+
+          {/* EOG/EMG Toggles */}
+          <div className="flex items-center gap-4 mt-2 sm:mt-0"> {/* Adjusted top margin for mobile stacking */}
+            <label className="flex items-center gap-2 cursor-pointer group">
+              <div className={`w-10 h-5 rounded-full p-1 transition-colors duration-300 ${showEog ? 'bg-emerald-500/20 ring-1 ring-emerald-500' : 'bg-bg ring-1 ring-border'}`}>
+                <div className={`w-3 h-3 rounded-full bg-emerald-500 shadow-sm transform transition-transform duration-300 ${showEog ? 'translate-x-[18px]' : 'translate-x-0'}`}></div>
+              </div>
+              <input type="checkbox" className="hidden" checked={showEog} onChange={e => setShowEog(e.target.checked)} />
+              <span className={`text-xs font-bold transition-colors ${showEog ? 'text-emerald-400' : 'text-muted group-hover:text-text'}`}>Show EOG</span>
+            </label>
+
+            <label className="flex items-center gap-2 cursor-pointer group">
+              <div className={`w-10 h-5 rounded-full p-1 transition-colors duration-300 ${showEmg ? 'bg-amber-500/20 ring-1 ring-amber-500' : 'bg-bg ring-1 ring-border'}`}>
+                <div class={`w-3 h-3 rounded-full bg-amber-500 shadow-sm transform transition-transform duration-300 ${showEmg ? 'translate-x-[18px]' : 'translate-x-0'}`}></div>
+              </div>
+              <input type="checkbox" className="hidden" checked={showEmg} onChange={e => setShowEmg(e.target.checked)} />
+              <span className={`text-xs font-bold transition-colors ${showEmg ? 'text-amber-400' : 'text-muted group-hover:text-text'}`}>Show EMG</span>
+            </label>
           </div>
         </div>
       </div>
 
-      <SignalChart
-        title="EEG - Brain Waves"
-        color="#3b82f6"
-        timeWindowMs={timeWindowMs}
-        {...eegChartProp}
-        channelLabelPrefix="Ch"
-      />
+      {/* Charts Grid */}
+      {/* *** CHANGED: Chart height increased on large screens, grid layout adjusted to 1-column on mobile and 2-column on xl *** */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 pb-10">
 
-      <SignalChart title="EOG - Eye Movement" data={eogData} color="#10b981" timeWindowMs={timeWindowMs} />
-      <SignalChart title="EMG - Muscle Activity" data={emgData} color="#f59e0b" timeWindowMs={timeWindowMs} />
+        {/* Main EEG Chart */}
+        <div className="col-span-1 xl:col-span-2 h-[350px] md:h-[450px]">
+          <SignalChart
+            title={displayMode === 'single' ? `EEG Channel ${selectedChannel}` : 'EEG Overlay (All Channels)'}
+            color="#3b82f6"
+            timeWindowMs={timeWindowMs}
+            {...eegChartProp}
+            channelLabelPrefix="Ch"
+            // *** CHANGED: Increased height property for the chart component itself ***
+            height={400} 
+            showGrid={true}
+          />
+        </div>
+
+        {/* Secondary Charts (EOG and EMG now share a column on XL screens) */}
+        {showEog && (
+          <div className="col-span-1 h-[250px] lg:h-[300px]"> {/* Increased height for better look */}
+            <SignalChart
+              title="EOG - Eye Movement"
+              data={eogData}
+              color="#10b981"
+              timeWindowMs={timeWindowMs}
+              // *** CHANGED: Increased height property for the chart component itself ***
+              height={250}
+            />
+          </div>
+        )}
+
+        {showEmg && (
+          <div className="col-span-1 h-[250px] lg:h-[300px]"> {/* Increased height for better look */}
+            <SignalChart
+              title="EMG - Muscle Activity"
+              data={emgData}
+              color="#f59e0b"
+              timeWindowMs={timeWindowMs}
+              // *** CHANGED: Increased height property for the chart component itself ***
+              height={250}
+            />
+          </div>
+        )}
+        {/* *** END CHANGED: Chart Grid *** */}
+      </div>
     </div>
   )
 }

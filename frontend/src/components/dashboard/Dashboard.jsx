@@ -20,8 +20,8 @@ export default function Dashboard() {
   const { user, logout } = useAuth()
   const [currentPage, setCurrentPage] = useState('live')
   // const [sidebarOpen, setSidebarOpen] = useState(true)
-  const { status, lastMessage, latency, connect, disconnect } = useWebSocket(
-    import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws'
+  const { status, lastMessage, latency, connect, disconnect, sendMessage } = useWebSocket(
+    import.meta.env.VITE_WS_URL || 'ws://localhost:8765'
   )
   const [theme, setTheme] = React.useState(() => localStorage.getItem('theme') || 'theme-violet');
   const [navColors, setNavColors] = React.useState({ base: '#000000', pill: '#ffffff', pillText: '#000000', hoverText: '#ffffff' });
@@ -73,59 +73,67 @@ export default function Dashboard() {
     setAuthView(null);
   };
 
+  const navItems = React.useMemo(() => [
+    { label: 'Live', onClick: () => setCurrentPage('live'), href: '#live' },
+    { label: 'Commands', onClick: () => setCurrentPage('commands'), href: '#commands' },
+    { label: 'Recordings', onClick: () => setCurrentPage('recordings'), href: '#recordings' },
+    { label: 'Devices', onClick: () => setCurrentPage('devices'), href: '#devices' },
+    { label: 'Chat', onClick: () => setCurrentPage('chat'), href: '#chat' },
+    { label: 'Settings', onClick: () => setCurrentPage('settings'), href: '#settings' },
+    { label: 'Test', onClick: () => setCurrentPage('test'), href: '#test' },
+    {
+      label: 'Theme',
+      type: 'pill',
+      key: 'theme-dropdown',
+      menu: ({ close }) => (
+        <ScrollStack>
+          {themePresets.map((p) => (
+            <ScrollStackItem key={p.value}>
+              <Pill
+                label={p.label}
+                pillHeight={42}
+                pillWidth={pillSize.width}
+                active={theme === p.value}
+                onClick={() => {
+                  setTheme(p.value);
+                  close?.();
+                }}
+                baseColor={p.accent}
+                pillColor={p.text}
+                hoveredTextColor={p.text}
+                pillTextColor={p.accent}
+              />
+            </ScrollStackItem>
+          ))}
+        </ScrollStack>
+      )
+    }
+  ], [theme, pillSize.width]);
+
   return (
     <div className="app-root">
       {/* Navigation */}
-      <div className="topbar">
+      <div className="topbar" style={{ zIndex: 50 }}>
         <div className="topbar-inner container">
-          <div className="brand">
-            <video muted autoPlay loop playsInline preload="auto" aria-label="logo animation">
-              <source src="/Resources/Encryption.mp4" type="video/mp4" />
-            </video>
-            <div className="title">
-              NeuroKeys
+          <div className="flex items-center gap-3">
+            <div className="relative group">
+              <div className="absolute inset-0 bg-primary/20 blur-lg rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+              <video muted autoPlay loop playsInline preload="auto" aria-label="logo animation" className="w-10 h-10 relative z-10 rounded-lg border border-border bg-black object-cover">
+                <source src="/Resources/Encryption.mp4" type="video/mp4" />
+              </video>
+            </div>
+            <div className="flex flex-col">
+              <div className="headline">NeuroKeys
+                <br />
+                <div className="accent">BCI Dashboard</div>
+              </div>
             </div>
           </div>
 
           <nav className="nav">
-            <div className="pill-nav" style={{ background: 'transparent', border: 'none', boxShadow: 'none', padding: 0 }}>
+            <div className="backdrop-blur-sm bg-surface/50 border border-white/5 rounded-full p-1">
               <PillNav
-                items={[
-                  { label: 'Live', onClick: () => setCurrentPage('live'), href: '#live' },
-                  { label: 'Commands', onClick: () => setCurrentPage('commands'), href: '#commands' },
-                  { label: 'Recordings', onClick: () => setCurrentPage('recordings'), href: '#recordings' },
-                  { label: 'Devices', onClick: () => setCurrentPage('devices'), href: '#devices' },
-                  { label: 'Chat', onClick: () => setCurrentPage('chat'), href: '#chat' },
-                  { label: 'Settings', onClick: () => setCurrentPage('settings'), href: '#settings' },
-                  { label: 'Test', onClick: () => setCurrentPage('test'), href: '#test' },
-                  {
-                    label: 'Theme',
-                    type: 'pill',
-                    key: 'theme-dropdown',
-                    menu: ({ close }) => (
-                      <ScrollStack>
-                        {themePresets.map((p) => (
-                          <ScrollStackItem key={p.value}>
-                            <Pill
-                              label={p.label}
-                              pillHeight={42}
-                              pillWidth={pillSize.width}
-                              active={theme === p.value}
-                              onClick={() => {
-                                setTheme(p.value);
-                                close?.();
-                              }}
-                              baseColor={p.accent}
-                              pillColor={p.text}
-                              hoveredTextColor={p.text}
-                              pillTextColor={p.accent}
-                            />
-                          </ScrollStackItem>
-                        ))}
-                      </ScrollStack>
-                    )
-                  }
-                ]}
+                items={navItems}
                 activeHref={`#${currentPage}`}
                 className="custom-nav"
                 ease="power2.easeOut"
@@ -138,10 +146,27 @@ export default function Dashboard() {
           </nav>
 
           <button
-            className="btn-encrypting"
-            onClick={() => document.getElementById('encrypt-card')?.scrollIntoView({ behavior: 'smooth' })}
+            onClick={() => status === 'connected' ? disconnect() : connect()}
+            className={`flex items-center justify-center gap-2 w-36 py-2 rounded-full border transition-all duration-300 ${status === 'connected' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20' :
+              status === 'connecting' ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' :
+                'bg-red-500/10 border-red-500/20 text-red-400 hover:bg-red-500/20'
+              }`}
           >
-            Connect
+            <div className={`w-2 h-2 rounded-full ${status === 'connected' ? 'bg-emerald-500 shadow-[0_0_8px_currentColor]' :
+              status === 'connecting' ? 'bg-amber-500 animate-pulse' :
+                'bg-red-500'
+              }`}></div>
+
+            <span className="text-xs font-bold uppercase tracking-wider">
+              {status === 'connected' ? 'Connected' : status === 'connecting' ? 'Connecting' : 'Disconnected'}
+            </span>
+
+            {status === 'connected' && (
+              <>
+                <div className="w-[1px] h-3 bg-current opacity-20 mx-1"></div>
+                <span className="text-xs font-mono opacity-80">{latency}ms</span>
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -151,7 +176,7 @@ export default function Dashboard() {
         {currentPage === 'live' && <LiveView wsData={lastMessage} />}
         {currentPage === 'commands' && <CommandVisualizer wsData={lastMessage} />}
         {currentPage === 'recordings' && <RecordingsView />}
-        {currentPage === 'devices' && <DevicesView />}
+        {currentPage === 'devices' && <DevicesView sendMessage={sendMessage} />}
         {currentPage === 'chat' && <ChatView wsData={lastMessage} />}
         {currentPage === 'mock' && <MockView />}
         {currentPage === 'settings' && <SettingsView />}

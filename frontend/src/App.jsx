@@ -14,7 +14,7 @@ function AppContent() {
       </div>
     )
   }
-  
+
   return user ? <Dashboard /> : <LoginPage />
 }
 

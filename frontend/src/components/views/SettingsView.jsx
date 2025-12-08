@@ -107,8 +107,8 @@ export default function SettingsView() {
                     key={t.value}
                     onClick={() => applyTheme(t.value)}
                     className={`px-4 py-3 rounded-xl font-bold transition-all ${theme === t.value
-                        ? 'bg-primary text-primary-contrast shadow-glow'
-                        : 'bg-bg border border-border text-text hover:border-primary/50'
+                      ? 'bg-primary text-primary-contrast shadow-glow'
+                      : 'bg-bg border border-border text-text hover:border-primary/50'
                       }`}
                   >
                     {t.label}
@@ -147,3 +147,188 @@ export default function SettingsView() {
     </div>
   )
 }
+
+
+// import React, { useState, useEffect } from 'react'
+
+// export default function SettingsView({ sendMessage }) {
+//   const [apiUrl, setApiUrl] = useState('http://localhost:8000')
+//   const [wsUrl, setWsUrl] = useState('ws://localhost:8765')
+//   const [useMock, setUseMock] = useState(false)
+//   const [theme, setTheme] = useState('rose')
+//   const [filterSettings, setFilterSettings] = useState({
+//     emgHighPass: 70,
+//     eogLowFreq: 0.5,
+//     eogHighFreq: 50,
+//     eegLowFreq: 0.1,
+//     eegHighFreq: 40
+//   })
+
+//   const themes = [
+//     { value: 'rose', label: 'Rose' },
+//     { value: 'violet', label: 'Violet' },
+//     { value: 'ocean', label: 'Ocean' },
+//     { value: 'forest', label: 'Forest' },
+//   ]
+
+//   const handleSaveSettings = () => {
+//     const settings = {
+//       apiUrl,
+//       wsUrl,
+//       useMock,
+//       theme,
+//       filters: filterSettings
+//     }
+//     localStorage.setItem('bci_settings', JSON.stringify(settings))
+
+//     if (sendMessage) {
+//       sendMessage({
+//         type: 'settings_updated',
+//         settings: settings
+//       })
+//     }
+
+//     const root = document.documentElement
+//     root.className = `root theme-${theme}`
+//     alert('Settings saved!')
+//   }
+
+//   const applyTheme = (themeValue) => {
+//     setTheme(themeValue)
+//     const root = document.documentElement
+//     root.className = `root theme-${themeValue}`
+//   }
+
+//   const handleFilterChange = (key, value) => {
+//     setFilterSettings(prev => ({
+//       ...prev,
+//       [key]: parseFloat(value)
+//     }))
+//   }
+
+//   return (
+//     <div className="settings-container">
+//       <div className="card">
+//         <h2>🔌 Server Configuration</h2>
+
+//         <div className="form-group">
+//           <label>API URL</label>
+//           <input
+//             type="text"
+//             value={apiUrl}
+//             onChange={(e) => setApiUrl(e.target.value)}
+//             className="input"
+//           />
+//           <p className="help-text">Base URL for HTTP API calls</p>
+//         </div>
+
+//         <div className="form-group">
+//           <label>WebSocket URL</label>
+//           <input
+//             type="text"
+//             value={wsUrl}
+//             onChange={(e) => setWsUrl(e.target.value)}
+//             className="input"
+//           />
+//           <p className="help-text">WebSocket endpoint for live data streaming</p>
+//         </div>
+
+//         <div className="form-group">
+//           <label>
+//             <input
+//               type="checkbox"
+//               checked={useMock}
+//               onChange={(e) => setUseMock(e.target.checked)}
+//             />
+//             Use Mock Data (for testing without hardware)
+//           </label>
+//         </div>
+//       </div>
+
+//       <div className="card">
+//         <h2>🎨 Display Settings</h2>
+
+//         <div className="form-group">
+//           <label>Theme</label>
+//           <div className="theme-grid">
+//             {themes.map(t => (
+//               <button
+//                 key={t.value}
+//                 onClick={() => applyTheme(t.value)}
+//                 className={`theme-button ${theme === t.value ? 'active' : ''}`}
+//               >
+//                 {t.label}
+//               </button>
+//             ))}
+//           </div>
+//         </div>
+//       </div>
+
+//       <div className="card">
+//         <h2>🔧 Filter Settings</h2>
+
+//         <h4>EMG Filter</h4>
+//         <div className="form-group">
+//           <label>High-Pass Frequency (Hz)</label>
+//           <input
+//             type="number"
+//             value={filterSettings.emgHighPass}
+//             onChange={(e) => handleFilterChange('emgHighPass', e.target.value)}
+//             className="input"
+//           />
+//         </div>
+
+//         <h4>EOG Filter (Band-Pass)</h4>
+//         <div className="form-row">
+//           <div className="form-group">
+//             <label>Low Frequency (Hz)</label>
+//             <input
+//               type="number"
+//               value={filterSettings.eogLowFreq}
+//               onChange={(e) => handleFilterChange('eogLowFreq', e.target.value)}
+//               className="input"
+//             />
+//           </div>
+//           <div className="form-group">
+//             <label>High Frequency (Hz)</label>
+//             <input
+//               type="number"
+//               value={filterSettings.eogHighFreq}
+//               onChange={(e) => handleFilterChange('eogHighFreq', e.target.value)}
+//               className="input"
+//             />
+//           </div>
+//         </div>
+
+//         <h4>EEG Filter (Band-Pass)</h4>
+//         <div className="form-row">
+//           <div className="form-group">
+//             <label>Low Frequency (Hz)</label>
+//             <input
+//               type="number"
+//               value={filterSettings.eegLowFreq}
+//               onChange={(e) => handleFilterChange('eegLowFreq', e.target.value)}
+//               className="input"
+//             />
+//           </div>
+//           <div className="form-group">
+//             <label>High Frequency (Hz)</label>
+//             <input
+//               type="number"
+//               value={filterSettings.eegHighFreq}
+//               onChange={(e) => handleFilterChange('eegHighFreq', e.target.value)}
+//               className="input"
+//             />
+//           </div>
+//         </div>
+//       </div>
+
+//       <button
+//         onClick={handleSaveSettings}
+//         className="btn btn-primary btn-lg btn-block"
+//       >
+//         ✅ Save All Settings
+//       </button>
+//     </div>
+//   )
+// }

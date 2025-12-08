@@ -65,8 +65,8 @@ export default function RecordingsView() {
           <button
             onClick={isRecording ? stopRecording : startRecording}
             className={`px-8 py-3 rounded-xl font-bold transition-all shadow-glow ${isRecording
-                ? 'bg-accent text-primary-contrast hover:opacity-90'
-                : 'bg-primary text-primary-contrast hover:opacity-90 hover:translate-y-[-2px] active:translate-y-[0px]'
+              ? 'bg-accent text-primary-contrast hover:opacity-90'
+              : 'bg-primary text-primary-contrast hover:opacity-90 hover:translate-y-[-2px] active:translate-y-[0px]'
               }`}
           >
             {isRecording ? '⏹ Stop Recording' : '⏺ Start Recording'}
@@ -136,3 +136,224 @@ export default function RecordingsView() {
     </div>
   )
 }
+
+
+// import React, { useState, useEffect } from 'react'
+
+// export default function RecordingsView() {
+//   const [recordings, setRecordings] = useState([])
+//   const [isRecording, setIsRecording] = useState(false)
+//   const [recordingName, setRecordingName] = useState('')
+//   const [recordingDuration, setRecordingDuration] = useState(0)
+//   const [recordingTimer, setRecordingTimer] = useState(null)
+//   const [sessionData, setSessionData] = useState(null)
+
+//   // Load saved recordings from server
+//   useEffect(() => {
+//     const loadRecordings = async () => {
+//       try {
+//         const response = await fetch('http://localhost:8000/api/recordings')
+//         const data = await response.json()
+//         setRecordings(data.recordings || [])
+//       } catch (error) {
+//         console.error('Error loading recordings:', error)
+//       }
+//     }
+//     loadRecordings()
+//   }, [])
+
+//   const startRecording = async () => {
+//     try {
+//       const response = await fetch('http://localhost:8000/api/recording/start', {
+//         method: 'POST',
+//         headers: { 'Content-Type': 'application/json' },
+//         body: JSON.stringify({
+//           name: recordingName || `Recording ${recordings.length + 1}`,
+//           timestamp: new Date().toISOString()
+//         })
+//       })
+
+//       if (response.ok) {
+//         const data = await response.json()
+//         setSessionData(data.sessionId)
+//         setIsRecording(true)
+//         setRecordingDuration(0)
+
+//         // Start timer
+//         const timer = setInterval(() => {
+//           setRecordingDuration(prev => prev + 1)
+//         }, 1000)
+//         setRecordingTimer(timer)
+//       }
+//     } catch (error) {
+//       console.error('Failed to start recording:', error)
+//     }
+//   }
+
+//   const stopRecording = async () => {
+//     try {
+//       clearInterval(recordingTimer)
+
+//       const response = await fetch('http://localhost:8000/api/recording/stop', {
+//         method: 'POST',
+//         headers: { 'Content-Type': 'application/json' },
+//         body: JSON.stringify({
+//           sessionId: sessionData,
+//           duration: recordingDuration
+//         })
+//       })
+
+//       if (response.ok) {
+//         const data = await response.json()
+//         const newRecording = {
+//           id: data.sessionId,
+//           name: recordingName || `Recording ${recordings.length + 1}`,
+//           timestamp: new Date().getTime(),
+//           duration: recordingDuration,
+//           size: data.fileSize || '0 MB',
+//           dataPoints: data.totalPackets || 0,
+//           path: data.filePath
+//         }
+
+//         setRecordings(prev => [newRecording, ...prev])
+//         setIsRecording(false)
+//         setRecordingName('')
+//         setRecordingDuration(0)
+//         setSessionData(null)
+//       }
+//     } catch (error) {
+//       console.error('Failed to stop recording:', error)
+//     }
+//   }
+
+//   const downloadRecording = async (recording, format) => {
+//     try {
+//       const response = await fetch(`http://localhost:8000/api/recording/download/${recording.id}`, {
+//         method: 'POST',
+//         headers: { 'Content-Type': 'application/json' },
+//         body: JSON.stringify({ format: format.toLowerCase() })
+//       })
+
+//       if (response.ok) {
+//         const blob = await response.blob()
+//         const url = URL.createObjectURL(blob)
+//         const a = document.createElement('a')
+//         a.href = url
+//         a.download = `${recording.name}.${format === 'JSON' ? 'json' : 'csv'}`
+//         a.click()
+//         URL.revokeObjectURL(url)
+//       }
+//     } catch (error) {
+//       console.error('Download failed:', error)
+//     }
+//   }
+
+//   const deleteRecording = async (id) => {
+//     if (!confirm('Delete this recording permanently?')) return
+
+//     try {
+//       const response = await fetch(`http://localhost:8000/api/recording/${id}`, {
+//         method: 'DELETE'
+//       })
+
+//       if (response.ok) {
+//         setRecordings(prev => prev.filter(r => r.id !== id))
+//       }
+//     } catch (error) {
+//       console.error('Delete failed:', error)
+//     }
+//   }
+
+//   const formatDuration = (seconds) => {
+//     const hrs = Math.floor(seconds / 3600)
+//     const mins = Math.floor((seconds % 3600) / 60)
+//     const secs = seconds % 60
+//     return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+//   }
+
+//   return (
+//     <div className="recordings-container">
+//       <div className="card recording-control">
+//         <h2>🎙️ Session Recording</h2>
+
+//         {!isRecording ? (
+//           <>
+//             <div className="form-group">
+//               <label>Session Name</label>
+//               <input
+//                 type="text"
+//                 value={recordingName}
+//                 onChange={(e) => setRecordingName(e.target.value)}
+//                 placeholder="Enter session name (optional)"
+//                 className="input"
+//               />
+//             </div>
+//             <button
+//               onClick={startRecording}
+//               className="btn btn-success btn-lg btn-block"
+//             >
+//               ⏺️ Start Recording
+//             </button>
+//           </>
+//         ) : (
+//           <>
+//             <div className="recording-timer">
+//               <h3>⏱️ {formatDuration(recordingDuration)}</h3>
+//             </div>
+//             <button
+//               onClick={stopRecording}
+//               className="btn btn-danger btn-lg btn-block"
+//             >
+//               ⏹️ Stop Recording
+//             </button>
+//           </>
+//         )}
+//       </div>
+
+//       <div className="recordings-list">
+//         <h2>📋 Saved Sessions</h2>
+//         {recordings.length === 0 ? (
+//           <p className="empty-message">No recordings yet. Start a session to save data.</p>
+//         ) : (
+//           <div className="recordings-grid">
+//             {recordings.map(recording => (
+//               <div key={recording.id} className="recording-card">
+//                 <div className="recording-header">
+//                   <h3>{recording.name}</h3>
+//                   <span className="badge">{formatDuration(recording.duration)}</span>
+//                 </div>
+
+//                 <div className="recording-details">
+//                   <p><strong>Date:</strong> {new Date(recording.timestamp).toLocaleString()}</p>
+//                   <p><strong>Size:</strong> {recording.size}</p>
+//                   <p><strong>Data Points:</strong> {recording.dataPoints}</p>
+//                 </div>
+
+//                 <div className="recording-actions">
+//                   <button
+//                     onClick={() => downloadRecording(recording, 'JSON')}
+//                     className="btn btn-sm btn-primary"
+//                   >
+//                     📥 JSON
+//                   </button>
+//                   <button
+//                     onClick={() => downloadRecording(recording, 'CSV')}
+//                     className="btn btn-sm btn-primary"
+//                   >
+//                     📥 CSV
+//                   </button>
+//                   <button
+//                     onClick={() => deleteRecording(recording.id)}
+//                     className="btn btn-sm btn-danger"
+//                   >
+//                     🗑️ Delete
+//                   </button>
+//                 </div>
+//               </div>
+//             ))}
+//           </div>
+//         )}
+//       </div>
+//     </div>
+//   )
+// }

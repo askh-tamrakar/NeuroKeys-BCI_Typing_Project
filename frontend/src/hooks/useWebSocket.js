@@ -1,70 +1,141 @@
 import { useState, useEffect, useRef } from 'react'
+import io from 'socket.io-client'
 
+/**
+ * WebSocket Hook for Multi-Channel EEG Streaming
+ * Much lower latency than HTTP polling
+ */
 export function useWebSocket(url) {
   const [status, setStatus] = useState('disconnected')
   const [lastMessage, setLastMessage] = useState(null)
   const [latency, setLatency] = useState(0)
+  const [channels, setChannels] = useState(1)
 
-  const wsRef = useRef(null)
+  const socketRef = useRef(null)
   const pingTimer = useRef(null)
+  const lastPingTime = useRef(0)
 
   const connect = () => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return
+    if (socketRef.current?.connected) return
 
+    console.log(`🔌 Connecting to WebSocket: ${url}`)
     setStatus('connecting')
 
-    wsRef.current = new WebSocket(url)
+    // Extract base URL (remove /api/stream if present)
+    const baseUrl = url.replace(/\/api\/.*/, '')
 
-    wsRef.current.onopen = () => {
+    socketRef.current = io(baseUrl, {
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      reconnectionAttempts: 5,
+      transports: ['websocket', 'polling']
+    })
+
+    socketRef.current.on('connect', () => {
       setStatus('connected')
+      console.log('✅ WebSocket connected')
 
-      // Send ping every 1 sec
+      // Start ping/pong for latency measurement
       pingTimer.current = setInterval(() => {
-        const id = Math.random().toString(36).slice(2, 10)
-        const t0 = performance.now()
-
-        wsRef.current.send(JSON.stringify({
-          type: "ping",
-          id,
-          t0
-        }))
+        lastPingTime.current = performance.now()
+        socketRef.current.emit('ping')
       }, 1000)
-    }
+    })
 
-    wsRef.current.onmessage = (event) => {
-      const msg = JSON.parse(event.data)
-
-      if (msg.type === "pong") {
-        const rtt = performance.now() - msg.t0
-        setLatency(rtt.toFixed(2)) 
-        return
-      }
-
-      setLastMessage({ data: event.data, timestamp: Date.now() })
-    }
-
-    wsRef.current.onerror = () => setStatus('error')
-
-    wsRef.current.onclose = () => {
+    socketRef.current.on('disconnect', () => {
       setStatus('disconnected')
-      clearInterval(pingTimer.current)
-    }
+      if (pingTimer.current) clearInterval(pingTimer.current)
+      console.log('❌ WebSocket disconnected')
+    })
+
+    socketRef.current.on('error', (error) => {
+      setStatus('error')
+      console.error('WebSocket error:', error)
+    })
+
+    // Receive EEG data (realtime @ 250 Hz)
+    socketRef.current.on('eeg_data', (data) => {
+      setLatency(Math.round(performance.now() - lastPingTime.current))
+      setChannels(data.channels)
+
+      setLastMessage({
+        data: JSON.stringify(data),
+        timestamp: Date.now()
+      })
+    })
+
+    // Receive buffered data
+    socketRef.current.on('buffer_data', (data) => {
+      setLastMessage({
+        data: JSON.stringify(data),
+        timestamp: Date.now()
+      })
+    })
+
+    // Receive all channels data
+    socketRef.current.on('all_channels_data', (data) => {
+      setLastMessage({
+        data: JSON.stringify(data),
+        timestamp: Date.now()
+      })
+    })
+
+    // Response from server
+    socketRef.current.on('response', (data) => {
+      console.log('Server response:', data)
+      setChannels(data.channels)
+    })
   }
 
   const disconnect = () => {
-    wsRef.current?.close()
+    if (socketRef.current) {
+      socketRef.current.disconnect()
+      socketRef.current = null
+    }
+    if (pingTimer.current) {
+      clearInterval(pingTimer.current)
+    }
+    setStatus('disconnected')
+  }
+
+  const requestBuffer = (channel = 0, n = 500) => {
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('request_buffer', { channel, n })
+    }
+  }
+
+  const requestAllChannels = (n = 500) => {
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('request_all_channels', { n })
+    }
+  }
+
+  const sendMessage = (data) => {
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('message', data)
+      console.log('📤 Sent message:', data)
+    } else {
+      console.warn('⚠️  WebSocket not connected, cannot send message:', data)
+    }
   }
 
   useEffect(() => {
     return () => disconnect()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return {
     status,
     lastMessage,
     latency,
+    channels,
     connect,
     disconnect,
-    ws: wsRef.current
+    sendMessage,
+    requestBuffer,
+    requestAllChannels
   }
 }
+
+export default useWebSocket
