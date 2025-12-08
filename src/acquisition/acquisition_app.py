@@ -614,6 +614,12 @@ class UnifiedAcquisitionApp:
                     
                     self.packet_count += 1
             
+            # Process remote commands
+            if self.bridge:
+                cmd = self.bridge.get_command()
+                if cmd:
+                    self.handle_remote_command(cmd)
+
             # Update UI labels
             self.packet_label.config(text=str(self.packet_count))
             
@@ -659,6 +665,42 @@ class UnifiedAcquisitionApp:
         except:
             pass
     
+    def handle_remote_command(self, cmd):
+        """Handle commands received from WebSocket"""
+        try:
+            cmd_type = cmd.get('type')
+            
+            if cmd_type == 'SAVE_CONFIG':
+                new_config = cmd.get('config')
+                if new_config:
+                    # Save to file
+                    config_path = Path("config/sensor_config.json")
+                    with open(config_path, 'w') as f:
+                        json.dump(new_config, f, indent=2)
+                    print(f"✅ Config saved to {config_path}")
+                    
+                    # Apply changes live if possible
+                    # Update Channel Mapping
+                    mapping = new_config.get('channel_mapping', {})
+                    if 'ch0' in mapping:
+                        self.ch0_var.set(mapping['ch0'].get('sensor', 'EMG'))
+                    if 'ch1' in mapping:
+                        self.ch1_var.set(mapping['ch1'].get('sensor', 'EOG'))
+                        
+                    # Update sampling rate if changed (might need restart)
+                    if 'sampling_rate' in new_config:
+                        self.config['sampling_rate'] = new_config['sampling_rate']
+                        
+            elif cmd_type == 'START':
+                if not self.is_acquiring:
+                    self.start_acquisition()
+            elif cmd_type == 'STOP':
+                if self.is_acquiring:
+                    self.stop_acquisition()
+                    
+        except Exception as e:
+            print(f"❌ Error handling remote command: {e}")
+
     def toggle_server(self):
         """Show WebSocket server status"""
         self.server_label.config(

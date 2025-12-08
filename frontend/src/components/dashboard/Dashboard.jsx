@@ -173,7 +173,7 @@ export default function Dashboard() {
 
       {/* Main Content Area */}
       <div className="container" style={{ flex: 1, padding: '24px 0', overflowY: 'auto' }}>
-        {currentPage === 'live' && <LiveDashboard wsData={lastMessage} />}
+        {currentPage === 'live' && <LiveDashboard wsData={lastMessage} sendMessage={sendMessage} />}
         {currentPage === 'commands' && <CommandVisualizer wsData={lastMessage} />}
         {currentPage === 'recordings' && <RecordingsView />}
         {currentPage === 'devices' && <DevicesView sendMessage={sendMessage} />}
