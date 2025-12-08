@@ -3,7 +3,7 @@ import Sidebar from '../ui/Sidebar'
 import LiveView from '../views/LiveView'
 import { ConfigService, DEFAULT_CONFIG } from '../../services/ConfigService'
 
-export default function LiveDashboard({ wsData }) {
+export default function LiveDashboard({ wsData, sendMessage }) {
     const [config, setConfig] = useState(DEFAULT_CONFIG)
     const [isPaused, setIsPaused] = useState(false)
     const [loading, setLoading] = useState(true)
@@ -16,12 +16,21 @@ export default function LiveDashboard({ wsData }) {
         })
     }, [])
 
-    // Auto-save config when it changes (debounce could be added)
+    // Auto-save config when it changes
     useEffect(() => {
         if (!loading) {
+            // Persist locally
             ConfigService.saveConfig(config)
+
+            // Sync to Backend
+            if (sendMessage) {
+                sendMessage({
+                    type: 'SAVE_CONFIG',
+                    config: config
+                })
+            }
         }
-    }, [config, loading])
+    }, [config, loading, sendMessage])
 
     if (loading) return <div className="flex items-center justify-center h-screen bg-bg text-text">Loading Config...</div>
 

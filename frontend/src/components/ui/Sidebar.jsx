@@ -1,8 +1,5 @@
 import React from 'react'
 // If icons are missing, we can use text or simplistic SVG fallback. 
-// Assuming lucide-react or similar might be available based on "modern web app" patterns, 
-// but sticking to standard HTML/CSS or existing UI libs if known. 
-// Since no UI lib was explicitly seen (other than Tailwind classes in LiveView), used standard elements.
 
 export default function Sidebar({
     config,
@@ -33,7 +30,7 @@ export default function Sidebar({
     }
 
     return (
-        <aside className={`w-80 bg-surface border-r border-border h-full flex flex-col overflow-y-auto ${className}`}>
+        <aside className={`w-80 bg-surface border-r border-border h-full flex flex-col overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] ${className}`}>
             <div className="p-6 border-b border-border">
                 <h2 className="text-xl font-bold text-text mb-1">Controls</h2>
                 <p className="text-xs text-muted">LSL Stream Configuration</p>
@@ -77,6 +74,39 @@ export default function Sidebar({
                     <div className="flex justify-between text-[10px] text-muted font-mono mt-2">
                         <span>1s</span>
                         <span>30s</span>
+                    </div>
+                </section>
+
+                {/* Channel Mapping */}
+                <section>
+                    <h3 className="text-sm font-bold text-muted uppercase tracking-wider mb-4">Channel Mapping</h3>
+
+                    {/* Channel 0 */}
+                    <div className="mb-3">
+                        <label className="text-xs font-medium text-text block mb-1">Graph 1 (Channel 0)</label>
+                        <select
+                            value={config.channel_mapping?.ch0?.sensor || 'EMG'}
+                            onChange={(e) => handleChannelMapping('ch0', e.target.value)}
+                            className="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm outline-none focus:border-primary/50"
+                        >
+                            <option value="EMG">EMG</option>
+                            <option value="EOG">EOG</option>
+                            <option value="EEG">EEG</option>
+                        </select>
+                    </div>
+
+                    {/* Channel 1 */}
+                    <div>
+                        <label className="text-xs font-medium text-text block mb-1">Graph 2 (Channel 1)</label>
+                        <select
+                            value={config.channel_mapping?.ch1?.sensor || 'EOG'}
+                            onChange={(e) => handleChannelMapping('ch1', e.target.value)}
+                            className="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm outline-none focus:border-primary/50"
+                        >
+                            <option value="EMG">EMG</option>
+                            <option value="EOG">EOG</option>
+                            <option value="EEG">EEG</option>
+                        </select>
                     </div>
                 </section>
 
@@ -137,15 +167,7 @@ export default function Sidebar({
                     </div>
                 </section>
 
-                {/* Save Config */}
-                <section className="pt-4 border-t border-border">
-                    <button
-                        onClick={() => ConfigService.exportToFile && ConfigService.exportToFile(config)}
-                        className="w-full py-2 bg-surface hover:bg-bg border border-border text-xs font-bold text-muted hover:text-text rounded-lg transition-colors"
-                    >
-                        Download Config JSON
-                    </button>
-                </section>
+                {/* Save Config Removed (Auto-save enabled) */}
 
             </div>
         </aside>
