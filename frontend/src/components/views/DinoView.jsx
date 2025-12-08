@@ -11,19 +11,18 @@ export default function DinoView({ wsData, isPaused }) {
     const [eyeState, setEyeState] = useState('open') // open, blink, double-blink
 
     // Game settings (easy mode)
-    const GRAVITY = 0.6
-    const JUMP_STRENGTH = -12
-    const GROUND_Y = 0
+    const GRAVITY = 0.45
+    const JUMP_STRENGTH = -12.8
+    const GROUND_OFFSET = 65
     const DINO_WIDTH = 44
     const DINO_HEIGHT = 47
     const OBSTACLE_WIDTH = 20
     const OBSTACLE_MIN_HEIGHT = 40
     const OBSTACLE_MAX_HEIGHT = 60
-    const GAME_SPEED = 4
-    const SPAWN_INTERVAL = 2000 // 2 seconds between obstacles
+    const GAME_SPEED = 3
+    const SPAWN_INTERVAL = 1700
     const CANVAS_WIDTH = 800
-    const CANVAS_HEIGHT = 300
-
+    const CANVAS_HEIGHT = 376
     // Refs for game state (to avoid stale closures)
     const canvasRef = useRef(null)
     const animationRef = useRef(null)
@@ -88,6 +87,11 @@ export default function DinoView({ wsData, isPaused }) {
         blinkPressTimeRef.current = now
     }
 
+    function inc_percent(value, percent) {
+        value += value * (percent / 100)
+        return value
+    }
+
     // Keyboard controls (hidden from UI but still functional for testing)
     useEffect(() => {
         const handleKeyDown = (e) => {
@@ -125,7 +129,9 @@ export default function DinoView({ wsData, isPaused }) {
             velocityRef.current = 0
             obstaclesRef.current = []
             lastSpawnRef.current = Date.now()
-        } else if (currentState === 'playing' && dinoYRef.current === GROUND_Y) {
+        } else if (currentState === 'playing' && Math.abs(dinoYRef.current) < 0.1) {
+            // Only jump if dino is on the ground (using threshold for floating-point safety)
+            console.log('🦖 JUMP! Setting velocity to', JUMP_STRENGTH, 'dinoY was:', dinoYRef.current)
             velocityRef.current = JUMP_STRENGTH
         } else if (currentState === 'gameOver') {
             // Restart game
@@ -280,13 +286,22 @@ export default function DinoView({ wsData, isPaused }) {
             const currentState = gameStateRef.current
 
             if (currentState === 'playing') {
-                // Update dino physics
+                // Update dino physics (dinoYRef is distance above ground, 0 = on ground)
+                const oldVelocity = velocityRef.current
+                const oldY = dinoYRef.current
+
                 velocityRef.current += GRAVITY
                 dinoYRef.current += velocityRef.current
 
-                if (dinoYRef.current >= GROUND_Y) {
-                    dinoYRef.current = GROUND_Y
+                // Keep dino on or above ground (dinoYRef should not go below 0)
+                if (dinoYRef.current >= 0) {
+                    if (oldY < 0) {
+                        console.log('🛬 LANDING: Y went from', oldY.toFixed(2), 'to', dinoYRef.current.toFixed(2), '→ reset to 0')
+                    }
+                    dinoYRef.current = 0
                     velocityRef.current = 0
+                } else if (Math.abs(oldY - dinoYRef.current) > 1) {
+                    console.log('📊 Physics: Y:', oldY.toFixed(2), '→', dinoYRef.current.toFixed(2), '| Vel:', oldVelocity.toFixed(2), '→', velocityRef.current.toFixed(2))
                 }
 
                 // Update obstacles
@@ -300,7 +315,7 @@ export default function DinoView({ wsData, isPaused }) {
                     const height = OBSTACLE_MIN_HEIGHT + Math.random() * (OBSTACLE_MAX_HEIGHT - OBSTACLE_MIN_HEIGHT)
                     obstaclesRef.current.push({
                         x: CANVAS_WIDTH,
-                        y: GROUND_Y,
+                        y: 0, // obstacles are on ground
                         width: OBSTACLE_WIDTH + Math.random() * 10,
                         height: height,
                     })
@@ -311,16 +326,18 @@ export default function DinoView({ wsData, isPaused }) {
                 setScore(scoreRef.current)
 
                 // Collision detection (more forgiving hitbox)
-                const dinoLeft = 100 + 10
-                const dinoRight = 100 + DINO_WIDTH - 10
-                const dinoTop = CANVAS_HEIGHT - DINO_HEIGHT - dinoYRef.current + 5
-                const dinoBottom = CANVAS_HEIGHT - dinoYRef.current - 5
+                const groundY = CANVAS_HEIGHT - GROUND_OFFSET
+                const dinoX = 75 // Match rendering position
+                const dinoLeft = dinoX + 10
+                const dinoRight = dinoX + DINO_WIDTH - 10
+                const dinoTop = groundY - DINO_HEIGHT - dinoYRef.current + 5
+                const dinoBottom = groundY - dinoYRef.current - 5
 
                 for (const obs of obstaclesRef.current) {
                     const obsLeft = obs.x + 5
                     const obsRight = obs.x + obs.width - 5
-                    const obsTop = CANVAS_HEIGHT - obs.height
-                    const obsBottom = CANVAS_HEIGHT
+                    const obsTop = groundY - obs.height
+                    const obsBottom = groundY
 
                     if (
                         dinoRight > obsLeft &&
@@ -362,21 +379,22 @@ export default function DinoView({ wsData, isPaused }) {
                 ctx.fillRect(0, 0, width, height)
 
                 // Ground line
+                const groundY = height - GROUND_OFFSET
                 ctx.strokeStyle = borderColor
                 ctx.lineWidth = 2
                 ctx.beginPath()
-                ctx.moveTo(0, height - 5)
-                ctx.lineTo(width, height - 5)
+                ctx.moveTo(0, groundY)
+                ctx.lineTo(width, groundY)
                 ctx.stroke()
 
-                // Draw dino
-                const dinoX = 100
-                const dinoDrawY = height - DINO_HEIGHT - dinoYRef.current - 5
+                // Draw dino (dinoYRef is distance above ground, subtract it to move dino up)
+                const dinoX = 75
+                const dinoDrawY = groundY - DINO_HEIGHT - dinoYRef.current
                 drawDino(ctx, dinoX, dinoDrawY, primaryColor, textColor)
 
                 // Draw cacti
                 obstaclesRef.current.forEach((obs) => {
-                    const obsDrawY = height - obs.height - 5
+                    const obsDrawY = groundY - obs.height
                     drawCactus(ctx, obs.x, obsDrawY, obs.width, obs.height, surfaceColor, borderColor)
                 })
 
