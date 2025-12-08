@@ -15,11 +15,22 @@ from pathlib import Path
 from datetime import datetime
 import numpy as np
 import sys
+import os
+import queue
+
+# Ensure we can import sibling packages (like processing)
+current_dir = os.path.dirname(os.path.abspath(__file__))
+src_dir = os.path.abspath(os.path.join(current_dir, '..'))
+if src_dir not in sys.path:
+    sys.path.insert(0, src_dir)
 
 # local imports
 from .serial_reader import SerialPacketReader
 from .packet_parser import PacketParser, Packet
 from .lsl_streams import LSLStreamer, LSL_AVAILABLE
+
+# Bridge integration
+from processing.bridge import DataBridge
 
 # matplotlib imports
 import matplotlib
@@ -50,8 +61,9 @@ def adc_to_uv(adc_value: int, adc_bits: int = 14, vref: float = 3300.0) -> float
 class UnifiedAcquisitionApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Biosignal Acquisition - Dynamic Graphs")
-        self.root.geometry("1400x900")
+        self.root.title("EMG Signal Acquisition - OPTIMIZED v5.1 (Modular)")
+        self.root.geometry("1600x950")
+        self.root.configure(bg='#f0f0f0')
         
         # Configuration
         self.config = {"sampling_rate": 512}
@@ -68,6 +80,7 @@ class UnifiedAcquisitionApp:
         # State
         self.is_connected = False
         self.is_acquiring = False
+        self.is_paused = False
         self.is_recording = False
         self.session_start_time = None
         self.packet_count = 0
@@ -91,6 +104,13 @@ class UnifiedAcquisitionApp:
         # Session data
         self.session_data = []
         
+        # Latest packet for display
+        self.latest_packet = {}
+        
+        # Bridge Integration
+        self.bridge = DataBridge()
+        self.bridge.start()
+        
         # Build UI
         self._build_ui()
         
@@ -101,14 +121,39 @@ class UnifiedAcquisitionApp:
     
     # ============ UI BUILDING ============
     
+    def make_scrollable_left_panel(self, parent):
+        """Create a scrollable frame for the left control panel"""
+        container = ttk.Frame(parent)
+        container.pack(side="left", fill="y", expand=False, padx=5, pady=5)
+        canvas = tk.Canvas(container, width=320, highlightthickness=0, bg='white')
+        scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+        scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0,0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        def _on_mousewheel(event):
+            if event.num == 5 or event.delta < 0:
+                canvas.yview_scroll(1, "units")
+            elif event.num == 4 or event.delta > 0:
+                canvas.yview_scroll(-1, "units")
+        
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        canvas.bind_all("<Button-4>", _on_mousewheel)
+        canvas.bind_all("<Button-5>", _on_mousewheel)
+        canvas.pack(side="left", fill="y", expand=False)
+        scrollbar.pack(side="right", fill="y")
+        return scrollable_frame
+    
     def _build_ui(self):
         """Build the entire UI"""
         main_frame = ttk.Frame(self.root)
-        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        main_frame.pack(fill="both", expand=True, padx=5, pady=5)
         
-        # LEFT PANEL (Controls)
-        left_panel = ttk.Frame(main_frame, width=300)
-        left_panel.pack(side="left", fill="y", padx=5)
+        # LEFT PANEL (Controls) - Scrollable
+        left_container = ttk.Frame(main_frame)
+        left_container.pack(side="left", fill="y", expand=False)
+        left_panel = self.make_scrollable_left_panel(left_container)
         
         self._build_control_panel(left_panel)
         
@@ -154,15 +199,30 @@ class UnifiedAcquisitionApp:
                      state="readonly").pack(fill="x", pady=2)
         
         # CONTROL BUTTONS
-        btn_frame = ttk.LabelFrame(parent, text="Control", padding=10)
+        btn_frame = ttk.LabelFrame(parent, text="⚙️ Control", padding=10)
         btn_frame.pack(fill="x", pady=5)
+        
+        self.filter_btn = ttk.Button(
+            btn_frame, 
+            text="📡 Show Server Status", 
+            command=self.toggle_server
+        )
+        self.filter_btn.pack(fill="x", padx=2, pady=2)
+        
+        self.server_label = ttk.Label(
+            btn_frame, 
+            text="Server: Off", 
+            foreground="gray", 
+            font=("Consolas", 9)
+        )
+        self.server_label.pack(fill="x", padx=5, pady=2)
         
         self.connect_btn = ttk.Button(
             btn_frame, 
-            text="Connect", 
+            text="🔌 Connect", 
             command=self.connect_device
         )
-        self.connect_btn.pack(fill="x", pady=3)
+        self.connect_btn.pack(fill="x", padx=2, pady=3)
         
         self.disconnect_btn = ttk.Button(
             btn_frame, 
@@ -187,6 +247,14 @@ class UnifiedAcquisitionApp:
             state="disabled"
         )
         self.stop_btn.pack(fill="x", pady=3)
+        
+        self.pause_btn = ttk.Button(
+            btn_frame, 
+            text="Pause", 
+            command=self.toggle_pause,
+            state="disabled"
+        )
+        self.pause_btn.pack(fill="x", pady=3)
         
         # RECORDING
         rec_frame = ttk.LabelFrame(parent, text="Recording", padding=10)
@@ -236,6 +304,14 @@ class UnifiedAcquisitionApp:
         self.recording_label = ttk.Label(status_frame, text="No", 
                                          foreground="red")
         self.recording_label.pack(anchor="w")
+        
+        # LATEST PACKET DISPLAY
+        latest_frame = ttk.LabelFrame(parent, text="🧾 Latest Packet Detail", padding=8)
+        latest_frame.pack(fill="x", pady=5, padx=5)
+        self.latest_text = tk.Text(latest_frame, height=6, width=40, wrap="word")
+        self.latest_text.insert("1.0", "No packet yet.")
+        self.latest_text.configure(state="disabled")
+        self.latest_text.pack(fill="both", expand=True)
     
     def _build_graph_panel(self, parent):
         """Build right graph panel"""
@@ -297,7 +373,7 @@ class UnifiedAcquisitionApp:
             messagebox.showerror("Error", "Select a COM port")
             return
         
-        port = self.port_var.get().split(" ")
+        port = self.port_var.get().split(" ")[0]  # Extract just "COM7" from "COM7 - Description"
         
         # Create serial reader
         self.serial_reader = SerialPacketReader(port=port)
@@ -374,6 +450,7 @@ class UnifiedAcquisitionApp:
         # Update UI
         self.start_btn.config(state="disabled")
         self.stop_btn.config(state="normal")
+        self.pause_btn.config(state="normal")
         self.rec_btn.config(state="normal")
         self.save_btn.config(state="normal")
         self.recording_label.config(text="Yes", foreground="green")
@@ -387,10 +464,12 @@ class UnifiedAcquisitionApp:
             pass
         
         self.is_acquiring = False
+        self.is_paused = False
         self.is_recording = False
         
         self.start_btn.config(state="normal")
         self.stop_btn.config(state="disabled")
+        self.pause_btn.config(state="disabled")
         self.rec_btn.config(state="disabled")
         self.recording_label.config(text="No", foreground="red")
     
@@ -408,6 +487,26 @@ class UnifiedAcquisitionApp:
         else:
             self.rec_btn.config(text="Start Recording")
             self.recording_label.config(text="No", foreground="orange")
+    
+    def toggle_pause(self):
+        """Toggle pause/resume acquisition"""
+        if not self.is_acquiring:
+            return
+        
+        self.is_paused = not self.is_paused
+        
+        if self.is_paused:
+            # Send PAUSE command to device
+            if self.serial_reader:
+                self.serial_reader.send_command("PAUSE")
+            self.pause_btn.config(text="Resume")
+            self.status_label.config(text="Paused", foreground="orange")
+        else:
+            # Send RESUME command to device
+            if self.serial_reader:
+                self.serial_reader.send_command("RESUME")
+            self.pause_btn.config(text="Pause")
+            self.status_label.config(text="Connected", foreground="green")
     
     def choose_save_path(self):
         """Choose save directory"""
@@ -452,7 +551,7 @@ class UnifiedAcquisitionApp:
     def main_loop(self):
         """Main acquisition and update loop"""
         try:
-            if self.is_acquiring and self.serial_reader:
+            if self.is_acquiring and not self.is_paused and self.serial_reader:
                 # Drain queued packets
                 while True:
                     pkt_bytes = self.serial_reader.get_packet(timeout=0.001)
@@ -501,11 +600,25 @@ class UnifiedAcquisitionApp:
                             "ch1_type": self.ch1_var.get()
                         }
                         self.session_data.append(entry)
+                        self.latest_packet = entry
+                    
+                    # Broadcast to WebSocket bridge
+                    msg = {
+                        "source": "EMG",
+                        "fs": self.config.get("sampling_rate", 512),
+                        "timestamp": int(time.time() * 1000),
+                        "window": [[ch0_uv], [ch1_uv]]
+                    }
+                    if self.bridge.running:
+                        self.bridge.broadcast(msg)
                     
                     self.packet_count += 1
             
             # Update UI labels
             self.packet_label.config(text=str(self.packet_count))
+            
+            # Update latest packet display
+            self.update_latest_packet_display()
             
             # Update plots
             self.update_plots()
@@ -534,6 +647,26 @@ class UnifiedAcquisitionApp:
         except Exception as e:
             print(f"Plot update error: {e}")
     
+    def update_latest_packet_display(self):
+        """Update the latest packet display widget"""
+        if not self.latest_packet:
+            return
+        try:
+            self.latest_text.configure(state="normal")
+            self.latest_text.delete("1.0", "end")
+            self.latest_text.insert("1.0", json.dumps(self.latest_packet, indent=2))
+            self.latest_text.configure(state="disabled")
+        except:
+            pass
+    
+    def toggle_server(self):
+        """Show WebSocket server status"""
+        self.server_label.config(
+            text="Server: ws://localhost:8765 (Active)", 
+            foreground="green"
+        )
+        self.filter_btn.config(state="disabled")
+    
     def on_closing(self):
         """Handle window closing"""
         try:
@@ -541,6 +674,9 @@ class UnifiedAcquisitionApp:
                 self.stop_acquisition()
             if self.serial_reader:
                 self.serial_reader.disconnect()
+            if self.bridge:
+                # Stop bridge if it has a stop method
+                pass
         finally:
             self.root.destroy()
 
