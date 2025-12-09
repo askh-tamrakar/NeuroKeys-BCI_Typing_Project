@@ -44,7 +44,9 @@ except Exception:
     butter = iirnotch = tf2sos = sosfilt = sosfilt_zi = None
     SCIPY_AVAILABLE = False
 
-CONFIG_PATH = Path("config/sensor_config.json")
+# Resolve project root: src/processing -> src -> root
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+CONFIG_PATH = PROJECT_ROOT / "config" / "sensor_config.json"
 RAW_STREAM_NAME = "BioSignals-Raw-uV"
 RELOAD_INTERVAL = 2.0
 DEFAULT_SR = 512

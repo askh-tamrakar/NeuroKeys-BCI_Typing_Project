@@ -55,8 +55,11 @@ class AcquisitionApp:
         self.config = self._load_config()
         
         # Paths
-        self.save_path = Path("data/raw/session")
-        self.config_path = Path("config/sensor_config.json")
+        # Paths
+        # Resolve project root relative to this file: src/acquisition -> src -> root
+        project_root = Path(__file__).resolve().parent.parent.parent
+        self.save_path = project_root / "data" / "raw" / "session"
+        self.config_path = project_root / "config" / "sensor_config.json"
         
         # Serial reader & parser
         self.serial_reader = None
@@ -104,7 +107,9 @@ class AcquisitionApp:
 
     def _load_config(self) -> dict:
         """Load configuration from JSON file"""
-        config_path = Path("config/sensor_config.json")
+        # Resolve project root relative to this file: src/acquisition -> src -> root
+        project_root = Path(__file__).resolve().parent.parent.parent
+        config_path = project_root / "config" / "sensor_config.json"
         if config_path.exists():
             try:
                 with open(config_path, 'r') as f:
@@ -156,7 +161,6 @@ class AcquisitionApp:
             with open(self.config_path, 'w') as f:
                 json.dump(self.config, f, indent=2)
             print(f"[App] Config saved to {self.config_path}")
-            messagebox.showinfo("Success", "Channel mapping saved!")
         except Exception as e:
             print(f"[App] Error saving config: {e}")
             messagebox.showerror("Error", f"Failed to save config: {e}")
@@ -396,7 +400,6 @@ class AcquisitionApp:
                 nominal_srate=float(self.config.get("sampling_rate", 512))
             )
         
-        messagebox.showinfo("Success", f"Connected to {port}")
 
     def disconnect_device(self):
         """Disconnect from Arduino"""
