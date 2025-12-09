@@ -52,7 +52,7 @@ class EOGFilterProcessor:
         print(f"[EOG] Designed low-pass: cutoff={self.cutoff} Hz order={self.order}")
 
     def _setup_lsl(self):
-        streams = pylsl.resolve_bypred("name='BioSignals-Raw'", timeout=5)
+        streams = pylsl.resolve_bypred("name='BioSignals-Raw-uV'", timeout=5)
         if not streams:
             print("⚠️ EOG: BioSignals-Raw not found (will retry)")
         else:

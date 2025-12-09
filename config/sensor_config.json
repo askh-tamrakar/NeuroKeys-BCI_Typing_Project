@@ -2,11 +2,11 @@
   "sampling_rate": 512,
   "channel_mapping": {
     "ch0": {
-      "sensor": "EMG",
+      "sensor": "EEG",
       "enabled": true
     },
     "ch1": {
-      "sensor": "EMG",
+      "sensor": "EEG",
       "enabled": true
     }
   },
