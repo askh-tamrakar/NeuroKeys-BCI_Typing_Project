@@ -18,7 +18,7 @@ import numpy as np
 import pylsl
 from scipy.signal import iirnotch, butter, lfilter, lfilter_zi
 
-CONFIG_PATH = Path("sensor_config.json")
+CONFIG_PATH = Path("config/sensor_config.json")
 
 
 class EEGFilterProcessor:

@@ -1,14 +1,3 @@
-# src/acquisition/acquisition_app_v2.py
-"""
-EMG Signal Acquisition App - COMPLETE PRODUCTION VERSION
-✅ Fixed connection issues
-✅ Fixed graph overlapping (channel names separated)
-✅ Data sent to filter_router.py
-✅ Settings saved to JSON
-✅ Clean separation of concerns
-✅ Proper error handling
-"""
-
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import json
@@ -58,7 +47,7 @@ def adc_to_uv(adc_value: int, adc_bits: int = 14, vref: float = 3300.0) -> float
 class AcquisitionApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("EMG Signal Acquisition - FIXED v2.0")
+        self.root.title("Acquisition App")
         self.root.geometry("1600x950")
         self.root.configure(bg='#f0f0f0')
         
@@ -67,14 +56,14 @@ class AcquisitionApp:
         
         # Paths
         self.save_path = Path("data/raw/session")
-        self.config_path = Path("config/channel_config.json")
+        self.config_path = Path("config/sensor_config.json")
         
         # Serial reader & parser
         self.serial_reader = None
         self.packet_parser = PacketParser()
         
         # LSL streams
-        self.lsl_raw = None
+        self.lsl_raw_uV = None
         self.lsl_processed = None
         
         # State
@@ -115,7 +104,7 @@ class AcquisitionApp:
 
     def _load_config(self) -> dict:
         """Load configuration from JSON file"""
-        config_path = Path("config/channel_config.json")
+        config_path = Path("config/sensor_config.json")
         if config_path.exists():
             try:
                 with open(config_path, 'r') as f:
@@ -154,13 +143,23 @@ class AcquisitionApp:
 
     def _save_config(self):
         """Save configuration to JSON file"""
+        
+        # UPDATE channel mapping from UI BEFORE saving
+        self.config["channel_mapping"] = {
+            "ch0": {"sensor": self.ch0_var.get(), "enabled": True},
+            "ch1": {"sensor": self.ch1_var.get(), "enabled": True}
+        }
+        
+        # NOW save the updated config
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
         try:
             with open(self.config_path, 'w') as f:
                 json.dump(self.config, f, indent=2)
             print(f"[App] Config saved to {self.config_path}")
+            messagebox.showinfo("Success", "Channel mapping saved!")
         except Exception as e:
             print(f"[App] Error saving config: {e}")
+            messagebox.showerror("Error", f"Failed to save config: {e}")
 
     def _build_ui(self):
         """Build the entire UI"""
@@ -283,7 +282,7 @@ class AcquisitionApp:
         )
         self.save_btn.pack(fill="x", pady=3)
         
-        ttk.Button(save_frame, text="⚙️ Save Settings", command=self._save_config).pack(fill="x", pady=2)
+        ttk.Button(save_frame, text="⚙️ Map Sensors", command=self._save_config).pack(fill="x", pady=2)
         
         # STATUS
         status_frame = ttk.LabelFrame(parent, text="📈 Status", padding=10)
@@ -382,15 +381,15 @@ class AcquisitionApp:
         if LSL_AVAILABLE:
             ch_types = [self.ch0_type, self.ch1_type]
             ch_labels = [f"{self.ch0_type}_0", f"{self.ch1_type}_1"]
-            self.lsl_raw = LSLStreamer(
-                "BioSignals-Raw",
+            self.lsl_raw_uV = LSLStreamer(
+                "BioSignals-Raw-uV",
                 channel_types=ch_types,
                 channel_labels=ch_labels,
                 channel_count=2,
                 nominal_srate=float(self.config.get("sampling_rate", 512))
             )
             self.lsl_processed = LSLStreamer(
-                "BioSignals",
+                "BioSignals-Pure",
                 channel_types=ch_types,
                 channel_labels=ch_labels,
                 channel_count=2,
@@ -506,7 +505,7 @@ class AcquisitionApp:
             messagebox.showwarning("Empty", "No data to save")
             return
         
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%d%m%Y_%H%M%S")
         self.save_path.mkdir(parents=True, exist_ok=True)
         filepath = self.save_path / f"session_{timestamp}.json"
         
@@ -519,7 +518,7 @@ class AcquisitionApp:
                 "channel_0_type": self.ch0_type,
                 "channel_1_type": self.ch1_type
             },
-            "channel_config": self.config.get("channel_mapping", {}),
+            "sensor_config": self.config.get("sensor_mapping", {}),
             "filters": self.config.get("filters", {}),
             "data": self.session_data
         }
@@ -558,8 +557,8 @@ class AcquisitionApp:
                     
                     # Push to LSL
                     if LSL_AVAILABLE:
-                        if self.lsl_raw:
-                            self.lsl_raw.push_sample([ch0_uv, ch1_uv], None)
+                        if self.lsl_raw_uV:
+                            self.lsl_raw_uV.push_sample([ch0_uv, ch1_uv], None)
                         if self.lsl_processed:
                             self.lsl_processed.push_sample([ch0_uv, ch1_uv], None)
                     
@@ -568,7 +567,7 @@ class AcquisitionApp:
                     self.ch1_buffer[self.buffer_ptr] = ch1_uv
                     self.buffer_ptr = (self.buffer_ptr + 1) % self.buffer_size
                     
-                    # Record if enabled
+                    # # Record if enabled
                     if self.is_recording:
                         entry = {
                             "timestamp": pkt.timestamp.isoformat(),
@@ -582,8 +581,8 @@ class AcquisitionApp:
                         }
                         self.session_data.append(entry)
                         
-                        # SEND TO filter_router.py via your bridge/queue
-                        self._send_to_filter_router(entry)
+                    #     # SEND TO filter_router.py via your bridge/queue
+                    #     self._send_to_filter_router(entry)
                     
                     self.packet_count += 1
             
@@ -600,32 +599,33 @@ class AcquisitionApp:
         if self.root.winfo_exists():
             self.root.after(30, self.main_loop)
 
-    def _send_to_filter_router(self, packet_data: dict):
-        """Send data to filter_router.py"""
-        # This is where you'd send to your filter_router
-        # Example: could use ZMQ, WebSocket, Redis, or file-based queue
-        try:
-            # Format for filter_router
-            msg = {
-                "source": "acquisition_app",
-                "timestamp": packet_data["timestamp"],
-                "channels": {
-                    "ch0": {
-                        "type": packet_data["ch0_type"],
-                        "raw_adc": packet_data["ch0_raw_adc"],
-                        "uv": packet_data["ch0_uv"]
-                    },
-                    "ch1": {
-                        "type": packet_data["ch1_type"],
-                        "raw_adc": packet_data["ch1_raw_adc"],
-                        "uv": packet_data["ch1_uv"]
-                    }
-                }
-            }
-            # TODO: Implement your routing mechanism here
-            # print(f"[Router] {json.dumps(msg)}")  # Uncomment for debugging
-        except Exception as e:
-            print(f"[Router] Send error: {e}")
+    # def _send_to_filter_router(self, packet_data: dict):
+    #     """Send data to filter_router.py"""
+    #     # This is where you'd send to your filter_router
+    #     # Example: could use ZMQ, WebSocket, Redis, or file-based queue
+    #     try:
+    #         # Format for filter_router
+    #         msg = {
+    #             "source": "acquisition_app",
+    #             "timestamp": packet_data["timestamp"],
+    #             "channels": {
+    #                 "ch0": {
+    #                     "type": packet_data["ch0_type"],
+    #                     "raw_adc": packet_data["ch0_raw_adc"],
+    #                     "uv": packet_data["ch0_uv"]
+    #                 },
+    #                 "ch1": {
+    #                     "type": packet_data["ch1_type"],
+    #                     "raw_adc": packet_data["ch1_raw_adc"],
+    #                     "uv": packet_data["ch1_uv"]
+    #                 }
+    #             }
+    #         }
+    #         # TODO: Implement your routing mechanism here
+    #         # print(f"[Router] {json.dumps(msg)}")  # Uncomment for debugging
+           
+    #     except Exception as e:
+    #         print(f"[Router] Send error: {e}")
 
     def update_plots(self):
         """Update the plot lines"""

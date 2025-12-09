@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 src/processing/filter_router.py
 
@@ -46,7 +45,7 @@ except Exception:
 
 # Config path (project root / config)
 CONFIG_PATH = Path("config/sensor_config.json")
-RAW_STREAM_NAME = "BioSignals-Raw"
+RAW_STREAM_NAME = "BioSignals-Raw-uV"
 RELOAD_INTERVAL = 2.0  # seconds for config watcher and remap checks
 DEFAULT_SR = 512
 
@@ -93,11 +92,15 @@ def parse_channel_map(info: pylsl.StreamInfo) -> List[Tuple[int, str, str]]:
         ch_count = int(info.channel_count())
         desc = info.desc()
         channels = desc.child("channels")
-        for i in range(ch_count):
+        
+        # Iterate through channels using first_child() and next_sibling()
+        ch = channels.first_child()
+        i = 0
+        while ch.empty() == False and i < ch_count:
             label = f"ch{i}"
             type_str = ""
+            
             try:
-                ch = channels.child("channel", i)
                 lab = ch.child_value("label")
                 typ = ch.child_value("type")
                 if lab:
@@ -105,11 +108,15 @@ def parse_channel_map(info: pylsl.StreamInfo) -> List[Tuple[int, str, str]]:
                 if typ:
                     type_str = typ
             except Exception:
-                # metadata not present or indexing failed
                 pass
+            
             idx_map.append((i, label, type_str))
+            ch = ch.next_sibling()
+            i += 1
+            
     except Exception as e:
         print(f"[Router] parse_channel_map error: {e}")
+    
     return idx_map
 
 
@@ -190,24 +197,90 @@ class FilterRouter:
                 time.sleep(RELOAD_INTERVAL)
 
     def resolve_raw_stream(self, timeout: float = 3.0) -> bool:
-        """Find and attach to BioSignals-Raw inlet, then map channels."""
+        """
+        Robust discovery of the raw/conversion stream. Attempts:
+        1) exact name match of RAW_STREAM_NAME
+        2) fallback heuristics: look for names containing 'raw', 'uV', or starting with 'BioSignals'
+        Returns True if inlet attached and categories configured.
+        """
         if not LSL_AVAILABLE:
             print("[Router] pylsl not installed — cannot resolve raw stream")
             return False
+
         try:
-            streams = pylsl.resolve_bypred(f"name='{RAW_STREAM_NAME}'", timeout=timeout)
-            if not streams:
-                print(f"[Router] Raw stream '{RAW_STREAM_NAME}' not found (retrying)")
+            # Enumerate streams using the most portable API available
+            try:
+                all_streams = pylsl.resolve_streams()
+            except Exception:
+                try:
+                    all_streams = pylsl.lsl_resolve_all()
+                except Exception:
+                    all_streams = []
+
+            # Build a list of (name, StreamInfo)
+            available = []
+            for s in all_streams:
+                try:
+                    sname = s.name() if callable(getattr(s, "name", None)) else ""
+                    suid = s.uid() if callable(getattr(s, "uid", None)) else ""
+                except Exception:
+                    try:
+                        sname = getattr(s, "name", lambda: "")()
+                        suid = getattr(s, "uid", lambda: "")()
+                    except Exception:
+                        sname = str(s)
+                        suid = ""
+                available.append((sname, suid, s))
+
+            if not available:
+                print("[Router] No LSL streams discovered. Retrying later.")
                 return False
-            info = streams[0]
-            self.inlet = pylsl.StreamInlet(info, max_buflen=1.0, recover=True)
-            self.index_map = parse_channel_map(info)
-            print(f"[Router] Resolved {RAW_STREAM_NAME}: {self.index_map}")
-            self._configure_categories()
-            return True
-        except Exception as e:
-            print(f"[Router] resolve_raw_stream error: {e}")
+
+            # 1) Try exact name match first
+            exact_matches = [s for (n, u, s) in available if n == RAW_STREAM_NAME]
+            if exact_matches:
+                info = exact_matches[0]
+                self.inlet = pylsl.StreamInlet(info, max_buflen=1.0, recover=True)
+                self.index_map = parse_channel_map(info)
+                print(f"[Router] Resolved (exact) {RAW_STREAM_NAME}: {self.index_map}")
+                self._configure_categories()
+                return True
+
+            # 2) Heuristic fallback: look for names with 'raw' / 'uV' / 'pure' or starting with 'BioSignals'
+            lowered = [(n.lower(), u, s) for (n, u, s) in available]
+            heur_matches = []
+            for name_low, uid, sinfo in lowered:
+                if "raw" in name_low or "uv" in name_low or "pure" in name_low or name_low.startswith("biosignals"):
+                    heur_matches.append((name_low, uid, sinfo))
+
+            if heur_matches:
+                # Prefer those that contain 'raw' or 'uv' first
+                heur_matches_sorted = sorted(
+                    heur_matches,
+                    key=lambda x: (("raw" not in x[0]), ("uv" not in x[0]), x[0])
+                )
+                chosen = heur_matches_sorted[0][2]
+                try:
+                    name_chosen = chosen.name()
+                except Exception:
+                    name_chosen = "<unknown>"
+                self.inlet = pylsl.StreamInlet(chosen, max_buflen=1.0, recover=True)
+                self.index_map = parse_channel_map(chosen)
+                print(f"[Router] Resolved (heuristic) stream '{name_chosen}' -> indices: {self.index_map}")
+                self._configure_categories()
+                return True
+
+            # 3) No matches: print available streams for debugging
+            print("[Router] No matching raw stream found. Available streams:")
+            for n, u, _ in available:
+                print(f"  - name: '{n}', uid: '{u}'")
+            print(f"[Router] Looking for RAW_STREAM_NAME='{RAW_STREAM_NAME}' or names containing 'raw'/'uV'/'pure' or starting with 'BioSignals'.")
             return False
+
+        except Exception as e:
+            print(f"[Router] resolve_raw_stream unexpected error: {e}")
+            return False
+
 
     def _configure_categories(self):
         """Group raw indices by category using channel type (fallback to label prefix)."""
