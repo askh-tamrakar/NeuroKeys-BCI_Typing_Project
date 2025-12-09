@@ -216,6 +216,8 @@ class FilterRouter:
                     all_streams = pylsl.lsl_resolve_all()
                 except Exception:
                     all_streams = []
+            
+            streams = [s for s in all_streams if s.name() == RAW_STREAM_NAME]
 
             # Build a list of (name, StreamInfo)
             available = []
@@ -240,7 +242,7 @@ class FilterRouter:
             exact_matches = [s for (n, u, s) in available if n == RAW_STREAM_NAME]
             if exact_matches:
                 info = exact_matches[0]
-                self.inlet = pylsl.StreamInlet(info, max_buflen=1.0, recover=True)
+                self.inlet = pylsl.StreamInlet(info, max_buflen=1, recover=True)
                 self.index_map = parse_channel_map(info)
                 print(f"[Router] Resolved (exact) {RAW_STREAM_NAME}: {self.index_map}")
                 self._configure_categories()
