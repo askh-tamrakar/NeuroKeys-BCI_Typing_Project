@@ -6,7 +6,7 @@
       "enabled": true
     },
     "ch1": {
-      "sensor": "EEG",
+      "sensor": "EMG",
       "enabled": true
     }
   },

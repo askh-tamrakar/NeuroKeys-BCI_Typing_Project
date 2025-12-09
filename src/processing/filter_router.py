@@ -266,7 +266,7 @@ class FilterRouter:
                     name_chosen = chosen.name()
                 except Exception:
                     name_chosen = "<unknown>"
-                self.inlet = pylsl.StreamInlet(chosen, max_buflen=1.0, recover=True)
+                self.inlet = pylsl.StreamInlet(chosen, max_buflen=1, recover=True)
                 self.index_map = parse_channel_map(chosen)
                 print(f"[Router] Resolved (heuristic) stream '{name_chosen}' -> indices: {self.index_map}")
                 self._configure_categories()
