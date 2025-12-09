@@ -47,30 +47,31 @@ export default function DinoView({ wsData, isPaused }) {
     }, [score])
 
     // EOG sensor integration
-    useEffect(() => {
-        if (!wsData || isPaused) return
-
-        let payload = null
-        try {
-            payload = typeof wsData === 'string' ? JSON.parse(wsData) : wsData
-            if (wsData.data && typeof wsData.data === 'string') payload = JSON.parse(wsData.data)
-        } catch {
-            return
-        }
-
-        // Detect EOG signal patterns for jump/pause
-        if (payload?.window && payload.window.length > 0) {
-            const eogChannel = payload.window[0] // Assuming first channel is EOG
-            if (eogChannel && eogChannel.length > 0) {
-                const avgSignal = eogChannel.reduce((a, b) => a + b, 0) / eogChannel.length
-
-                // Detect blink (threshold-based, adjust as needed)
-                if (Math.abs(avgSignal) > 100) {
-                    handleEOGBlink()
-                }
-            }
-        }
-    }, [wsData, isPaused])
+    // EOG sensor integration REMOVED - Controlled via external PyAutoGUI keypresses
+    // useEffect(() => {
+    //     if (!wsData || isPaused) return
+    //
+    //     let payload = null
+    //     try {
+    //         payload = typeof wsData === 'string' ? JSON.parse(wsData) : wsData
+    //         if (wsData.data && typeof wsData.data === 'string') payload = JSON.parse(wsData.data)
+    //     } catch {
+    //         return
+    //     }
+    //
+    //     // Detect EOG signal patterns for jump/pause
+    //     if (payload?.window && payload.window.length > 0) {
+    //         const eogChannel = payload.window[0] // Assuming first channel is EOG
+    //         if (eogChannel && eogChannel.length > 0) {
+    //             const avgSignal = eogChannel.reduce((a, b) => a + b, 0) / eogChannel.length
+    //
+    //             // Detect blink (threshold-based, adjust as needed)
+    //             if (Math.abs(avgSignal) > 100) {
+    //                 handleEOGBlink()
+    //             }
+    //         }
+    //     }
+    // }, [wsData, isPaused])
 
     // Handle EOG blink detection
     const handleEOGBlink = () => {
@@ -96,7 +97,10 @@ export default function DinoView({ wsData, isPaused }) {
     // Keyboard controls (hidden from UI but still functional for testing)
     useEffect(() => {
         const handleKeyDown = (e) => {
-            if (e.code === 'Space') {
+            // Debug log to verify if events are reaching the component
+            console.log('Detected Key:', e.code, e.key)
+
+            if (e.code === 'Space' || e.key === ' ') {
                 e.preventDefault()
                 const now = Date.now()
                 const timeSinceLastPress = now - blinkPressTimeRef.current
