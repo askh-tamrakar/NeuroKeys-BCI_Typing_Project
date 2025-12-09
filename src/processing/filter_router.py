@@ -241,7 +241,7 @@ class FilterRouter:
             if exact_matches:
                 info = exact_matches[0]
                 self.inlet = pylsl.StreamInlet(info, max_buflen=1, recover=True)
-                self.index_map = parse_channel_map(info)
+                self.index_map = parse_channel_map(self.inlet.info())
                 print(f"[Router] Resolved (exact) {RAW_STREAM_NAME}: {self.index_map}")
                 self._configure_categories()
                 return True
@@ -265,7 +265,7 @@ class FilterRouter:
                 except Exception:
                     name_chosen = "<unknown>"
                 self.inlet = pylsl.StreamInlet(chosen, max_buflen=1, recover=True)
-                self.index_map = parse_channel_map(chosen)
+                self.index_map = parse_channel_map(self.inlet.info())
                 print(f"[Router] Resolved (heuristic) stream '{name_chosen}' -> indices: {self.index_map}")
                 self._configure_categories()
                 return True
