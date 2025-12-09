@@ -12,7 +12,7 @@ export default function DinoView({ wsData, isPaused }) {
 
     // Game settings (easy mode)
     const GRAVITY = 0.45
-    const JUMP_STRENGTH = -12.8
+    const JUMP_STRENGTH = -11
     const GROUND_OFFSET = 65
     const DINO_WIDTH = 44
     const DINO_HEIGHT = 47
@@ -20,9 +20,10 @@ export default function DinoView({ wsData, isPaused }) {
     const OBSTACLE_MIN_HEIGHT = 40
     const OBSTACLE_MAX_HEIGHT = 60
     const GAME_SPEED = 3
-    const SPAWN_INTERVAL = 1700
+    const SPAWN_INTERVAL = 1150
     const CANVAS_WIDTH = 800
     const CANVAS_HEIGHT = 376
+
     // Refs for game state (to avoid stale closures)
     const canvasRef = useRef(null)
     const animationRef = useRef(null)
@@ -130,8 +131,6 @@ export default function DinoView({ wsData, isPaused }) {
             obstaclesRef.current = []
             lastSpawnRef.current = Date.now()
         } else if (currentState === 'playing' && Math.abs(dinoYRef.current) < 0.1) {
-            // Only jump if dino is on the ground (using threshold for floating-point safety)
-            console.log('🦖 JUMP! Setting velocity to', JUMP_STRENGTH, 'dinoY was:', dinoYRef.current)
             velocityRef.current = JUMP_STRENGTH
         } else if (currentState === 'gameOver') {
             // Restart game
@@ -307,7 +306,7 @@ export default function DinoView({ wsData, isPaused }) {
                 // Update obstacles
                 obstaclesRef.current = obstaclesRef.current
                     .map((o) => ({ ...o, x: o.x - GAME_SPEED }))
-                    .filter((o) => o.x > -OBSTACLE_WIDTH - 20)
+                    .filter((o) => o.x > - OBSTACLE_WIDTH - 20)
 
                 // Spawn new obstacle
                 if (now - lastSpawnRef.current > SPAWN_INTERVAL) {
@@ -327,7 +326,7 @@ export default function DinoView({ wsData, isPaused }) {
 
                 // Collision detection (more forgiving hitbox)
                 const groundY = CANVAS_HEIGHT - GROUND_OFFSET
-                const dinoX = 75 // Match rendering position
+                const dinoX = 75
                 const dinoLeft = dinoX + 10
                 const dinoRight = dinoX + DINO_WIDTH - 10
                 const dinoTop = groundY - DINO_HEIGHT - dinoYRef.current + 5
@@ -389,7 +388,7 @@ export default function DinoView({ wsData, isPaused }) {
 
                 // Draw dino (dinoYRef is distance above ground, subtract it to move dino up)
                 const dinoX = 75
-                const dinoDrawY = groundY - DINO_HEIGHT - dinoYRef.current
+                const dinoDrawY = groundY - DINO_HEIGHT + dinoYRef.current
                 drawDino(ctx, dinoX, dinoDrawY, primaryColor, textColor)
 
                 // Draw cacti
