@@ -1,0 +1,96 @@
+'''[metadata]
+name = unified-biosignal-system
+version = 0.1.0
+description = Unified EMG/EOG/EEG acquisition, filtering, routing, and LSL streaming system.
+author = Angel
+license = MIT
+
+[options]
+python_requires = >=3.9
+packages = find:
+package_dir =
+    = src
+include_package_data = True
+
+install_requires =
+    pyserial
+    numpy
+    matplotlib
+    pylsl
+    scipy
+
+[options.packages.find]
+where = src
+include =
+    acquisition*
+    processing*
+    utils*
+
+[options.package_data]
+utils = *.json
+
+[tool:pytest]
+testpaths = tests
+
+[flake8]
+max-line-length = 120
+
+[mypy]
+ignore_missing_imports = True'''
+
+
+
+
+
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "unified-biosignal-system"
+version = "0.1.0"
+description = "Unified EMG/EOG/EEG acquisition, filtering, routing, and LSL streaming system."
+readme = "README.md"
+authors = [
+    { name = "Angel", email = "developer@example.com" }
+]
+license = { text = "MIT" }
+requires-python = ">=3.9"
+
+dependencies = [
+    "pyserial",
+    "numpy",
+    "matplotlib",
+    "pylsl",
+    "scipy",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "black",
+    "ruff",
+    "mypy"
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = [
+    "acquisition*",
+    "processing*",
+    "utils*"
+]
+
+[tool.setuptools.package-data]
+"utils" = ["*.json"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.black]
+line-length = 120
+target-version = ['py39']
