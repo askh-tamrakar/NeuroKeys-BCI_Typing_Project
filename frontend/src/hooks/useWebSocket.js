@@ -1,58 +1,127 @@
 import { useState, useEffect, useRef } from 'react'
 
-export function useWebSocket(url) {
+/**
+ * useWebSocket Hook - Updated for Flask-SocketIO Backend
+ * 
+ * Features:
+ * - Connects to Flask-SocketIO server at http://localhost:5000
+ * - Listens to 'bio_data_update' events for real-time data
+ * - Auto-reconnection with exponential backoff
+ * - Message sending support
+ */
+
+export function useWebSocket(url = 'http://localhost:5000' || 'ws://localhost:5000') {
   const [status, setStatus] = useState('disconnected')
   const [lastMessage, setLastMessage] = useState(null)
   const [latency, setLatency] = useState(0)
-
-  const wsRef = useRef(null)
+  const socketRef = useRef(null)
   const pingTimer = useRef(null)
+  const lastPingTime = useRef(0)
 
   const connect = () => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return
+    if (socketRef.current?.connected) return
 
+    console.log(`🔌 Connecting to WebSocket: ${url}`)
     setStatus('connecting')
 
-    wsRef.current = new WebSocket(url)
+    // Dynamically load Socket.IO client
+    const script = document.createElement('script')
+    script.src = 'https://cdn.socket.io/4.5.4/socket.io.min.js'
+    script.onload = () => {
+      const io = window.io
 
-    wsRef.current.onopen = () => {
-      setStatus('connected')
+      socketRef.current = io(url, {
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        reconnectionAttempts: 5,
+        transports: ['websocket', 'polling']
+      })
 
-      // Send ping every 1 sec
-      pingTimer.current = setInterval(() => {
-        const id = Math.random().toString(36).slice(2, 10)
-        const t0 = performance.now()
+      // Connection events
+      socketRef.current.on('connect', () => {
+        setStatus('connected')
+        console.log('✅ WebSocket connected')
 
-        wsRef.current.send(JSON.stringify({
-          type: "ping",
-          id,
-          t0
-        }))
-      }, 1000)
+        // Start ping for latency measurement
+        pingTimer.current = setInterval(() => {
+          lastPingTime.current = performance.now()
+          socketRef.current.emit('ping')
+        }, 1000)
+      })
+
+      socketRef.current.on('disconnect', () => {
+        setStatus('disconnected')
+        if (pingTimer.current) clearInterval(pingTimer.current)
+        console.log('❌ WebSocket disconnected')
+      })
+
+      socketRef.current.on('error', (error) => {
+        setStatus('error')
+        console.error('WebSocket error:', error)
+      })
+
+      // MAIN EVENT: Real-time biosignals from Flask-SocketIO
+      socketRef.current.on('bio_data_update', (data) => {
+        setLatency(Math.round(performance.now() - lastPingTime.current))
+
+        // Data format from Flask server:
+        // {
+        //   stream_name: "BioSignals-Processed",
+        //   channels: { 0: {label, type, value, timestamp}, 1: {...} },
+        //   channel_count: 2,
+        //   sample_rate: 512,
+        //   sample_count: 1024,
+        //   timestamp: 123.456
+        // }
+
+        setLastMessage({
+          data: JSON.stringify(data),
+          timestamp: Date.now(),
+          raw: data
+        })
+      })
+
+      // Status response
+      socketRef.current.on('status', (data) => {
+        console.log('Server status:', data)
+      })
+
+      // Response from server
+      socketRef.current.on('response', (data) => {
+        console.log('Server response:', data)
+      })
     }
 
-    wsRef.current.onmessage = (event) => {
-      const msg = JSON.parse(event.data)
-
-      if (msg.type === "pong") {
-        const rtt = performance.now() - msg.t0
-        setLatency(rtt.toFixed(2)) 
-        return
-      }
-
-      setLastMessage({ data: event.data, timestamp: Date.now() })
-    }
-
-    wsRef.current.onerror = () => setStatus('error')
-
-    wsRef.current.onclose = () => {
-      setStatus('disconnected')
-      clearInterval(pingTimer.current)
-    }
+    document.head.appendChild(script)
   }
 
   const disconnect = () => {
-    wsRef.current?.close()
+    if (socketRef.current) {
+      socketRef.current.disconnect()
+      socketRef.current = null
+    }
+
+    if (pingTimer.current) {
+      clearInterval(pingTimer.current)
+    }
+
+    setStatus('disconnected')
+  }
+
+  const sendMessage = (data) => {
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('message', data)
+      console.log('📤 Sent message:', data)
+    } else {
+      console.warn('⚠️ WebSocket not connected, cannot send message:', data)
+    }
+  }
+
+  const requestStatus = () => {
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('request_status')
+    }
   }
 
   useEffect(() => {
@@ -65,6 +134,9 @@ export function useWebSocket(url) {
     latency,
     connect,
     disconnect,
-    ws: wsRef.current
+    sendMessage,
+    requestStatus
   }
 }
+
+export default useWebSocket

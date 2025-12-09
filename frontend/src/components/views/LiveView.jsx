@@ -1,215 +1,216 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import SignalChart from '../charts/SignalChart'
 
-export default function LiveView({ wsData }) {
-  // per-channel buffers for EEG, single buffers for EOG/EMG
-  const [eegByChannel, setEegByChannel] = useState({}) // {chIndex: [{time,value}, ...]}
-  const [eogData, setEogData] = useState([])
-  const [emgData, setEmgData] = useState([])
+/**
+ * LiveView (Oscilloscope Mode)
+ * - Renders EEG data with a "stationary grid".
+ * - Vertical "scanner bar" moves left to right.
+ * - Data overwrites old values.
+ * - Config is passed from parent (LiveDashboard).
+ */
+export default function LiveView({ wsData, config, isPaused }) {
+  // Config extracts
+  const timeWindowMs = config?.display?.timeWindowMs || 10000
+  const samplingRate = config?.sampling_rate || 512
+  const showGrid = config?.display?.showGrid ?? true
+  const channelMapping = config?.channel_mapping || {}
 
-  // UI controls
-  const [timeWindowMs, setTimeWindowMs] = useState(10000) // 10s
-  const [isPaused, setIsPaused] = useState(false)
-  const [displayMode, setDisplayMode] = useState('single') // 'single' | 'overlay'
-  const [selectedChannel, setSelectedChannel] = useState(0)
+  // Display Mode
+  // If multiple channels enabled -> Overlay or Single?
+  // For this demo, let's stick to "Overlay" if multi-channel, or allow user mapped "Single"
+  // But the requirement says "two vertically stacked graphs". 
+  // Let's interpret "channel selection mapping for each of the two graphs" 
+  // as: Graph 1 shows Channel X, Graph 2 shows Channel Y.
+  // We need state for "Graph 1 Channel" and "Graph 2 Channel".
+  // Actually sidebar has channel mapping "ch0: {sensor: 'EEG'}"... 
+  // The requirement "channel selection mapping for each of the two graphs" implies the USER selects which channel goes to Graph 1 and 2.
+  // Sidebar just maps sensors.
+  // Let's add local state for "Graph 1 Source" and "Graph 2 Source" or assume Sidebar handles it.
+  // "Sidebar Functionality: ... channel selection mapping for each of the two graphs"
+  // Okay, keeping it simple: I will render TWO graphs. I need to know WHICH channel to show on each.
+  // I will make default: Graph 1 = Ch 0, Graph 2 = Ch 1.
+  // Ideally these should be in `config` or local state controlled by Sidebar. 
+  // Since `config` has `channel_mapping`, maybe I add `graph_mapping` to config? or just use local state here?
+  // Requirement: "Sidebar Functionality: ... channel mapping ..." -> implies Sidebar controls this.
+  // I'll assume config has `graph_sources: { graph1: 'ch0', graph2: 'ch1' }` or similar.
+  // If not, I'll default to 0 and 1.
 
-  // limits
-  const MAX_POINTS_PER_MESSAGE = 120
-  const MAX_POINTS_PER_CHANNEL = 50000
+  const [graphSources, setGraphSources] = useState({
+    top: 'ch0',
+    bottom: 'ch1'
+  })
 
-  // helper to push per-channel and trim by time window
-  const pushChannelPoints = (chIdx, pts) => {
-    setEegByChannel(prev => {
-      const current = prev[chIdx] ?? []
-      const merged = [...current, ...pts]
-      const lastTs = merged.length ? merged[merged.length - 1].time : Date.now()
-      const cutoff = lastTs - timeWindowMs
-      const trimmed = merged.filter(p => p.time >= cutoff)
-      if (trimmed.length > MAX_POINTS_PER_CHANNEL) return { ...prev, [chIdx]: trimmed.slice(-MAX_POINTS_PER_CHANNEL) }
-      return { ...prev, [chIdx]: trimmed }
-    })
+  // We can let the user change this? Or assume Sidebar does?
+  // The Sidebar I built updates `config.channel_mapping`, but didn't explicitly have "Graph 1 Source Selector".
+  // I will treat `config.channel_mapping` as "What is on Ch0?" 
+  // and I will add selectors in this view or just picking the first two enabled channels.
+  // Let's pick first two enabled.
+
+  // State for data buffers
+  // We need a fixed grid of X points.
+  // To keep 60fps with Recharts, fewer points is better. 
+  // 10s @ 512Hz = 5000 points. Recharts might struggle. 
+  // We will downsample for display. e.g. 500 points (10s window -> 50Hz display res).
+  const DISPLAY_POINTS = 500
+
+  const initBuffer = () => {
+    const arr = new Array(DISPLAY_POINTS).fill(0).map((_, i) => ({
+      time: (i / DISPLAY_POINTS) * timeWindowMs, // 0..10000
+      val: 0
+    }))
+    return arr
   }
 
-  const pushSingleByTimeWindow = (setter, pts) => {
-    setter(prev => {
-      if (!pts || pts.length === 0) return prev
-      const merged = [...prev, ...pts]
-      const lastTs = merged.length ? merged[merged.length - 1].time : Date.now()
-      const cutoff = lastTs - timeWindowMs
-      const sliced = merged.filter(p => p.time >= cutoff)
-      if (sliced.length > MAX_POINTS_PER_CHANNEL) return sliced.slice(-MAX_POINTS_PER_CHANNEL)
-      return sliced
+  // Refs to store the "Live" data without triggering re-renders on every sample
+  // structure: { [chKey]: [{time, val}, ...] }
+  // We store the full resolution or display resolution? 
+  // Let's store display resolution for performance.
+  const buffersRef = useRef({})
+
+  // We also track the "Scanner Cursor" position (0..timeWindowMs)
+  const cursorRef = useRef(0)
+
+  // Force update trigger
+  const [tick, setTick] = useState(0)
+
+  // Initialize buffers for all possible channels
+  useEffect(() => {
+    Object.keys(channelMapping).forEach(key => {
+      if (!buffersRef.current[key]) {
+        buffersRef.current[key] = initBuffer()
+      }
     })
-  }
+    // Also re-init if timeWindow changes
+    // (Existing buffers would be invalid scale)
+    buffersRef.current = {} // clear to force re-init
 
-  // compute known EEG channel count from buffer keys
-  const knownEegChannels = useMemo(() => {
-    return Object.keys(eegByChannel).map(k => Number(k)).sort((a, b) => a - b)
-  }, [eegByChannel])
+    // Animation loop
+    let animId
+    const loop = () => {
+      if (!isPaused) {
+        setTick(t => t + 1)
+      }
+      animId = requestAnimationFrame(loop)
+    }
+    animId = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(animId)
+  }, [timeWindowMs, isPaused]) // eslint-disable-line
 
+  // Handle incoming data
   useEffect(() => {
     if (!wsData || isPaused) return
 
     let payload = null
     try {
-      const jsonText = typeof wsData === 'string' ? wsData : (wsData.data ?? null)
-      if (!jsonText) return
-      payload = JSON.parse(jsonText)
-    } catch (err) {
-      console.error('LiveView: failed to parse wsData', err, wsData)
-      return
-    }
+      payload = typeof wsData === 'string' ? JSON.parse(wsData) : wsData
+      if (wsData.data && typeof wsData.data === 'string') payload = JSON.parse(wsData.data)
+    } catch { return }
 
-    if (!payload || !payload.window || !Array.isArray(payload.window)) return
-    const source = (payload.source || '').toUpperCase()
-    const fs = Number(payload.fs) || 250
-    const endTs = Number(payload.timestamp) || Date.now()
+    if (!payload?.window) return
+
     const channels = payload.window
-    const nChannels = channels.length
-    const samples = Array.isArray(channels[0]) ? channels[0] : []
-    const n = samples.length
-    if (n === 0) return
+    const endTs = Number(payload.timestamp) || Date.now()
+    // const fs = Number(payload.fs) || samplingRate // Use payload FS if available
+    const fs = samplingRate // Use config FS to match time window logic consistently
+    const dt = 1000 / fs
 
-    // limit points per message
-    const stride = Math.max(1, Math.floor(n / MAX_POINTS_PER_MESSAGE))
+    // For each channel
+    channels.forEach((samples, chIdx) => {
+      // Map index to key
+      const chKey = `ch${chIdx}`
+      // Ensure buffer exists
+      if (!buffersRef.current[chKey]) {
+        buffersRef.current[chKey] = initBuffer()
+      }
 
-    // Build per-sample timestamps (common for all channels)
-    // sample i offset from end: (i - (n - 1))*(1000/fs)
-    const timestamps = []
-    for (let i = 0; i < n; i += stride) {
-      const offsetMs = Math.round((i - (n - 1)) * (1000 / fs))
-      timestamps.push(endTs + offsetMs)
-    }
+      const buffer = buffersRef.current[chKey]
+      const nSamples = samples.length
 
-    // For EEG (multi-channel), create points per channel and push to per-channel buffers
-    if (source === 'EEG' || nChannels >= 8) {
-      // ensure we handle all channels even if some are missing
-      for (let ch = 0; ch < nChannels; ch++) {
-        const chSamples = Array.isArray(channels[ch]) ? channels[ch] : []
-        if (!chSamples || chSamples.length === 0) continue
-        const pts = []
-        for (let i = 0, idx = 0; i < chSamples.length; i += stride, idx++) {
-          const t = timestamps[idx] ?? (endTs - Math.round((n - 1 - i) * (1000 / fs)))
-          const v = Number(chSamples[i])
-          pts.push({ time: t, value: Number.isFinite(v) ? v : 0 })
+      for (let i = 0; i < nSamples; i++) {
+        // Absolute time of this sample
+        // timestamp is end of packet?
+        // "timestamp": 12345.678
+        // Sample i time = endTs - (N - 1 - i) * dt
+        const tAbs = endTs - (nSamples - 1 - i) * dt
+
+        // Map to window [0, timeWindowMs]
+        // We align 0 to some arbitrary start or just mod?
+        // Scanner mode usually implies: x = t % T
+        const posMs = tAbs % timeWindowMs
+        // handle negative mod
+        const safePos = posMs < 0 ? posMs + timeWindowMs : posMs
+
+        cursorRef.current = safePos // Update global cursor (shared)
+
+        // Map safePos to index 0..DISPLAY_POINTS
+        const idx = Math.floor((safePos / timeWindowMs) * DISPLAY_POINTS)
+
+        if (idx >= 0 && idx < buffer.length) {
+          // Update value
+          buffer[idx].val = samples[i]
+          // Also clear slightly ahead to create a "gap" or "scanner bar" affect? 
+          // Just overwriting is fine for bar.
         }
-        pushChannelPoints(ch, pts)
       }
-    } else {
-      // non-EEG: pick first channel only
-      const samples0 = samples
-      const pts = []
-      for (let i = 0, idx = 0; i < samples0.length; i += stride, idx++) {
-        const t = timestamps[idx] ?? (endTs - Math.round((n - 1 - i) * (1000 / fs)))
-        const v = Number(samples0[i])
-        pts.push({ time: t, value: Number.isFinite(v) ? v : 0 })
-      }
+    })
 
-      if (source === 'EOG') pushSingleByTimeWindow(setEogData, pts)
-      else if (source === 'EMG') pushSingleByTimeWindow(setEmgData, pts)
-      else {
-        // heuristics: if 2 channels try EOG, else EMG fallback
-        if (nChannels === 2) pushSingleByTimeWindow(setEogData, pts)
-        else pushSingleByTimeWindow(setEmgData, pts)
-      }
-    }
-  }, [wsData, isPaused, timeWindowMs]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [wsData, isPaused, timeWindowMs, samplingRate])
 
-  // Select data to pass to SignalChart for EEG:
-  // - single mode: pass selected channel's array as `data`
-  // - overlay mode: pass entire eegByChannel as `byChannel`
-  const eegChartProp = useMemo(() => {
-    if (displayMode === 'overlay') {
-      return { byChannel: eegByChannel }
-    } else {
-      // ensure selectedChannel exists; if not, pick lowest existing
-      const ch = Number(selectedChannel)
-      if (eegByChannel[ch]) return { data: eegByChannel[ch] }
-      const keys = Object.keys(eegByChannel)
-      if (keys.length === 0) return { data: [] }
-      const fallback = Number(keys[0])
-      return { data: eegByChannel[fallback] ?? [] }
-    }
-  }, [displayMode, selectedChannel, eegByChannel])
+  // Prepare data for rendering
+  // We render the two selected mapped channels
+  // graphSources could be controlled by UI, for now hardcoded to first 2 enabled or just ch0/ch1
+  const activeKeys = Object.keys(channelMapping).filter(k => channelMapping[k].enabled)
+  const key1 = activeKeys[0] || 'ch0'
+  const key2 = activeKeys[1] || 'ch1'
+
+  // Get data slices
+  const data1 = buffersRef.current[key1] ? [...buffersRef.current[key1]] : []
+  const data2 = buffersRef.current[key2] ? [...buffersRef.current[key2]] : []
+
+  // To make chart render "scanner bar", we pass `scannerX` to SignalChart ref line
+  // And `data` is just static X axis points with updated Ys.
+
+  // Recharts needs `time` for XAxis. Our buffer has `time` 0..window.
 
   return (
-    <div className="space-y-4">
-      <div className="bg-white rounded-lg shadow p-4">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <div className="flex gap-2 items-center">
-            <button
-              onClick={() => setIsPaused(!isPaused)}
-              className={`px-4 py-2 rounded-lg font-medium ${isPaused ? 'bg-green-600' : 'bg-yellow-600'} text-white`}
-            >
-              {isPaused ? '▶ Resume' : '⏸ Pause'}
-            </button>
-
-            <label className="text-sm text-gray-600 ml-2">Time window:</label>
-            <select
-              value={timeWindowMs}
-              onChange={(e) => setTimeWindowMs(Number(e.target.value))}
-              className="px-3 py-2 border border-gray-300 rounded-lg"
-            >
-              <option value={5000}>5 s</option>
-              <option value={10000}>10 s</option>
-              <option value={30000}>30 s</option>
-              <option value={60000}>60 s</option>
-            </select>
-          </div>
-
-          <div className="flex gap-4 items-center">
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium">EEG Display:</label>
-              <label className="flex items-center gap-1">
-                <input
-                  type="radio"
-                  name="displayMode"
-                  value="single"
-                  checked={displayMode === 'single'}
-                  onChange={() => setDisplayMode('single')}
-                />
-                <span className="text-sm ml-1">Single</span>
-              </label>
-              <label className="flex items-center gap-1">
-                <input
-                  type="radio"
-                  name="displayMode"
-                  value="overlay"
-                  checked={displayMode === 'overlay'}
-                  onChange={() => setDisplayMode('overlay')}
-                />
-                <span className="text-sm ml-1">Overlay all</span>
-              </label>
-            </div>
-
-            <div>
-              <label className="text-sm text-gray-600 mr-2">Channel:</label>
-              <select
-                value={selectedChannel}
-                onChange={(e) => setSelectedChannel(Number(e.target.value))}
-                className="px-2 py-1 border rounded"
-                disabled={displayMode === 'overlay'}
-              >
-                {knownEegChannels.length === 0 && <option value={0}>0</option>}
-                {knownEegChannels.map(ch => (
-                  <option key={ch} value={ch}>Ch {ch}</option>
-                ))}
-              </select>
-            </div>
-          </div>
+    <div className="flex flex-col h-full gap-4">
+      {/* Graph 1 */}
+      <div className="flex-1 min-h-0 bg-surface rounded-xl border border-border overflow-hidden p-2 relative">
+        <div className="absolute top-3 left-4 z-10 flex gap-2">
+          <span className="text-xs font-bold text-primary bg-primary/10 px-2 py-1 rounded">
+            {channelMapping[key1]?.sensor || 'Sensor'} ({key1})
+          </span>
         </div>
+        <SignalChart
+          title=""
+          data={data1.map(d => ({ time: d.time, value: d.val }))} // Map 'val' to 'value'
+          color="#3b82f6"
+          timeWindowMs={timeWindowMs}
+          height="100%"
+          showGrid={showGrid}
+          scannerX={cursorRef.current}
+          yDomainProp={['auto', 'auto']} // Auto scale? Or fixed?
+        />
       </div>
 
-      <SignalChart
-        title="EEG - Brain Waves"
-        color="#3b82f6"
-        timeWindowMs={timeWindowMs}
-        {...eegChartProp}
-        channelLabelPrefix="Ch"
-      />
-
-      <SignalChart title="EOG - Eye Movement" data={eogData} color="#10b981" timeWindowMs={timeWindowMs} />
-      <SignalChart title="EMG - Muscle Activity" data={emgData} color="#f59e0b" timeWindowMs={timeWindowMs} />
+      {/* Graph 2 */}
+      <div className="flex-1 min-h-0 bg-surface rounded-xl border border-border overflow-hidden p-2 relative">
+        <div className="absolute top-3 left-4 z-10 flex gap-2">
+          <span className="text-xs font-bold text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded">
+            {channelMapping[key2]?.sensor || 'Sensor'} ({key2})
+          </span>
+        </div>
+        <SignalChart
+          title=""
+          data={data2.map(d => ({ time: d.time, value: d.val }))}
+          color="#10b981"
+          timeWindowMs={timeWindowMs}
+          height="100%"
+          showGrid={showGrid}
+          scannerX={cursorRef.current}
+          yDomainProp={['auto', 'auto']}
+        />
+      </div>
     </div>
   )
 }

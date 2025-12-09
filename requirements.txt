@@ -36,3 +36,9 @@ pytest
 python-dotenv
 
 #
+PyQt5 
+pyserial
+
+flask-socketio 
+python-socketio 
+python-engineio

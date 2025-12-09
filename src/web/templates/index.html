@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧠 BioSignals Dashboard - Real-time Monitoring</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 900px;
+            width: 100%;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .title {
+            font-size: 2.5em;
+            color: #333;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+        }
+
+        .title-icon {
+            font-size: 1.2em;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 1.1em;
+            margin-bottom: 20px;
+        }
+
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 20px;
+            background: #f0f0f0;
+            border-radius: 25px;
+            font-weight: 600;
+            font-size: 1em;
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ff4444;
+            animation: pulse 1s infinite;
+        }
+
+        .status-dot.connected {
+            background: #44ff44;
+            animation: pulse-green 1s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        @keyframes pulse-green {
+
+            0%,
+            100% {
+                opacity: 1;
+                box-shadow: 0 0 0 0 rgba(68, 255, 68, 0.7);
+            }
+
+            50% {
+                opacity: 0.8;
+                box-shadow: 0 0 0 5px rgba(68, 255, 68, 0);
+            }
+        }
+
+        .channels-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 25px;
+            margin-bottom: 30px;
+        }
+
+        .channel-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+            padding: 25px;
+            color: white;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .channel-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .channel-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
+        }
+
+        .channel-type {
+            font-size: 0.8em;
+            opacity: 0.8;
+            margin-bottom: 15px;
+        }
+
+        .channel-value {
+            font-size: 2.2em;
+            font-weight: bold;
+            margin-bottom: 10px;
+            font-family: 'Courier New', monospace;
+            letter-spacing: 2px;
+        }
+
+        .channel-unit {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+
+        .channel-timestamp {
+            font-size: 0.8em;
+            opacity: 0.8;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .stats {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+
+        .stat {
+            text-align: center;
+            padding: 15px;
+        }
+
+        .stat-label {
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .stat-value {
+            color: #333;
+            font-size: 1.8em;
+            font-weight: bold;
+            font-family: 'Courier New', monospace;
+        }
+
+        .error-message {
+            background: #ffe0e0;
+            color: #c00;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .error-message.show {
+            display: block;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 20px;
+            }
+
+            .title {
+                font-size: 1.8em;
+            }
+
+            .channel-value {
+                font-size: 1.6em;
+            }
+
+            .channels-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="title">
+                <span class="title-icon">🧠</span>
+                BioSignals Dashboard
+            </div>
+            <div class="subtitle">Real-time Multi-Channel Signal Monitoring</div>
+            <div class="status-indicator">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">Connecting...</span>
+            </div>
+        </div>
+
+        <div class="channels-grid" id="channelsContainer">
+            <!-- Channels will be dynamically inserted here -->
+        </div>
+
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-label">Sample Rate</div>
+                <div class="stat-value" id="sampleRate">--</div>
+                <div class="stat-label" style="font-size: 0.7em; margin-top: 5px;">Hz</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Samples Received</div>
+                <div class="stat-value" id="samplesCount">0</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Connection Status</div>
+                <div class="stat-value" id="connStatus" style="font-size: 1.2em;">●</div>
+            </div>
+        </div>
+
+        <div class="error-message" id="errorMessage"></div>
+    </div>
+
+    <script>
+        // WebSocket connection
+        const socket = io();
+        let isConnected = false;
+        let channelData = {};
+
+        // Status indicator
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const connStatus = document.getElementById('connStatus');
+        const errorMessage = document.getElementById('errorMessage');
+        const channelsContainer = document.getElementById('channelsContainer');
+
+        // Connection events
+        socket.on('connect', () => {
+            console.log('✅ WebSocket connected');
+            isConnected = true;
+            statusDot.classList.add('connected');
+            statusText.textContent = 'Connected';
+            connStatus.style.color = '#44ff44';
+            errorMessage.classList.remove('show');
+        });
+
+        socket.on('disconnect', () => {
+            console.log('❌ WebSocket disconnected');
+            isConnected = false;
+            statusDot.classList.remove('connected');
+            statusText.textContent = 'Disconnected';
+            connStatus.style.color = '#ff4444';
+        });
+
+        socket.on('connect_error', (error) => {
+            console.error('Connection error:', error);
+            showError(`Connection error: ${error}`);
+        });
+
+        // Data reception
+        socket.on('bio_data_update', (data) => {
+            updateChannels(data);
+        });
+
+        function updateChannels(data) {
+            if (!data.channels) return;
+
+            // Update container if first time
+            if (Object.keys(channelData).length === 0) {
+                createChannelCards(data);
+            }
+
+            // Update values
+            for (const [idx, channel] of Object.entries(data.channels)) {
+                const card = document.getElementById(`channel-${idx}`);
+                if (card) {
+                    const valueEl = card.querySelector('.channel-value');
+                    const timeEl = card.querySelector('.channel-timestamp');
+
+                    if (valueEl) {
+                        valueEl.textContent = channel.value.toFixed(2);
+                    }
+                    if (timeEl && channel.timestamp) {
+                        const date = new Date(channel.timestamp * 1000);
+                        timeEl.textContent = `Updated: ${date.toLocaleTimeString()}`;
+                    }
+                }
+            }
+
+            // Update stats
+            document.getElementById('sampleRate').textContent = data.sample_rate || '--';
+            document.getElementById('samplesCount').textContent = data.sample_count || '0';
+        }
+
+        function createChannelCards(data) {
+            channelsContainer.innerHTML = '';
+
+            for (const [idx, channel] of Object.entries(data.channels)) {
+                const card = document.createElement('div');
+                card.className = 'channel-card';
+                card.id = `channel-${idx}`;
+
+                const date = new Date((data.timestamp || Date.now() / 1000) * 1000);
+
+                card.innerHTML = `
+                    <div class="channel-label">${channel.label}</div>
+                    <div class="channel-type">${channel.type}</div>
+                    <div class="channel-value">${channel.value.toFixed(2)}</div>
+                    <div class="channel-unit">µV</div>
+                    <div class="channel-timestamp">Updated: ${date.toLocaleTimeString()}</div>
+                `;
+
+                channelsContainer.appendChild(card);
+            }
+        }
+
+        function showError(message) {
+            errorMessage.textContent = `⚠️ ${message}`;
+            errorMessage.classList.add('show');
+        }
+
+        // Initial status request
+        setTimeout(() => {
+            if (!isConnected) {
+                showError('Failed to connect to WebSocket server. Make sure the server is running on port 5000.');
+            }
+        }, 3000);
+
+        console.log('Dashboard initialized');
+    </script>
+</body>
+
+</html>
