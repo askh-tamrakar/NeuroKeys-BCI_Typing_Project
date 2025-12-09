@@ -15,11 +15,17 @@ import themePresets from '../themes/presets';
 import ScrollStack, { ScrollStackItem } from '../ui/ScrollStack';
 import PillNav from '../ui/PillNav';
 import Pill from '../ui/Pill';
+import { Brain, Zap, Plug, Cable } from 'lucide-react';
 
 export default function Dashboard() {
   const { user, logout } = useAuth()
   const [currentPage, setCurrentPage] = useState('live')
-  // const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [isConnectingClicked, setIsConnectingClicked] = useState(false);
+  // State for 5-second connection simulation
+  const [isSimulatedConnecting, setIsSimulatedConnecting] = useState(false);
+  // State to manage video loading status
+  const [isVideoLoaded, setIsVideoLoaded] = useState(false);
+
   const { status, lastMessage, latency, connect, disconnect, sendMessage } = useWebSocket(
     import.meta.env.VITE_WS_URL || 'ws://localhost:8765'
   )
@@ -28,7 +34,7 @@ export default function Dashboard() {
   const [authView, setAuthView] = useState(null);
   const isAuthenticated = !!user;
 
-  // Theme management
+  // Theme management (No Change)
   React.useEffect(() => {
     const root = document.documentElement;
     const existing = Array.from(root.classList).filter(c => c.startsWith('theme-'));
@@ -42,7 +48,7 @@ export default function Dashboard() {
     setNavColors({ base: accent, pill: text, pillText: accent, hoverText: text });
   }, [theme]);
 
-  // Pill size calculation
+  // Pill size calculation (No Change)
   const [pillSize, setPillSize] = React.useState({ width: 0, height: 0 });
   React.useEffect(() => {
     const canvas = document.createElement('canvas');
@@ -61,9 +67,30 @@ export default function Dashboard() {
     setPillSize({ width: paddedWidth, height: 40 });
   }, []);
 
+  // Connection is user-initiated only
   useEffect(() => {
-    connect()
+    // No auto-connect
   }, [])
+
+  const handleConnectClick = () => {
+    setIsConnectingClicked(true);
+    setTimeout(() => setIsConnectingClicked(false), 200); 
+    
+    if (status === 'connected') {
+        disconnect();
+    } else {
+        // 1. Start simulated connecting (overrides actual status display for 5s)
+        setIsSimulatedConnecting(true); 
+        
+        // 2. Start actual connection attempt
+        connect(); 
+
+        // 3. End the simulated connecting phase after 5 seconds
+        setTimeout(() => {
+            setIsSimulatedConnecting(false);
+        }, 5000); // 5000 milliseconds = 5 seconds
+    }
+  }
 
   const handleSignupSuccess = () => {
     setAuthView(null);
@@ -109,29 +136,72 @@ export default function Dashboard() {
       )
     }
   ], [theme, pillSize.width]);
+  
+  // Logic to determine the status to display on the button
+  const currentDisplayStatus = isSimulatedConnecting ? 'connecting' : status;
+
+  // Helper for Connecting button icon uses the currentDisplayStatus
+  const ConnectionIcon = ({ status }) => {
+    if (status === 'connected') return <Cable className="w-5 h-5 text-emerald-400" />;
+    if (status === 'connecting') return <Zap className="w-5 h-5 text-amber-400 animate-pulse" />;
+    return <Plug className="w-5 h-5 text-red-400" />;
+  };
+
 
   return (
-    <div className="app-root">
+    <div className="app-root flex flex-col min-h-screen">
       {/* Navigation */}
-      <div className="topbar" style={{ zIndex: 50 }}>
-        <div className="topbar-inner container">
+      <div className="topbar sticky top-0" style={{ zIndex: 50 }}>
+        <div className="topbar-inner container flex flex-wrap items-center justify-between gap-4 py-3 md:py-4">
+          
+          {/* Top-Left Symbol/Logo Area */}
           <div className="flex items-center gap-3">
-            <div className="relative group">
-              <div className="absolute inset-0 bg-primary/20 blur-lg rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-              <video muted autoPlay loop playsInline preload="auto" aria-label="logo animation" className="w-10 h-10 relative z-10 rounded-lg border border-border bg-black object-cover">
-                <source src="/Resources/Encryption.mp4" type="video/mp4" />
-              </video>
+            
+            {/* *** CHANGED: Increased size from w-14 h-14 to w-20 h-20 *** */}
+            <div className={`relative w-20 h-20 flex items-center justify-center bg-surface/80 rounded-xl border border-border shadow-lg overflow-hidden transition-all duration-300 ${status === 'connected' ? 'shadow-primary/40' : ''}`}>
+                
+                {/* Video Element */}
+                <video 
+                    src="/Resources/brain_animation.mp4" 
+                    autoPlay 
+                    loop 
+                    muted 
+                    playsInline
+                    onLoadedData={() => setIsVideoLoaded(true)}
+                    onError={() => setIsVideoLoaded(false)}
+                    className={`w-full h-full object-cover block transition-all duration-500 ${status === 'connected' ? 'opacity-100' : 'opacity-70'} ${!isVideoLoaded ? 'hidden' : ''}`}
+                />
+                
+                {/* Fallback Brain Icon (Shown if video fails to load or hasn't loaded yet) */}
+                {!isVideoLoaded && (
+                    <Brain 
+                        className={`w-10 h-10 transition-all duration-500 ${status === 'connected' ? 'text-primary' : 'text-primary/50'}`} 
+                        style={{ animation: 'subtle-spin 15s linear infinite' }}
+                    />
+                )}
+
+                {/* Pulse Glow for connection activity (only when actual status is connected) */}
+                {status === 'connected' && (
+                  <Zap 
+                    className="absolute w-6 h-6 text-primary z-10" 
+                    style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}
+                  />
+                )}
             </div>
-            <div className="flex flex-col">
-              <div className="headline">NeuroKeys
-                <br />
-                <div className="accent">BCI Dashboard</div>
+            {/* *** END CHANGED: Size increased *** */}
+
+            {/* Text Animation is fine */}
+            <div className="flex flex-col opacity-0 animate-slide-fade-in"> 
+              <div className="headline text-2xl sm:text-3xl font-extrabold tracking-tight leading-tight">NeuroKeys
+                <div className="accent text-lg sm:text-xl font-semibold text-muted">BCI Dashboard</div>
               </div>
             </div>
+            {/* Text Animation is fine */}
           </div>
 
-          <nav className="nav">
-            <div className="backdrop-blur-sm bg-surface/50 border border-white/5 rounded-full p-1">
+          {/* Navigation Pills - Centered/Wrapped on mobile */}
+          <nav className="nav flex justify-center order-3 w-full md:order-none md:w-auto"> 
+            <div className="backdrop-blur-sm bg-surface/50 border border-white/5 rounded-full p-1 shadow-inner">
               <PillNav
                 items={navItems}
                 activeHref={`#${currentPage}`}
@@ -144,35 +214,40 @@ export default function Dashboard() {
               />
             </div>
           </nav>
-
+          
+          {/* Connecting Button logic uses currentDisplayStatus */}
           <button
-            onClick={() => status === 'connected' ? disconnect() : connect()}
-            className={`flex items-center justify-center gap-2 w-36 py-2 rounded-full border transition-all duration-300 ${status === 'connected' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20' :
-              status === 'connecting' ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' :
-                'bg-red-500/10 border-red-500/20 text-red-400 hover:bg-red-500/20'
+            onClick={handleConnectClick} // Call the new handler
+            className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-full border shadow-lg transition-all duration-200 ease-in-out font-bold text-sm tracking-wide w-full max-w-[200px] sm:w-auto 
+              ${isConnectingClicked ? 'animate-press-down shadow-none' : 'scale-100'} // Click animation
+              ${currentDisplayStatus === 'connected'
+                ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/30 shadow-emerald-500/50' 
+                : currentDisplayStatus === 'connecting'
+                  ? 'bg-amber-500/20 border-amber-500/50 text-amber-400 shadow-amber-500/20'
+                  : 'bg-red-500/20 border-red-500/50 text-red-400 hover:bg-red-500/30 shadow-red-500/20'
               }`}
           >
-            <div className={`w-2 h-2 rounded-full ${status === 'connected' ? 'bg-emerald-500 shadow-[0_0_8px_currentColor]' :
-              status === 'connecting' ? 'bg-amber-500 animate-pulse' :
-                'bg-red-500'
-              }`}></div>
+            <ConnectionIcon status={currentDisplayStatus} />
 
-            <span className="text-xs font-bold uppercase tracking-wider">
-              {status === 'connected' ? 'Connected' : status === 'connecting' ? 'Connecting' : 'Disconnected'}
+            <span className="text-sm font-bold uppercase tracking-wider">
+              {currentDisplayStatus === 'connected' ? 'CONNECTED' : currentDisplayStatus === 'connecting' ? 'CONNECTING' : 'DISCONNECTED'}
             </span>
 
+            {/* Latency only shows when actual status is connected */}
             {status === 'connected' && (
               <>
-                <div className="w-[1px] h-3 bg-current opacity-20 mx-1"></div>
+                <div className="w-[1px] h-4 bg-current opacity-30 mx-1"></div>
                 <span className="text-xs font-mono opacity-80">{latency}ms</span>
               </>
             )}
           </button>
+          {/* Connecting Button logic is fine */}
+
         </div>
       </div>
 
       {/* Main Content Area */}
-      <div className="container" style={{ flex: 1, padding: '24px 0', overflowY: 'auto' }}>
+      <div className="container flex-grow" style={{ padding: '24px 0', overflowY: 'auto' }}>
         {currentPage === 'live' && <LiveView wsData={lastMessage} />}
         {currentPage === 'commands' && <CommandVisualizer wsData={lastMessage} />}
         {currentPage === 'recordings' && <RecordingsView />}
