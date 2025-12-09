@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react'
 import Sidebar from '../ui/Sidebar'
 import LiveView from '../views/LiveView'
-import { ConfigService, DEFAULT_CONFIG } from '../../services/ConfigService'
+import { ConfigService } from '../../services/ConfigService'
 
 export default function LiveDashboard({ wsData, sendMessage }) {
-    const [config, setConfig] = useState(DEFAULT_CONFIG)
+    const [config, setConfig] = useState()
     const [isPaused, setIsPaused] = useState(false)
     const [loading, setLoading] = useState(true)
 

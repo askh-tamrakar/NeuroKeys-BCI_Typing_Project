@@ -320,7 +320,7 @@ def main():
     
     # Start SocketIO server
     print("[WebServer] 🚀 Starting WebSocket server...")
-    print(f"[WebServer] 📡 WebSocket endpoint: ws://localhost:5000/ws")
+    print(f"[WebServer] 📡 WebSocket endpoint: ws://localhost:5000")
     print(f"[WebServer] 🌐 Dashboard: http://localhost:5000")
     print(f"[WebServer] 📊 API: http://localhost:5000/api/status")
     print()
