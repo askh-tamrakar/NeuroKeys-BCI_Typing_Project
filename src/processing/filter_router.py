@@ -216,6 +216,8 @@ class FilterRouter:
                     all_streams = pylsl.lsl_resolve_all()
                 except Exception:
                     all_streams = []
+            
+            streams = [s for s in all_streams if s.name() == RAW_STREAM_NAME]
 
             # Build a list of (name, StreamInfo)
             available = []
