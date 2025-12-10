@@ -18,8 +18,8 @@
   height: 40px; 
 }
 .brand video { 
-  width: 56px; 
-  height: 56px; 
+  width: 64px; 
+  height: 64px; 
   border-radius: 6px; 
   object-fit: fill; 
   pointer-events: none; 
@@ -169,18 +169,27 @@
 }
 
 .headline {
-  font-size: clamp(20px, 3vw, 34px);
-  line-height: 0.9;
-  letter-spacing: -2px;
+  line-height: 1;
   font-weight: 700;
 }
-.headline .accent {
+
+/* First line: main brand */
+.headline-line.main {
+  font-size: clamp(24px, 3vw, 34px);
+  letter-spacing: -0.08em; /* tighter so it looks bold & compact */
+}
+
+/* Second line: visually same width, slightly smaller */
+.headline-line.sub {
+  font-size: clamp(20px, 2.6vw, 23.5px); /* smaller than main line */
+  letter-spacing: -0.04em;             /* less negative tracking */
   background: linear-gradient(90deg, var(--primary), var(--accent));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  margin-top: 10px;
+  margin-top: 6px;
 }
+
 
 .lede { 
   color: var(--muted); 
