@@ -102,59 +102,47 @@ export default function LiveView({ wsData, config, isPaused }) {
 
     let payload = null
     try {
-      payload = typeof wsData === 'string' ? JSON.parse(wsData) : wsData
-      if (wsData.data && typeof wsData.data === 'string') payload = JSON.parse(wsData.data)
-    } catch { return }
+      payload = wsData.raw ?? (typeof wsData === 'string'
+        ? JSON.parse(wsData)
+        : wsData)
+    } catch {
+      return
+    }
 
-    if (!payload?.window) return
+    console.log('LiveView payload:', payload)
 
-    const channels = payload.window
+    const channelsObj = payload.channels
+    if (!channelsObj || typeof channelsObj !== 'object') return
+
     const endTs = Number(payload.timestamp) || Date.now()
-    // const fs = Number(payload.fs) || samplingRate // Use payload FS if available
-    const fs = samplingRate // Use config FS to match time window logic consistently
+    const fs = samplingRate
     const dt = 1000 / fs
 
-    // For each channel
-    channels.forEach((samples, chIdx) => {
-      // Map index to key
+    Object.entries(channelsObj).forEach(([chIdx, chInfo]) => {
+      const value = Number(chInfo.value)
+      if (!Number.isFinite(value)) return
+
       const chKey = `ch${chIdx}`
-      // Ensure buffer exists
+
       if (!buffersRef.current[chKey]) {
         buffersRef.current[chKey] = initBuffer()
       }
-
       const buffer = buffersRef.current[chKey]
-      const nSamples = samples.length
 
-      for (let i = 0; i < nSamples; i++) {
-        // Absolute time of this sample
-        // timestamp is end of packet?
-        // "timestamp": 12345.678
-        // Sample i time = endTs - (N - 1 - i) * dt
-        const tAbs = endTs - (nSamples - 1 - i) * dt
+      // Treat this event as a single sample at endTs
+      const tAbs = endTs
+      const posMsRaw = tAbs % timeWindowMs
+      const posMs = posMsRaw < 0 ? posMsRaw + timeWindowMs : posMsRaw
 
-        // Map to window [0, timeWindowMs]
-        // We align 0 to some arbitrary start or just mod?
-        // Scanner mode usually implies: x = t % T
-        const posMs = tAbs % timeWindowMs
-        // handle negative mod
-        const safePos = posMs < 0 ? posMs + timeWindowMs : posMs
+      cursorRef.current = posMs
 
-        cursorRef.current = safePos // Update global cursor (shared)
-
-        // Map safePos to index 0..DISPLAY_POINTS
-        const idx = Math.floor((safePos / timeWindowMs) * DISPLAY_POINTS)
-
-        if (idx >= 0 && idx < buffer.length) {
-          // Update value
-          buffer[idx].val = samples[i]
-          // Also clear slightly ahead to create a "gap" or "scanner bar" affect? 
-          // Just overwriting is fine for bar.
-        }
+      const idx = Math.floor((posMs / timeWindowMs) * DISPLAY_POINTS)
+      if (idx >= 0 && idx < buffer.length) {
+        buffer[idx].val = value
       }
     })
-
   }, [wsData, isPaused, timeWindowMs, samplingRate])
+
 
   // Prepare data for rendering
   // We render the two selected mapped channels
@@ -163,14 +151,12 @@ export default function LiveView({ wsData, config, isPaused }) {
   const key1 = activeKeys[0] || 'ch0'
   const key2 = activeKeys[1] || 'ch1'
 
-  // Get data slices
-  const data1 = buffersRef.current[key1] ? [...buffersRef.current[key1]] : []
-  const data2 = buffersRef.current[key2] ? [...buffersRef.current[key2]] : []
-
-  // To make chart render "scanner bar", we pass `scannerX` to SignalChart ref line
-  // And `data` is just static X axis points with updated Ys.
-
-  // Recharts needs `time` for XAxis. Our buffer has `time` 0..window.
+  const data1 = buffersRef.current[key1]
+    ? buffersRef.current[key1].map(p => ({ time: p.time, value: p.val }))
+    : []
+  const data2 = buffersRef.current[key2]
+    ? buffersRef.current[key2].map(p => ({ time: p.time, value: p.val }))
+    : []
 
   return (
     <div className="flex flex-col h-full gap-4">
@@ -182,14 +168,11 @@ export default function LiveView({ wsData, config, isPaused }) {
           </span>
         </div>
         <SignalChart
-          title=""
-          data={data1.map(d => ({ time: d.time, value: d.val }))} // Map 'val' to 'value'
-          color="#3b82f6"
+          title={channelMapping[key1]?.label || key1}
+          data={data1}
           timeWindowMs={timeWindowMs}
-          height="100%"
           showGrid={showGrid}
           scannerX={cursorRef.current}
-          yDomainProp={['auto', 'auto']} // Auto scale? Or fixed?
         />
       </div>
 
@@ -201,14 +184,11 @@ export default function LiveView({ wsData, config, isPaused }) {
           </span>
         </div>
         <SignalChart
-          title=""
-          data={data2.map(d => ({ time: d.time, value: d.val }))}
-          color="#10b981"
+          title={channelMapping[key2]?.label || key2}
+          data={data2.map(p => ({ time: p.time, value: p.val }))}
           timeWindowMs={timeWindowMs}
-          height="100%"
           showGrid={showGrid}
           scannerX={cursorRef.current}
-          yDomainProp={['auto', 'auto']}
         />
       </div>
     </div>
