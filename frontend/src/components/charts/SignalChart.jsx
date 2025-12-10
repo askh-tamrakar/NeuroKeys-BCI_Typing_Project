@@ -1,22 +1,6 @@
+// SignalChart.jsx (updated)
 import React, { useMemo } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts'
-
-/**
- * SignalChart supports:
- * - single series: pass `data` = [{time, value}, ...]
- * - multi-channel overlay: pass `byChannel` = { 0: [{time, value}, ...], 1: [...] }
- *
- * When byChannel is provided, we merge timestamps into one data array with fields:
- * { time, ch0: val, ch1: val, ... } so Recharts can plot multiple lines.
- *
- * Props:
- * - title
- * - data
- * - byChannel
- * - timeWindowMs (ms)
- * - color (single series) or a palette used for multi channels
- * - channelLabelPrefix: string for legend e.g., 'Ch'
- */
 
 const DEFAULT_PALETTE = [
   '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
@@ -33,53 +17,43 @@ export default function SignalChart({
   height = 300,
   yDomainProp = null,
   showGrid = true,
-  scannerX = null // if provided, draws a vertical scanner bar
+  scannerX = null
 }) {
-  // If byChannel present -> merge into single array
   const merged = useMemo(() => {
     if (!byChannel || typeof byChannel !== 'object') {
-      // single series path: simply clip to time window
       const arr = Array.isArray(data) ? data.slice() : []
       if (arr.length === 0) return { dataArray: [], channelKeys: [] }
-      const newest = arr[arr.length - 1].time || Date.now()
+      // ensure numeric times/values
+      arr.forEach(d => { d.time = Number(d.time); d.value = Number(d.value) })
+      // sort ascending
+      arr.sort((a, b) => a.time - b.time)
+      const newest = arr[arr.length - 1]?.time || Date.now()
       const cutoff = newest - timeWindowMs
       const filtered = arr.filter(d => Number(d.time) >= cutoff)
-      // sort
-      filtered.sort((a, b) => a.time - b.time)
-      // map to same shape (time & value)
       return { dataArray: filtered.map(d => ({ time: Number(d.time), value: Number(d.value) })), channelKeys: [] }
     }
 
-    // Multi-channel: get each channel array, filter by time window relative to their newest
     const chKeys = Object.keys(byChannel).map(k => k).sort((a, b) => Number(a) - Number(b))
     if (chKeys.length === 0) return { dataArray: [], channelKeys: [] }
 
-    // Build set of timestamps from all channels (coarse union)
     const allTimestampsSet = new Set()
     const chFiltered = {}
     chKeys.forEach((k) => {
       const arr = Array.isArray(byChannel[k]) ? byChannel[k].slice() : []
-      if (arr.length === 0) {
-        chFiltered[k] = []
-        return
-      }
+      arr.forEach(d => { if (d) { d.time = Number(d.time); d.value = Number(d.value) } })
+      if (arr.length === 0) { chFiltered[k] = []; return }
       const newest = arr[arr.length - 1].time || Date.now()
       const cutoff = newest - timeWindowMs
       const filtered = arr.filter(d => Number(d.time) >= cutoff)
       filtered.forEach(p => allTimestampsSet.add(Number(p.time)))
-      // sort ascending
       filtered.sort((a, b) => a.time - b.time)
       chFiltered[k] = filtered
     })
 
-    // If there are no timestamps -> empty
     if (allTimestampsSet.size === 0) return { dataArray: [], channelKeys: chKeys }
 
-    // Convert set -> sorted array
     const allTimestamps = Array.from(allTimestampsSet).sort((a, b) => a - b)
 
-    // For each timestamp, pick the nearest sample from each channel (simple nearest-neighbor)
-    // Build merged rows: { time, ch0: val, ch1: val, ... }
     const dataArray = allTimestamps.map(ts => {
       const row = { time: ts }
       chKeys.forEach(k => {
@@ -88,21 +62,17 @@ export default function SignalChart({
           row[`ch${k}`] = null
           return
         }
-        // binary search nearest index (arr sorted by time)
         let lo = 0, hi = arr.length - 1, best = arr[0]
         while (lo <= hi) {
           const mid = Math.floor((lo + hi) / 2)
           const midT = arr[mid].time
           if (midT === ts) { best = arr[mid]; break }
-          if (midT < ts) { lo = mid + 1 }
-          else { hi = mid - 1 }
-          // track nearest by difference
+          if (midT < ts) lo = mid + 1
+          else hi = mid - 1
           if (Math.abs(arr[mid].time - ts) < Math.abs(best.time - ts)) best = arr[mid]
         }
-        // if nearest is too far (e.g., > half sample interval), we can set null to avoid weird interpolation
-        // compute approx sample interval from arr
         const approxInterval = arr.length >= 2 ? Math.abs(arr[arr.length - 1].time - arr[0].time) / (arr.length - 1) : 1000
-        const maxAcceptDist = Math.max(approxInterval * 0.6, 1) // accept within ~60% of interval
+        const maxAcceptDist = Math.max(approxInterval * 0.6, 1)
         row[`ch${k}`] = Math.abs(best.time - ts) <= maxAcceptDist ? Number(best.value) : null
       })
       return row
@@ -111,10 +81,31 @@ export default function SignalChart({
     return { dataArray, channelKeys: chKeys }
   }, [data, byChannel, timeWindowMs])
 
-  const dataArray = merged.dataArray || []
+  let dataArray = merged.dataArray || []
   const channelKeys = merged.channelKeys || []
 
-  // dynamic y domain (consider all channels)
+  // If timestamps have almost no variance (dataMin === dataMax or tiny range), synthesize an even timescale
+  const xTimes = dataArray.map(d => Number(d.time)).filter(t => Number.isFinite(t))
+  let dataMin = xTimes.length ? Math.min(...xTimes) : null
+  let dataMax = xTimes.length ? Math.max(...xTimes) : null
+
+  const tinyThreshold = Math.max(1, timeWindowMs * 0.001) // e.g., 1ms or 0.1% of window
+  if (dataMin === null || dataMax === null || (dataMax - dataMin) < tinyThreshold) {
+    // synthesize times evenly spaced across the timeWindowMs so chart can render smoothly
+    const now = Date.now()
+    const n = Math.max(1, dataArray.length)
+    const base = now - timeWindowMs
+    const stride = timeWindowMs / Math.max(1, n)
+    dataArray = dataArray.map((row, i) => {
+      return { ...row, time: Math.round(base + (i + 1) * stride) }
+    })
+    // recompute min/max
+    const newTimes = dataArray.map(d => d.time)
+    dataMin = Math.min(...newTimes)
+    dataMax = Math.max(...newTimes)
+  }
+
+  // collect values for Y domain
   const values = []
   if (byChannel && channelKeys.length) {
     dataArray.forEach(row => {
@@ -130,15 +121,31 @@ export default function SignalChart({
     })
   }
 
-  // Calculate stats
   const min = values.length ? Math.min(...values) : -1
   const max = values.length ? Math.max(...values) : 1
   const mean = values.length ? (values.reduce((a, b) => a + b, 0) / values.length) : 0
 
-  // Determine domain
   const pad = Math.max((max - min) * 0.1, 0.01)
   const calculatedDomain = [min - pad, max + pad]
   const finalYDomain = yDomainProp || calculatedDomain
+
+  // compute scannerXValue robustly (if scannerX is null it stays null)
+  let scannerXValue = null
+  if (scannerX !== null && scannerX !== undefined) {
+    // if scannerX is percent 0..100
+    if (typeof scannerX === 'number' && scannerX >= 0 && scannerX <= 100 && dataMin !== null && dataMax !== null) {
+      scannerXValue = dataMin + (dataMax - dataMin) * (scannerX / 100)
+    } else {
+      // otherwise assume timestamp / x coordinate; ensure it's numeric
+      const n = Number(scannerX)
+      if (Number.isFinite(n)) scannerXValue = n
+    }
+    // clamp into dataMin..dataMax to avoid drawing outside visible domain
+    if (scannerXValue !== null && dataMin !== null && dataMax !== null) {
+      if (scannerXValue < dataMin) scannerXValue = dataMin
+      if (scannerXValue > dataMax) scannerXValue = dataMax
+    }
+  }
 
   return (
     <div className="bg-card surface-panel border border-border shadow-sm rounded-xl overflow-hidden flex flex-col h-full bg-surface">
@@ -174,8 +181,8 @@ export default function SignalChart({
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={dataArray}>
             {showGrid && <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />}
-            {scannerX !== null && (
-              <ReferenceLine x={scannerX} stroke="var(--accent)" strokeOpacity={0.8} />
+            {scannerXValue !== null && (
+              <ReferenceLine x={scannerXValue} stroke="var(--accent)" strokeOpacity={0.9} strokeWidth={1.5} />
             )}
             <XAxis
               dataKey="time"

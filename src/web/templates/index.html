@@ -4,8 +4,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🧠 BioSignals Dashboard - Real-time Monitoring</title>
-    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <title>BioSignals Dashboard - WebSocket Live Charts</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js" crossorigin="anonymous"></script>
     <style>
         * {
             margin: 0;
@@ -14,71 +15,280 @@
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
             padding: 20px;
         }
 
         .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 20px;
+        }
+
+        /* Sidebar - Controls Panel */
+        .sidebar {
             background: white;
-            border-radius: 15px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            padding: 40px;
-            max-width: 900px;
-            width: 100%;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            overflow-y: auto;
+            max-height: 90vh;
         }
 
-        .header {
-            text-align: center;
-            margin-bottom: 40px;
-        }
-
-        .title {
-            font-size: 2.5em;
+        .sidebar h2 {
+            font-size: 18px;
+            margin-bottom: 15px;
             color: #333;
-            margin-bottom: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 15px;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
         }
 
-        .title-icon {
-            font-size: 1.2em;
-        }
-
-        .subtitle {
-            color: #666;
-            font-size: 1.1em;
+        .control-group {
             margin-bottom: 20px;
         }
 
-        .status-indicator {
-            display: inline-flex;
+        .control-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #555;
+            font-size: 13px;
+        }
+
+        .control-group input[type="number"],
+        .control-group input[type="text"],
+        .control-group select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 13px;
+            transition: border-color 0.3s;
+        }
+
+        .control-group input:focus,
+        .control-group select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        button {
+            flex: 1;
+            padding: 10px 16px;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 13px;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #059669;
+        }
+
+        .btn-secondary {
+            background: #f3f4f6;
+            color: #374151;
+        }
+
+        .btn-secondary:hover {
+            background: #e5e7eb;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Main Content Area */
+        .main-content {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            overflow-y: auto;
+            max-height: 90vh;
+        }
+
+        .main-content h1 {
+            font-size: 28px;
+            margin-bottom: 20px;
+            color: #1f2937;
+        }
+
+        /* Charts Container */
+        .charts-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .chart-card {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chart-card h3 {
+            font-size: 16px;
+            margin-bottom: 10px;
+            color: #374151;
+            display: flex;
             align-items: center;
             gap: 10px;
-            padding: 10px 20px;
-            background: #f0f0f0;
-            border-radius: 25px;
+        }
+
+        .chart-card .label-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
             font-weight: 600;
-            font-size: 1em;
+            color: white;
         }
 
-        .status-dot {
-            width: 12px;
-            height: 12px;
+        .chart-card .ch0-badge {
+            background: #3b82f6;
+        }
+
+        .chart-card .ch1-badge {
+            background: #10b981;
+        }
+
+        .chart-wrapper {
+            position: relative;
+            flex: 1;
+            min-height: 300px;
+        }
+
+        .chart-wrapper canvas {
+            max-height: 300px;
+        }
+
+        /* Status Panel */
+        .status-panel {
+            background: #f0f9ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .status-panel h3 {
+            font-size: 16px;
+            margin-bottom: 15px;
+            color: #1e40af;
+        }
+
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .status-item {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #3b82f6;
+        }
+
+        .status-item.ch0 {
+            border-left-color: #3b82f6;
+        }
+
+        .status-item.ch1 {
+            border-left-color: #10b981;
+        }
+
+        .status-item label {
+            display: block;
+            font-size: 12px;
+            color: #6b7280;
+            margin-bottom: 5px;
+        }
+
+        .status-item .value {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1f2937;
+            font-family: 'Courier New', monospace;
+        }
+
+        /* Connection Status */
+        .connection-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: #f0fdf4;
+            border: 1px solid #86efac;
+            border-radius: 6px;
+            font-weight: 600;
+            color: #15803d;
+            font-size: 13px;
+            margin-bottom: 15px;
+        }
+
+        .connection-status.disconnected {
+            background: #fef2f2;
+            border-color: #fecaca;
+            color: #991b1b;
+        }
+
+        .connection-status .dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
-            background: #ff4444;
-            animation: pulse 1s infinite;
+            background: currentColor;
+            animation: pulse 2s infinite;
         }
 
-        .status-dot.connected {
-            background: #44ff44;
-            animation: pulse-green 1s infinite;
+        .connection-status.disconnected .dot {
+            animation: none;
         }
 
         @keyframes pulse {
@@ -93,283 +303,437 @@
             }
         }
 
-        @keyframes pulse-green {
-
-            0%,
-            100% {
-                opacity: 1;
-                box-shadow: 0 0 0 0 rgba(68, 255, 68, 0.7);
-            }
-
-            50% {
-                opacity: 0.8;
-                box-shadow: 0 0 0 5px rgba(68, 255, 68, 0);
-            }
-        }
-
-        .channels-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 25px;
-            margin-bottom: 30px;
-        }
-
-        .channel-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 12px;
-            padding: 25px;
-            color: white;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-        }
-
-        .channel-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.3);
-        }
-
-        .channel-label {
-            font-size: 0.9em;
-            opacity: 0.9;
-            margin-bottom: 8px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            font-weight: 600;
-        }
-
-        .channel-type {
-            font-size: 0.8em;
-            opacity: 0.8;
-            margin-bottom: 15px;
-        }
-
-        .channel-value {
-            font-size: 2.2em;
-            font-weight: bold;
-            margin-bottom: 10px;
-            font-family: 'Courier New', monospace;
-            letter-spacing: 2px;
-        }
-
-        .channel-unit {
-            font-size: 0.9em;
-            opacity: 0.9;
-        }
-
-        .channel-timestamp {
-            font-size: 0.8em;
-            opacity: 0.8;
-            margin-top: 15px;
-            padding-top: 15px;
-            border-top: 1px solid rgba(255, 255, 255, 0.2);
-        }
-
-        .stats {
-            background: #f8f9fa;
-            border-radius: 12px;
-            padding: 20px;
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 20px;
-            margin-top: 30px;
-        }
-
-        .stat {
-            text-align: center;
-            padding: 15px;
-        }
-
-        .stat-label {
-            color: #666;
-            font-size: 0.9em;
-            margin-bottom: 8px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        .stat-value {
-            color: #333;
-            font-size: 1.8em;
-            font-weight: bold;
-            font-family: 'Courier New', monospace;
-        }
-
-        .error-message {
-            background: #ffe0e0;
-            color: #c00;
-            padding: 15px;
-            border-radius: 8px;
-            margin-top: 20px;
-            display: none;
-        }
-
-        .error-message.show {
-            display: block;
-        }
-
-        @media (max-width: 600px) {
+        /* Responsive */
+        @media (max-width: 1024px) {
             .container {
-                padding: 20px;
-            }
-
-            .title {
-                font-size: 1.8em;
-            }
-
-            .channel-value {
-                font-size: 1.6em;
-            }
-
-            .channels-grid {
                 grid-template-columns: 1fr;
             }
+
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                max-height: none;
+            }
+
+            .main-content {
+                max-height: none;
+            }
+        }
+
+        .section-divider {
+            border-top: 2px solid #e5e7eb;
+            margin: 20px 0;
+        }
+
+        .info-text {
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 8px;
         }
     </style>
 </head>
 
 <body>
     <div class="container">
-        <div class="header">
-            <div class="title">
-                <span class="title-icon">🧠</span>
-                BioSignals Dashboard
+        <!-- SIDEBAR: Controls and Settings -->
+        <div class="sidebar">
+            <h2>⚙️ Controls</h2>
+
+            <div class="control-group">
+                <label>Connection</label>
+                <div id="connectionStatus" class="connection-status disconnected">
+                    <span class="dot"></span>
+                    <span>Disconnected</span>
+                </div>
             </div>
-            <div class="subtitle">Real-time Multi-Channel Signal Monitoring</div>
-            <div class="status-indicator">
-                <div class="status-dot" id="statusDot"></div>
-                <span id="statusText">Connecting...</span>
+
+            <div class="button-group">
+                <button id="connectBtn" class="btn-primary">Connect</button>
+                <button id="disconnectBtn" class="btn-danger" disabled>Disconnect</button>
+            </div>
+
+            <div class="section-divider"></div>
+
+            <h2>📊 Display Settings</h2>
+
+            <div class="control-group">
+                <label>Time Window (seconds)</label>
+                <input type="number" id="timeWindow" value="10" min="1" max="60" step="1">
+                <p class="info-text">How many seconds of data to display</p>
+            </div>
+
+            <div class="control-group">
+                <label>Sample Rate (Hz)</label>
+                <input type="number" id="sampleRate" value="512" min="100" max="10000" step="1" disabled>
+                <p class="info-text">Auto-detected from server</p>
+            </div>
+
+            <div class="button-group">
+                <button id="clearBtn" class="btn-secondary">Clear Data</button>
+                <button id="pauseBtn" class="btn-secondary">Pause</button>
+            </div>
+
+            <div class="section-divider"></div>
+
+            <h2>🎯 Channel Settings</h2>
+
+            <div class="control-group">
+                <label>
+                    <input type="checkbox" id="ch0Enable" checked> Channel 0 (EMG)
+                </label>
+            </div>
+
+            <div class="control-group">
+                <label>
+                    <input type="checkbox" id="ch1Enable" checked> Channel 1 (EEG)
+                </label>
+            </div>
+
+            <div class="section-divider"></div>
+
+            <h2>📈 Stats</h2>
+
+            <div class="control-group">
+                <label>Points Buffered</label>
+                <input type="text" id="pointsCount" value="0" readonly>
+            </div>
+
+            <div class="control-group">
+                <label>Update Rate (Hz)</label>
+                <input type="text" id="updateRate" value="0.0" readonly>
+            </div>
+
+            <div class="control-group">
+                <label>Samples Received</label>
+                <input type="text" id="samplesReceived" value="0" readonly>
             </div>
         </div>
 
-        <div class="channels-grid" id="channelsContainer">
-            <!-- Channels will be dynamically inserted here -->
-        </div>
+        <!-- MAIN: Charts and Status -->
+        <div class="main-content">
+            <h1>🧬 BioSignals WebSocket Live Dashboard</h1>
 
-        <div class="stats">
-            <div class="stat">
-                <div class="stat-label">Sample Rate</div>
-                <div class="stat-value" id="sampleRate">--</div>
-                <div class="stat-label" style="font-size: 0.7em; margin-top: 5px;">Hz</div>
+            <!-- Status Panel -->
+            <div class="status-panel">
+                <h3>📊 Real-Time Status</h3>
+                <div class="status-grid">
+                    <div class="status-item ch0">
+                        <label>Channel 0 (EMG) - Last Value</label>
+                        <div class="value" id="ch0Value">---</div>
+                    </div>
+                    <div class="status-item ch1">
+                        <label>Channel 1 (EEG) - Last Value</label>
+                        <div class="value" id="ch1Value">---</div>
+                    </div>
+                    <div class="status-item">
+                        <label>Connection Status</label>
+                        <div class="value" id="connectionStatus2">---</div>
+                    </div>
+                    <div class="status-item">
+                        <label>Data Points / Max</label>
+                        <div class="value" id="bufferInfo">0 / 0</div>
+                    </div>
+                </div>
             </div>
-            <div class="stat">
-                <div class="stat-label">Samples Received</div>
-                <div class="stat-value" id="samplesCount">0</div>
-            </div>
-            <div class="stat">
-                <div class="stat-label">Connection Status</div>
-                <div class="stat-value" id="connStatus" style="font-size: 1.2em;">●</div>
+
+            <!-- Charts Grid -->
+            <div class="charts-grid">
+                <!-- Channel 0 Chart -->
+                <div class="chart-card">
+                    <h3>
+                        <span class="label-badge ch0-badge">CH0</span>
+                        EMG Signal
+                    </h3>
+                    <div class="chart-wrapper">
+                        <canvas id="ch0Chart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Channel 1 Chart -->
+                <div class="chart-card">
+                    <h3>
+                        <span class="label-badge ch1-badge">CH1</span>
+                        EEG Signal
+                    </h3>
+                    <div class="chart-wrapper">
+                        <canvas id="ch1Chart"></canvas>
+                    </div>
+                </div>
             </div>
         </div>
-
-        <div class="error-message" id="errorMessage"></div>
     </div>
 
     <script>
-        // WebSocket connection
-        const socket = io();
-        let isConnected = false;
-        let channelData = {};
+        // ==================== Configuration ====================
+        const CONFIG = {
+            timeWindowSec: 10,
+            sampleRate: 512,
+            maxUpdateHz: 30,
+            wsUrl: window.location.origin,
+        };
 
-        // Status indicator
-        const statusDot = document.getElementById('statusDot');
-        const statusText = document.getElementById('statusText');
-        const connStatus = document.getElementById('connStatus');
-        const errorMessage = document.getElementById('errorMessage');
-        const channelsContainer = document.getElementById('channelsContainer');
+        // ==================== State Management ====================
+        const STATE = {
+            connected: false,
+            paused: false,
+            ch0Data: [],
+            ch1Data: [],
+            timestamps: [],
+            lastUpdate: Date.now(),
+            updateCount: 0,
+            samplesReceived: 0,
+        };
 
-        // Connection events
+        // ==================== WebSocket Setup ====================
+        const socket = io(CONFIG.wsUrl, {
+            transports: ["websocket"],
+            reconnection: true,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000,
+            reconnectionAttempts: 5,
+        });
+
+        // ==================== Chart Configuration ====================
+        const chartOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 0 },
+            plugins: {
+                legend: { display: true, position: 'top' },
+                tooltip: { enabled: true, mode: 'index' },
+            },
+            scales: {
+                x: {
+                    display: true,
+                    title: { display: true, text: 'Time (seconds)' },
+                },
+                y: {
+                    display: true,
+                    title: { display: true, text: 'Amplitude' },
+                    ticks: { maxTicksLimit: 7 },
+                },
+            },
+        };
+
+        // ==================== Initialize Charts ====================
+        function initCharts() {
+            const ctx0 = document.getElementById('ch0Chart').getContext('2d');
+            const ctx1 = document.getElementById('ch1Chart').getContext('2d');
+
+            window.ch0Chart = new Chart(ctx0, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'EMG Signal',
+                        data: [],
+                        borderColor: 'rgb(59, 130, 246)',
+                        backgroundColor: 'rgba(59, 130, 246, 0.05)',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0.1,
+                    }],
+                },
+                options: chartOptions,
+            });
+
+            window.ch1Chart = new Chart(ctx1, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'EEG Signal',
+                        data: [],
+                        borderColor: 'rgb(16, 185, 129)',
+                        backgroundColor: 'rgba(16, 185, 129, 0.05)',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0.1,
+                    }],
+                },
+                options: chartOptions,
+            });
+        }
+
+        // ==================== Data Management ====================
+        function addDataPoint(ts, v0, v1) {
+            STATE.ch0Data.push(v0);
+            STATE.ch1Data.push(v1);
+            STATE.timestamps.push(ts);
+
+            const maxPoints = CONFIG.timeWindowSec * CONFIG.sampleRate;
+            if (STATE.ch0Data.length > maxPoints) {
+                STATE.ch0Data.shift();
+                STATE.ch1Data.shift();
+                STATE.timestamps.shift();
+            }
+
+            STATE.samplesReceived++;
+        }
+
+        function updateCharts() {
+            // Don't update too frequently
+            const now = Date.now();
+            if (now - STATE.lastUpdate < (1000 / CONFIG.maxUpdateHz)) return;
+
+            STATE.lastUpdate = now;
+            STATE.updateCount++;
+
+            // Prepare time labels (relative to first point)
+            const timeLabels = STATE.timestamps.map((ts, idx) => {
+                const elapsed = (ts - STATE.timestamps[0]) / 1000;
+                return elapsed.toFixed(2);
+            });
+
+            // Update Channel 0 Chart
+            window.ch0Chart.data.labels = timeLabels;
+            window.ch0Chart.data.datasets[0].data = STATE.ch0Data;
+            window.ch0Chart.update('none');
+
+            // Update Channel 1 Chart
+            window.ch1Chart.data.labels = timeLabels;
+            window.ch1Chart.data.datasets[0].data = STATE.ch1Data;
+            window.ch1Chart.update('none');
+
+            updateUI();
+        }
+
+        function updateUI() {
+            const maxPoints = CONFIG.timeWindowSec * CONFIG.sampleRate;
+            document.getElementById('pointsCount').value = STATE.ch0Data.length;
+            document.getElementById('bufferInfo').textContent = `${STATE.ch0Data.length} / ${maxPoints}`;
+            document.getElementById('samplesReceived').value = STATE.samplesReceived;
+            document.getElementById('updateRate').value = (STATE.updateCount / ((Date.now() - STATE.startTime) / 1000)).toFixed(1);
+        }
+
+        // ==================== WebSocket Events ====================
         socket.on('connect', () => {
-            console.log('✅ WebSocket connected');
-            isConnected = true;
-            statusDot.classList.add('connected');
-            statusText.textContent = 'Connected';
-            connStatus.style.color = '#44ff44';
-            errorMessage.classList.remove('show');
+            console.log('✅ Connected to WebSocket');
+            STATE.connected = true;
+            STATE.startTime = Date.now();
+            STATE.updateCount = 0;
+            updateConnectionStatus();
         });
 
         socket.on('disconnect', () => {
-            console.log('❌ WebSocket disconnected');
-            isConnected = false;
-            statusDot.classList.remove('connected');
-            statusText.textContent = 'Disconnected';
-            connStatus.style.color = '#ff4444';
+            console.log('❌ Disconnected from WebSocket');
+            STATE.connected = false;
+            updateConnectionStatus();
         });
 
-        socket.on('connect_error', (error) => {
-            console.error('Connection error:', error);
-            showError(`Connection error: ${error}`);
+        socket.on('bio_data_update', (msg) => {
+            if (STATE.paused || !STATE.connected) return;
+
+            try {
+                // Extract timestamp
+                let ts = msg.timestamp || Date.now() / 1000;
+                if (ts < 1e10) ts *= 1000; // Convert to milliseconds if needed
+
+                // Extract channel data
+                if (!msg.channels) return;
+
+                const ch0 = msg.channels[0] || msg.channels['0'];
+                const ch1 = msg.channels[1] || msg.channels['1'];
+
+                if (!ch0 || !ch1) return;
+
+                const v0 = Number(ch0.value || ch0);
+                const v1 = Number(ch1.value || ch1);
+
+                if (!Number.isFinite(v0) || !Number.isFinite(v1)) return;
+
+                // Update state
+                addDataPoint(ts, v0, v1);
+
+                // Update UI elements
+                document.getElementById('ch0Value').textContent = v0.toFixed(2);
+                document.getElementById('ch1Value').textContent = v1.toFixed(2);
+
+                // Update charts (throttled)
+                updateCharts();
+            } catch (e) {
+                console.error('Error processing data:', e);
+            }
         });
 
-        // Data reception
-        socket.on('bio_data_update', (data) => {
-            updateChannels(data);
+        socket.on('config_updated', (msg) => {
+            console.log('Config updated:', msg);
         });
 
-        function updateChannels(data) {
-            if (!data.channels) return;
+        socket.on('error', (err) => {
+            console.error('WebSocket error:', err);
+        });
 
-            // Update container if first time
-            if (Object.keys(channelData).length === 0) {
-                createChannelCards(data);
+        // ==================== UI Event Handlers ====================
+        function updateConnectionStatus() {
+            const statusEl = document.getElementById('connectionStatus');
+            const statusEl2 = document.getElementById('connectionStatus2');
+
+            if (STATE.connected) {
+                statusEl.className = 'connection-status';
+                statusEl2.textContent = '🟢 Connected';
+                document.getElementById('connectBtn').disabled = true;
+                document.getElementById('disconnectBtn').disabled = false;
+            } else {
+                statusEl.className = 'connection-status disconnected';
+                statusEl2.textContent = '🔴 Disconnected';
+                document.getElementById('connectBtn').disabled = false;
+                document.getElementById('disconnectBtn').disabled = true;
             }
 
-            // Update values
-            for (const [idx, channel] of Object.entries(data.channels)) {
-                const card = document.getElementById(`channel-${idx}`);
-                if (card) {
-                    const valueEl = card.querySelector('.channel-value');
-                    const timeEl = card.querySelector('.channel-timestamp');
-
-                    if (valueEl) {
-                        valueEl.textContent = channel.value.toFixed(2);
-                    }
-                    if (timeEl && channel.timestamp) {
-                        const date = new Date(channel.timestamp * 1000);
-                        timeEl.textContent = `Updated: ${date.toLocaleTimeString()}`;
-                    }
-                }
-            }
-
-            // Update stats
-            document.getElementById('sampleRate').textContent = data.sample_rate || '--';
-            document.getElementById('samplesCount').textContent = data.sample_count || '0';
+            statusEl.innerHTML = STATE.connected
+                ? '<span class="dot"></span><span>Connected</span>'
+                : '<span class="dot"></span><span>Disconnected</span>';
         }
 
-        function createChannelCards(data) {
-            channelsContainer.innerHTML = '';
+        document.getElementById('connectBtn').addEventListener('click', () => {
+            socket.connect();
+        });
 
-            for (const [idx, channel] of Object.entries(data.channels)) {
-                const card = document.createElement('div');
-                card.className = 'channel-card';
-                card.id = `channel-${idx}`;
+        document.getElementById('disconnectBtn').addEventListener('click', () => {
+            socket.disconnect();
+        });
 
-                const date = new Date((data.timestamp || Date.now() / 1000) * 1000);
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            STATE.ch0Data = [];
+            STATE.ch1Data = [];
+            STATE.timestamps = [];
+            STATE.samplesReceived = 0;
+            STATE.updateCount = 0;
+            document.getElementById('ch0Value').textContent = '---';
+            document.getElementById('ch1Value').textContent = '---';
+            updateCharts();
+            console.log('Data cleared');
+        });
 
-                card.innerHTML = `
-                    <div class="channel-label">${channel.label}</div>
-                    <div class="channel-type">${channel.type}</div>
-                    <div class="channel-value">${channel.value.toFixed(2)}</div>
-                    <div class="channel-unit">µV</div>
-                    <div class="channel-timestamp">Updated: ${date.toLocaleTimeString()}</div>
-                `;
+        document.getElementById('pauseBtn').addEventListener('click', (e) => {
+            STATE.paused = !STATE.paused;
+            e.target.textContent = STATE.paused ? 'Resume' : 'Pause';
+            e.target.className = STATE.paused ? 'btn-success' : 'btn-secondary';
+        });
 
-                channelsContainer.appendChild(card);
-            }
-        }
+        document.getElementById('timeWindow').addEventListener('change', (e) => {
+            CONFIG.timeWindowSec = Number(e.target.value);
+            console.log('Time window updated to', CONFIG.timeWindowSec, 'seconds');
+        });
 
-        function showError(message) {
-            errorMessage.textContent = `⚠️ ${message}`;
-            errorMessage.classList.add('show');
-        }
+        document.getElementById('ch0Enable').addEventListener('change', (e) => {
+            console.log('Channel 0 enabled:', e.target.checked);
+        });
 
-        // Initial status request
-        setTimeout(() => {
-            if (!isConnected) {
-                showError('Failed to connect to WebSocket server. Make sure the server is running on port 5000.');
-            }
-        }, 3000);
+        document.getElementById('ch1Enable').addEventListener('change', (e) => {
+            console.log('Channel 1 enabled:', e.target.checked);
+        });
 
-        console.log('Dashboard initialized');
+        // ==================== Initialize ====================
+        window.addEventListener('load', () => {
+            initCharts();
+            updateConnectionStatus();
+            console.log('🚀 Dashboard initialized');
+            console.log('Connecting to WebSocket server...');
+        });
     </script>
 </body>
 

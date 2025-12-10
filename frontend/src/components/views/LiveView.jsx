@@ -1,195 +1,217 @@
+// LiveView.jsx (updated)
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import SignalChart from '../charts/SignalChart'
 
-/**
- * LiveView (Oscilloscope Mode)
- * - Renders EEG data with a "stationary grid".
- * - Vertical "scanner bar" moves left to right.
- * - Data overwrites old values.
- * - Config is passed from parent (LiveDashboard).
- */
 export default function LiveView({ wsData, config, isPaused }) {
-  // Config extracts
   const timeWindowMs = config?.display?.timeWindowMs || 10000
-  const samplingRate = config?.sampling_rate || 512
+  const samplingRate = config?.sampling_rate || 250
   const showGrid = config?.display?.showGrid ?? true
   const channelMapping = config?.channel_mapping || {}
+  const numChannels = config?.num_channels || 2
 
-  // Display Mode
-  // If multiple channels enabled -> Overlay or Single?
-  // For this demo, let's stick to "Overlay" if multi-channel, or allow user mapped "Single"
-  // But the requirement says "two vertically stacked graphs". 
-  // Let's interpret "channel selection mapping for each of the two graphs" 
-  // as: Graph 1 shows Channel X, Graph 2 shows Channel Y.
-  // We need state for "Graph 1 Channel" and "Graph 2 Channel".
-  // Actually sidebar has channel mapping "ch0: {sensor: 'EEG'}"... 
-  // The requirement "channel selection mapping for each of the two graphs" implies the USER selects which channel goes to Graph 1 and 2.
-  // Sidebar just maps sensors.
-  // Let's add local state for "Graph 1 Source" and "Graph 2 Source" or assume Sidebar handles it.
-  // "Sidebar Functionality: ... channel selection mapping for each of the two graphs"
-  // Okay, keeping it simple: I will render TWO graphs. I need to know WHICH channel to show on each.
-  // I will make default: Graph 1 = Ch 0, Graph 2 = Ch 1.
-  // Ideally these should be in `config` or local state controlled by Sidebar. 
-  // Since `config` has `channel_mapping`, maybe I add `graph_mapping` to config? or just use local state here?
-  // Requirement: "Sidebar Functionality: ... channel mapping ..." -> implies Sidebar controls this.
-  // I'll assume config has `graph_sources: { graph1: 'ch0', graph2: 'ch1' }` or similar.
-  // If not, I'll default to 0 and 1.
+  const [ch0Data, setCh0Data] = useState([])
+  const [ch1Data, setCh1Data] = useState([])
+  const [ch2Data, setCh2Data] = useState([])
+  const [ch3Data, setCh3Data] = useState([])
+  const [scannerX, setScannerX] = useState(null)
+  const [scannerPercent, setScannerPercent] = useState(0)
 
-  const [graphSources, setGraphSources] = useState({
-    top: 'ch0',
-    bottom: 'ch1'
-  })
-
-  // We can let the user change this? Or assume Sidebar does?
-  // The Sidebar I built updates `config.channel_mapping`, but didn't explicitly have "Graph 1 Source Selector".
-  // I will treat `config.channel_mapping` as "What is on Ch0?" 
-  // and I will add selectors in this view or just picking the first two enabled channels.
-  // Let's pick first two enabled.
-
-  // State for data buffers
-  // We need a fixed grid of X points.
-  // To keep 60fps with Recharts, fewer points is better. 
-  // 10s @ 512Hz = 5000 points. Recharts might struggle. 
-  // We will downsample for display. e.g. 500 points (10s window -> 50Hz display res).
-  const DISPLAY_POINTS = 500
-
-  const initBuffer = () => {
-    const arr = new Array(DISPLAY_POINTS).fill(0).map((_, i) => ({
-      time: (i / DISPLAY_POINTS) * timeWindowMs, // 0..10000
-      val: 0
-    }))
-    return arr
+  const addDataPoint = (dataArray, newPoint, maxAge) => {
+    const now = newPoint.time
+    const filtered = dataArray.filter(p => (now - p.time) < maxAge)
+    return [...filtered, newPoint]
   }
 
-  // Refs to store the "Live" data without triggering re-renders on every sample
-  // structure: { [chKey]: [{time, val}, ...] }
-  // We store the full resolution or display resolution? 
-  // Let's store display resolution for performance.
-  const buffersRef = useRef({})
-
-  // We also track the "Scanner Cursor" position (0..timeWindowMs)
-  const cursorRef = useRef(0)
-
-  // Force update trigger
-  const [tick, setTick] = useState(0)
-
-  // Initialize buffers for all possible channels
-  useEffect(() => {
-    Object.keys(channelMapping).forEach(key => {
-      if (!buffersRef.current[key]) {
-        buffersRef.current[key] = initBuffer()
-      }
-    })
-    // Also re-init if timeWindow changes
-    // (Existing buffers would be invalid scale)
-    buffersRef.current = {} // clear to force re-init
-
-    // Animation loop
-    let animId
-    const loop = () => {
-      if (!isPaused) {
-        setTick(t => t + 1)
-      }
-      animId = requestAnimationFrame(loop)
-    }
-    animId = requestAnimationFrame(loop)
-    return () => cancelAnimationFrame(animId)
-  }, [timeWindowMs, isPaused]) // eslint-disable-line
-
-  // Handle incoming data
   useEffect(() => {
     if (!wsData || isPaused) return
 
     let payload = null
     try {
-      payload = wsData.raw ?? (typeof wsData === 'string'
-        ? JSON.parse(wsData)
-        : wsData)
-    } catch {
+      payload = wsData.raw ?? (typeof wsData === 'string' ? JSON.parse(wsData) : wsData)
+    } catch (e) {
+      console.warn('[LiveView] Failed to parse wsData:', e)
       return
     }
 
-    console.log('LiveView payload:', payload)
+    if (!payload?.channels) {
+      console.warn('[LiveView] No channels in payload')
+      return
+    }
 
-    const channelsObj = payload.channels
-    if (!channelsObj || typeof channelsObj !== 'object') return
+    // normalize timestamp (ms)
+    let incomingTs = Number(payload.timestamp)
 
-    const endTs = Number(payload.timestamp) || Date.now()
-    const fs = samplingRate
-    const dt = 1000 / fs
+    if (!incomingTs || incomingTs < 1e9) {
+      incomingTs = Date.now()
+    }
 
-    Object.entries(channelsObj).forEach(([chIdx, chInfo]) => {
-      const value = Number(chInfo.value)
+    // sample interval used to bump monotonic timestamps (in ms)
+    const sampleIntervalMs = Math.round(1000 / (samplingRate || 250))
+
+    // global incremental timestamp
+    if (!window.__lastTs) window.__lastTs = incomingTs
+    if (incomingTs <= window.__lastTs) {
+      incomingTs = window.__lastTs + sampleIntervalMs
+    }
+    window.__lastTs = incomingTs
+
+    Object.entries(payload.channels).forEach(([chIdx, chData]) => {
+      const chNum = parseInt(chIdx)
+      const chKey = `ch${chNum}`
+      const chConfig = channelMapping[chKey]
+      if (chConfig?.enabled === false) return
+
+      let value = 0
+      if (typeof chData === 'number') value = chData
+      else if (typeof chData === 'object') value = chData.value ?? chData.val ?? 0
+
       if (!Number.isFinite(value)) return
 
-      const chKey = `ch${chIdx}`
+      // ensure monotonic timestamp per channel: if incomingTs <= lastTs -> bump
+      const newPointFactory = (ts) => ({ time: ts, value: Number(value) })
 
-      if (!buffersRef.current[chKey]) {
-        buffersRef.current[chKey] = initBuffer()
-      }
-      const buffer = buffersRef.current[chKey]
-
-      // Treat this event as a single sample at endTs
-      const tAbs = endTs
-      const posMsRaw = tAbs % timeWindowMs
-      const posMs = posMsRaw < 0 ? posMsRaw + timeWindowMs : posMsRaw
-
-      cursorRef.current = posMs
-
-      const idx = Math.floor((posMs / timeWindowMs) * DISPLAY_POINTS)
-      if (idx >= 0 && idx < buffer.length) {
-        buffer[idx].val = value
+      switch (chNum) {
+        case 0:
+          setCh0Data(prev => {
+            const lastTs = prev.length ? prev[prev.length - 1].time : (incomingTs - sampleIntervalMs)
+            const ts = incomingTs <= lastTs ? lastTs + sampleIntervalMs : incomingTs
+            return addDataPoint(prev, newPointFactory(ts), timeWindowMs)
+          })
+          break
+        case 1:
+          setCh1Data(prev => {
+            const lastTs = prev.length ? prev[prev.length - 1].time : (incomingTs - sampleIntervalMs)
+            const ts = incomingTs <= lastTs ? lastTs + sampleIntervalMs : incomingTs
+            return addDataPoint(prev, newPointFactory(ts), timeWindowMs)
+          })
+          break
+        case 2:
+          setCh2Data(prev => {
+            const lastTs = prev.length ? prev[prev.length - 1].time : (incomingTs - sampleIntervalMs)
+            const ts = incomingTs <= lastTs ? lastTs + sampleIntervalMs : incomingTs
+            return addDataPoint(prev, newPointFactory(ts), timeWindowMs)
+          })
+          break
+        case 3:
+          setCh3Data(prev => {
+            const lastTs = prev.length ? prev[prev.length - 1].time : (incomingTs - sampleIntervalMs)
+            const ts = incomingTs <= lastTs ? lastTs + sampleIntervalMs : incomingTs
+            return addDataPoint(prev, newPointFactory(ts), timeWindowMs)
+          })
+          break
+        default:
+          console.warn(`[LiveView] Ch${chNum}: Unknown channel index`)
       }
     })
-  }, [wsData, isPaused, timeWindowMs, samplingRate])
+  }, [wsData, isPaused, timeWindowMs, channelMapping, samplingRate])
 
+  useEffect(() => {
+    const allData = [ch0Data, ch1Data, ch2Data, ch3Data].filter(d => d && d.length)
+    if (allData.length === 0) {
+      setScannerX(null)
+      setScannerPercent(0)
+      return
+    }
 
-  // Prepare data for rendering
-  // We render the two selected mapped channels
-  // graphSources could be controlled by UI, for now hardcoded to first 2 enabled or just ch0/ch1
-  const activeKeys = Object.keys(channelMapping).filter(k => channelMapping[k].enabled)
-  const key1 = activeKeys[0] || 'ch0'
-  const key2 = activeKeys[1] || 'ch1'
+    const oldestTs = Math.min(...allData.map(d => d[0].time))
+    const newestTs = Math.max(...allData.map(d => d[d.length - 1].time))
+    const duration = Math.max(timeWindowMs, newestTs - oldestTs || 1)
 
-  const data1 = buffersRef.current[key1]
-    ? buffersRef.current[key1].map(p => ({ time: p.time, value: p.val }))
-    : []
-  const data2 = buffersRef.current[key2]
-    ? buffersRef.current[key2].map(p => ({ time: p.time, value: p.val }))
-    : []
+    // place scanner at newestTs (right edge of visible range)
+    setScannerX(newestTs)
+
+    const posRatio = Math.min((newestTs - oldestTs) / duration, 1.0)
+    setScannerPercent(posRatio * 100)
+  }, [ch0Data, ch1Data, ch2Data, ch3Data, timeWindowMs])
+
+  const getActiveChannels = () => {
+    const active = []
+    for (let i = 0; i < numChannels; i++) {
+      const key = `ch${i}`
+      const chConfig = channelMapping[key]
+      if (chConfig?.enabled !== false) active.push(i)
+    }
+    return active
+  }
+
+  const activeChannels = useMemo(() => getActiveChannels(), [channelMapping, numChannels])
+
+  const displayCh0 = activeChannels.length > 0 ? activeChannels[0] : 0
+  const displayCh1 = activeChannels.length > 1 ? activeChannels[1] : 1
+
+  const getChannelData = (chIndex) => {
+    switch (chIndex) {
+      case 0: return ch0Data
+      case 1: return ch1Data
+      case 2: return ch2Data
+      case 3: return ch3Data
+      default: return []
+    }
+  }
+
+  const data1 = getChannelData(displayCh0)
+  const data2 = getChannelData(displayCh1)
+
+  const getSensorName = (chIndex) => {
+    const chKey = `ch${chIndex}`
+    return channelMapping[chKey]?.sensor || `Channel ${chIndex}`
+  }
+
+  const sensorName1 = getSensorName(displayCh0)
+  const sensorName2 = getSensorName(displayCh1)
 
   return (
-    <div className="flex flex-col h-full gap-4">
-      {/* Graph 1 */}
-      <div className="flex-1 min-h-0 bg-surface rounded-xl border border-border overflow-hidden p-2 relative">
-        <div className="absolute top-3 left-4 z-10 flex gap-2">
-          <span className="text-xs font-bold text-primary bg-primary/10 px-2 py-1 rounded">
-            {channelMapping[key1]?.sensor || 'Sensor'} ({key1})
-          </span>
+    <div className="w-full h-full flex flex-col gap-4 p-4 bg-slate-900 rounded-lg overflow-auto">
+      <div className="flex-1 min-h-0">
+        <div className="mb-2 text-sm font-semibold text-slate-300">
+          Channel {displayCh0} - {sensorName1}
+          <span className="text-slate-500 ml-2">({data1.length} points)</span>
         </div>
         <SignalChart
-          title={channelMapping[key1]?.label || key1}
+          title={`Ch${displayCh0} ${sensorName1}`}
           data={data1}
           timeWindowMs={timeWindowMs}
+          color="rgb(59, 130, 246)"
+          height={250}
           showGrid={showGrid}
-          scannerX={cursorRef.current}
+          scannerX={scannerX}
         />
       </div>
 
-      {/* Graph 2 */}
-      <div className="flex-1 min-h-0 bg-surface rounded-xl border border-border overflow-hidden p-2 relative">
-        <div className="absolute top-3 left-4 z-10 flex gap-2">
-          <span className="text-xs font-bold text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded">
-            {channelMapping[key2]?.sensor || 'Sensor'} ({key2})
-          </span>
+      <div className="flex-1 min-h-0">
+        <div className="mb-2 text-sm font-semibold text-slate-300">
+          Channel {displayCh1} - {sensorName2}
+          <span className="text-slate-500 ml-2">({data2.length} points)</span>
         </div>
         <SignalChart
-          title={channelMapping[key2]?.label || key2}
-          data={data2.map(p => ({ time: p.time, value: p.val }))}
+          title={`Ch${displayCh1} ${sensorName2}`}
+          data={data2}
           timeWindowMs={timeWindowMs}
+          color="rgb(16, 185, 129)"
+          height={250}
           showGrid={showGrid}
-          scannerX={cursorRef.current}
+          scannerX={scannerX}
         />
+      </div>
+
+      <div className="bg-slate-800 rounded p-3 text-xs text-slate-400 font-mono space-y-1">
+        <div>
+          <span className="text-blue-400">Ch0</span>: {ch0Data.length} pts{' '}
+          <span className="ml-4 text-green-400">Ch1</span>: {ch1Data.length} pts{' '}
+          <span className="ml-4 text-yellow-400">Ch2</span>: {ch2Data.length} pts{' '}
+          <span className="ml-4 text-red-400">Ch3</span>: {ch3Data.length} pts
+        </div>
+        <div>
+          <span className="text-cyan-400">Scanner (ts)</span>: {scannerX ? new Date(scannerX).toLocaleTimeString() : '—'}{' '}
+          <span className="ml-4 text-cyan-300">({scannerPercent.toFixed(1)}%)</span>
+          <span className="ml-4"><span className="text-orange-400">Window</span>: {(timeWindowMs / 1000).toFixed(1)}s</span>
+        </div>
+        <div>
+          <span className="text-lime-400">Display Channels</span>: [{displayCh0}, {displayCh1}] <span className="ml-4"><span className="text-pink-400">Active</span>: {activeChannels.join(', ')}</span>
+        </div>
+        {wsData?.raw?.stream_name && (
+          <div><span className="text-violet-400">Stream</span>: {wsData.raw.stream_name}</div>
+        )}
       </div>
     </div>
   )

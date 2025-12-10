@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import Sidebar from '../ui/Sidebar'
 import LiveView from '../views/LiveView'
-import { ConfigService } from '../../services/ConfigService'
+import { ConfigService } from '../../Services/ConfigService'
 
 export default function LiveDashboard({ wsData, sendMessage }) {
     const [config, setConfig] = useState()
