@@ -61,24 +61,11 @@ export function useWebSocket(url = 'http://localhost:5000' || 'ws://localhost:50
         console.error('WebSocket error:', error)
       })
 
-      // MAIN EVENT: Real-time biosignals from Flask-SocketIO
       socketRef.current.on('bio_data_update', (data) => {
-        setLatency(Math.round(performance.now() - lastPingTime.current))
-
-        // Data format from Flask server:
-        // {
-        //   stream_name: "BioSignals-Processed",
-        //   channels: { 0: {label, type, value, timestamp}, 1: {...} },
-        //   channel_count: 2,
-        //   sample_rate: 512,
-        //   sample_count: 1024,
-        //   timestamp: 123.456
-        // }
-
         setLastMessage({
           data: JSON.stringify(data),
           timestamp: Date.now(),
-          raw: data
+          raw: data,
         })
       })
 
