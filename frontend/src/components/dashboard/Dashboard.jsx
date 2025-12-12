@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
-import { ConfigService } from '../../services/ConfigService'
+import { ConfigService } from '../../Services/ConfigService'
 import LiveDashboard from '../views/LiveDashboard'
 import CommandVisualizer from '../views/CommandVisualizer'
 import RecordingsView from '../views/RecordingsView'
@@ -23,7 +23,7 @@ export default function Dashboard() {
   const [currentPage, setCurrentPage] = useState('live')
   // const [sidebarOpen, setSidebarOpen] = useState(true)
   const { status, lastMessage, latency, connect, disconnect, sendMessage } = useWebSocket(
-    import.meta.env.VITE_WS_URL || 'http://localhost:5000'
+    import.meta.env.VITE_WS_URL || 'ws://localhost:5000'
   )
   const [theme, setTheme] = React.useState(() => localStorage.getItem('theme') || 'theme-violet');
   const [navColors, setNavColors] = React.useState({ base: '#000000', pill: '#ffffff', pillText: '#000000', hoverText: '#ffffff' });
