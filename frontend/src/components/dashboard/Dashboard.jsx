@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
-import { ConfigService } from '../../services/ConfigService'
+import { ConfigService } from '../../Services/ConfigService'
 import LiveDashboard from '../views/LiveDashboard'
 import CommandVisualizer from '../views/CommandVisualizer'
 import RecordingsView from '../views/RecordingsView'
