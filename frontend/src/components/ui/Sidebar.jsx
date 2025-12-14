@@ -1,13 +1,16 @@
-import React from 'react'
-// If icons are missing, we can use text or simplistic SVG fallback. 
+import React, { useState, useEffect } from 'react'
 
 export default function Sidebar({
     config,
     setConfig,
     isPaused,
     setIsPaused,
+    onSaveMapping,
     className = ''
 }) {
+    const [isSaving, setIsSaving] = useState(false)
+    const [saveStatus, setSaveStatus] = useState(null)
+    const [pendingChanges, setPendingChanges] = useState(false)
 
     const handleFilterChange = (type, field, value) => {
         setConfig(prev => ({
@@ -29,6 +32,38 @@ export default function Sidebar({
         }))
     }
 
+    const handleMapButtonClick = async () => {
+        if (!pendingChanges) {
+            alert('No changes to save')
+            return
+        }
+
+        setIsSaving(true)
+        setSaveStatus('💾 Saving...')
+
+        try {
+            // Call parent callback
+            const success = await onSaveMapping(config)
+
+            if (success) {
+                setSaveStatus('✅ Mapping saved successfully!')
+                setPendingChanges(false)
+
+                // Clear status after 2 seconds
+                setTimeout(() => setSaveStatus(null), 2000)
+            } else {
+                setSaveStatus('❌ Failed to save mapping')
+                setTimeout(() => setSaveStatus(null), 3000)
+            }
+        } catch (error) {
+            setSaveStatus(`❌ Error: ${error.message}`)
+            console.error('Save error:', error)
+            setTimeout(() => setSaveStatus(null), 3000)
+        } finally {
+            setIsSaving(false)
+        }
+    }
+
     return (
         <aside className={`w-80 bg-surface border-r border-border h-full flex flex-col overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] ${className}`}>
             <div className="p-6 border-b border-border">
@@ -44,8 +79,8 @@ export default function Sidebar({
                     <button
                         onClick={() => setIsPaused(!isPaused)}
                         className={`w-full py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${isPaused
-                                ? 'bg-accent/10 text-accent border border-accent/20 hover:bg-accent/20'
-                                : 'bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20'
+                            ? 'bg-accent/10 text-accent border border-accent/20 hover:bg-accent/20'
+                            : 'bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20'
                             }`}
                     >
                         <span className={`w-2 h-2 rounded-full ${isPaused ? 'bg-accent' : 'bg-primary animate-pulse'}`}></span>
@@ -96,19 +131,56 @@ export default function Sidebar({
                     </div>
 
                     {/* Channel 1 */}
-                    <div>
-                        <label className="text-xs font-medium text-text block mb-1">Graph 2 (Channel 1)</label>
-                        <select
-                            value={config.channel_mapping?.ch1?.sensor || 'EOG'}
-                            onChange={(e) => handleChannelMapping('ch1', e.target.value)}
-                            className="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm outline-none focus:border-primary/50"
-                        >
-                            <option value="EMG">EMG</option>
-                            <option value="EOG">EOG</option>
-                            <option value="EEG">EEG</option>
-                        </select>
+                    <div className='mb-3'>
+                        <div>
+                            <label className="text-xs font-medium text-text block mb-1">Graph 2 (Channel 1)</label>
+                            <select
+                                value={config.channel_mapping?.ch1?.sensor || 'EOG'}
+                                onChange={(e) => handleChannelMapping('ch1', e.target.value)}
+                                className="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm outline-none focus:border-primary/50"
+                            >
+                                <option value="EMG">EMG</option>
+                                <option value="EOG">EOG</option>
+                                <option value="EEG">EEG</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    {/* Mapping Button */}
+                    <div className='mb-3'>
+                        <div>
+                            <label className="text-xs font-medium text-text block mb-1">
+                                Set Channel
+                            </label>
+
+                            <button
+                                onClick={handleMapButtonClick}
+                                disabled={!pendingChanges || isSaving}
+                                className={
+                                    `btn-map w-full py-3 rounded-xl font-bold transition-all ` +
+                                    `flex items-center justify-center gap-2 ` +
+                                    (isSaving
+                                        ? 'bg-accent/10 text-accent border border-accent/20 hover:bg-accent/20 '
+                                        : 'bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 ') +
+                                    (pendingChanges ? 'active ' : '')
+                                }
+                            >
+                                <span>{isSaving ? '⏳' : '📌'}</span>
+                                {isSaving ? 'Mapping...' : 'MAP'}
+                            </button>
+
+                            {saveStatus && (
+                                <div
+                                    className={`status-message ${saveStatus.startsWith('✅') ? 'success' : 'error'
+                                        }`}
+                                >
+                                    {saveStatus}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </section>
+
 
                 {/* Filters */}
                 <section>

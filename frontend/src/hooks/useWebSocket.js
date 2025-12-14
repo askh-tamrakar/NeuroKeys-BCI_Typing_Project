@@ -1,13 +1,3 @@
-/**
- * useWebSocket.js - FIXED VERSION
- * 
- * Critical fixes:
- * 1. Guard all socketRef.current operations with null checks
- * 2. Clear ping timer BEFORE nullifying socketRef
- * 3. Guard sendMessage with socket.connected check
- * 4. Prevent timer firing after disconnect
- */
-
 import { useState, useEffect, useRef } from 'react'
 
 export function useWebSocket(url = 'http://localhost:5000') {
@@ -62,6 +52,29 @@ export function useWebSocket(url = 'http://localhost:5000') {
               socketRef.current.emit('ping')
             }
           }, 500)
+        }
+      })
+
+      // === UPDATION EVENT ===
+      socketRef.current.on('config_updated', (data) => {
+        console.log('🔔 Config updated from backend:', data)
+
+        if (data.source === 'acquisition_app') {
+          // Config was changed in acquisition app, reload it
+          console.log('📥 Reloading config from acquisition app...')
+
+          // Optionally: Reload config from /api/config
+          fetch('/api/config')
+            .then(r => r.json())
+            .then(cfg => {
+              // ConfigService will handle saving to localStorage
+              // Component will re-render via config state change
+              console.log('✅ Config reloaded from server')
+
+              // Dispatch custom event so components know to reload
+              window.dispatchEvent(new CustomEvent('config-changed', { detail: cfg }))
+            })
+            .catch(e => console.warn('Failed to reload config:', e))
         }
       })
 
@@ -185,9 +198,6 @@ export function useWebSocket(url = 'http://localhost:5000') {
     document.head.appendChild(script)
   }
 
-  /**
-   * CRITICAL FIX: Proper disconnect with cleanup
-   */
   const disconnect = () => {
     console.log('🔌 Disconnecting...')
 

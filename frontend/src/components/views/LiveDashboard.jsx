@@ -14,23 +14,38 @@ export default function LiveDashboard({ wsData, sendMessage }) {
             setConfig(cfg)
             setLoading(false)
         })
+
+        const handleConfigChanged = (e) => {
+            console.log('Config changed from other source, reloading...')
+            setConfig(e.detail)
+        }
+
+        window.addEventListener('config-changed', handleConfigChanged)
+        return () => window.removeEventListener('config-changed', handleConfigChanged)
     }, [])
 
-    // Auto-save config when it changes
-    useEffect(() => {
-        if (!loading) {
-            // Persist locally
-            ConfigService.saveConfig(config)
+    const handleSaveMapping = async (updatedConfig) => {
+        try {
+            // Save to localStorage first (instant)
+            await ConfigService.saveConfig(updatedConfig)
 
-            // Sync to Backend
+            // Broadcast to backend via WebSocket
             if (sendMessage) {
-                sendMessage({
+                const result = sendMessage({
                     type: 'SAVE_CONFIG',
-                    config: config
+                    config: updatedConfig
                 })
+                if (!result) {
+                    console.warn('WebSocket not connected, but localStorage saved')
+                }
             }
+
+            return true
+        } catch (error) {
+            console.error('Save failed:', error)
+            return false
         }
-    }, [config, loading, sendMessage])
+    }
 
     if (loading) return <div className="flex items-center justify-center h-screen bg-bg text-text">Loading Config...</div>
 
@@ -42,6 +57,7 @@ export default function LiveDashboard({ wsData, sendMessage }) {
                 setConfig={setConfig}
                 isPaused={isPaused}
                 setIsPaused={setIsPaused}
+                onSaveMapping={handleSaveMapping}
                 className="shrink-0 z-20"
             />
 

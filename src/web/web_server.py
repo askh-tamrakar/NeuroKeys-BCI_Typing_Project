@@ -11,7 +11,7 @@ import threading
 import time
 from pathlib import Path
 from typing import Dict, Optional
-
+from src.utils.config import config
 
 try:
     import pylsl
@@ -91,7 +91,7 @@ state = WebServerState()
 
 
 def load_config() -> dict:
-    """Load channel mapping from disk or return defaults."""
+#     """Load channel mapping from disk or return defaults."""
     defaults = {
         "sampling_rate": 512,
         "channel_mapping": {
@@ -477,6 +477,32 @@ def main():
     # Load config from disk first
     state.config = load_config()
 
+    # ===== MONITOR CONFIG CHANGES & BROADCAST TO WEBSOCKET =====
+    def monitor_config_changes():
+        """Monitor config via ConfigWatcher and broadcast changes."""
+        last_config = config.get_all()
+        
+        while state.running:
+            try:
+                current_config = config.get_all()
+                
+                # If config changed, broadcast to all WebSocket clients
+                if current_config != last_config:
+                    print("[WebServer] 🔔 Config changed - broadcasting to clients...")
+                    socketio.emit('config_updated', {
+                        'status': 'config_changed',
+                        'config': current_config,
+                        'source': 'acquisition_app'
+                    }, broadcast=True)
+                    last_config = current_config
+                
+                time.sleep(0.5)  # Check every 500ms
+                
+            except Exception as e:
+                print(f"[WebServer] ⚠️ Config monitor error: {e}")
+                time.sleep(1)
+
+
     # Resolve LSL stream
     if not resolve_lsl_stream():
         print("[WebServer] ❌ Failed to connect to LSL stream")
@@ -519,3 +545,252 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# web_server.py - WebSocket ONLY version (no HTTP server)
+
+# import json
+# import threading
+# import time
+# from pathlib import Path
+# from typing import Dict
+# from src.utils.config import config
+
+# try:
+#     import pylsl
+#     LSL_AVAILABLE = True
+# except Exception as e:
+#     print(f"[WebServer] Warning: pylsl not available: {e}")
+#     LSL_AVAILABLE = False
+
+# from flask import Flask
+# from flask_socketio import SocketIO, emit
+
+# # ============================================
+# # CONFIG PATH
+# # ============================================
+
+# PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+# CONFIG_PATH = PROJECT_ROOT / "config" / "sensor_config.json"
+
+# RAW_STREAM_NAME = "BioSignals-Processed"
+# DEFAULT_SR = 512
+
+# CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+# # ============================================
+# # Minimal Flask app (no routes)
+# # ============================================
+
+# app = Flask(__name__)
+# socketio = SocketIO(
+#     app,
+#     cors_allowed_origins="*",
+#     ping_timeout=10,
+#     ping_interval=5,
+#     engineio_logger=False,
+#     logger=False
+# )
+
+# # ============================================
+# # GLOBAL STATE
+# # ============================================
+
+# class WebServerState:
+#     def __init__(self):
+#         self.inlet = None
+#         self.running = False
+#         self.connected = False
+#         self.sample_count = 0
+#         self.clients = 0
+#         self.sr = DEFAULT_SR
+#         self.num_channels = 0
+#         self.channel_mapping = {}
+#         self.config = {}
+
+# state = WebServerState()
+
+# # ============================================
+# # CONFIG MANAGEMENT
+# # ============================================
+
+# def load_config():
+#     defaults = {
+#         "sampling_rate": 512,
+#         "channel_mapping": {
+#             "ch0": {"sensor": "EMG", "enabled": True},
+#             "ch1": {"sensor": "EEG", "enabled": True}
+#         },
+#         "display": {"timeWindowMs": 10000}
+#     }
+
+#     if not CONFIG_PATH.exists():
+#         print("[WebServer] No config found. Using defaults.")
+#         return defaults
+
+#     try:
+#         with open(CONFIG_PATH) as f:
+#             cfg = json.load(f)
+#         merged = {**defaults, **cfg}
+#         return merged
+#     except:
+#         return defaults
+
+
+# def save_config(config: dict):
+#     try:
+#         with open(CONFIG_PATH, 'w') as f:
+#             json.dump(config, f, indent=2)
+#         state.config = config
+#         print("[WebServer] Config saved.")
+#         return True
+#     except Exception as e:
+#         print(f"[WebServer] Failed to save config: {e}")
+#         return False
+
+# # ============================================
+# # LSL STREAMING
+# # ============================================
+
+# def create_channel_mapping(info):
+#     mapping = {}
+#     config_map = state.config.get("channel_mapping", {})
+
+#     ch_count = int(info.channel_count())
+#     state.sr = int(info.nominal_srate())
+#     state.num_channels = ch_count
+
+#     for i in range(ch_count):
+#         key = f"ch{i}"
+#         cfg = config_map.get(key, {})
+#         mapping[i] = {
+#             "label": cfg.get("sensor", "UNKNOWN"),
+#             "type": cfg.get("sensor", "UNKNOWN"),
+#             "enabled": cfg.get("enabled", True)
+#         }
+
+#     return mapping
+
+
+# def resolve_lsl_stream():
+#     if not LSL_AVAILABLE:
+#         print("[WebServer] pylsl missing")
+#         return False
+
+#     try:
+#         streams = pylsl.resolve_streams(wait_time=1.0)
+
+#         target = None
+#         for s in streams:
+#             if s.name() == RAW_STREAM_NAME:
+#                 target = s
+#                 break
+
+#         if not target:
+#             print("[WebServer] LSL stream not found")
+#             return False
+
+#         state.inlet = pylsl.StreamInlet(target, max_buflen=1, recover=True)
+#         state.channel_mapping = create_channel_mapping(state.inlet.info())
+#         state.connected = True
+
+#         print(f"[WebServer] Connected to: {target.name()}")
+#         return True
+
+#     except Exception as e:
+#         print(f"[WebServer] LSL resolve error: {e}")
+#         return False
+
+# # ============================================
+# # BROADCAST LOOP
+# # ============================================
+
+# def broadcast_data():
+#     print("[WebServer] Starting broadcast thread...")
+#     while state.running:
+#         if state.inlet is None:
+#             time.sleep(0.1)
+#             continue
+
+#         try:
+#             sample, ts = state.inlet.pull_sample(timeout=1.0)
+#             if not sample:
+#                 continue
+
+#             state.sample_count += 1
+
+#             data = {
+#                 "stream_name": RAW_STREAM_NAME,
+#                 "sample_rate": state.sr,
+#                 "sample_count": state.sample_count,
+#                 "timestamp": ts,
+#                 "channels": {
+#                     i: {
+#                         "value": float(sample[i]),
+#                         "type": state.channel_mapping[i]["type"]
+#                     } for i in range(state.num_channels)
+#                 }
+#             }
+
+#             socketio.emit("bio_data_update", data)
+
+#         except Exception as e:
+#             print("broadcast error:", e)
+#             time.sleep(0.05)
+
+# # ============================================
+# # SOCKET EVENTS ONLY
+# # ============================================
+
+# @socketio.on("connect")
+# def on_connect():
+#     state.clients += 1
+#     print(f"[WebServer] Client connected. Total: {state.clients}")
+#     emit("response", {"msg": "WebSocket connected"})
+
+
+# @socketio.on("disconnect")
+# def on_disconnect():
+#     state.clients -= 1
+#     print(f"[WebServer] Client disconnected. Total: {state.clients}")
+
+
+# @socketio.on("REQUEST_CONFIG")
+# def send_config():
+#     emit("config_response", {
+#         "status": "ok",
+#         "config": state.config
+#     })
+
+
+# @socketio.on("SAVE_CONFIG")
+# def update_config(data):
+#     cfg = data.get("config")
+#     if cfg and save_config(cfg):
+#         emit("config_response", {"status": "saved", "config": cfg})
+#     else:
+#         emit("config_response", {"status": "failed"})
+
+# # ============================================
+# # MAIN
+# # ============================================
+
+# def main():
+#     print("WebSocket-Only Server starting…")
+
+#     state.config = load_config()
+#     resolve_lsl_stream()
+
+#     state.running = True
+#     threading.Thread(target=broadcast_data, daemon=True).start()
+
+#     socketio.run(
+#         app,
+#         host="0.0.0.0",
+#         port=5000,
+#         debug=False,
+#         allow_unsafe_werkzeug=True
+#     )
+
+# if __name__ == "__main__":
+#     main()
