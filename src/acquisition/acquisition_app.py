@@ -392,15 +392,7 @@ class AcquisitionApp:
                 channel_count=2,
                 nominal_srate=float(self.config.get("sampling_rate", 512))
             )
-            self.lsl_processed = LSLStreamer(
-                "BioSignals-Pure",
-                channel_types=ch_types,
-                channel_labels=ch_labels,
-                channel_count=2,
-                nominal_srate=float(self.config.get("sampling_rate", 512))
-            )
         
-
     def disconnect_device(self):
         """Disconnect from Arduino"""
         if self.is_acquiring:
@@ -562,8 +554,6 @@ class AcquisitionApp:
                     if LSL_AVAILABLE:
                         if self.lsl_raw_uV:
                             self.lsl_raw_uV.push_sample([ch0_uv, ch1_uv], None)
-                        if self.lsl_processed:
-                            self.lsl_processed.push_sample([ch0_uv, ch1_uv], None)
                     
                     # Add to buffers
                     self.ch0_buffer[self.buffer_ptr] = ch0_uv
@@ -601,34 +591,6 @@ class AcquisitionApp:
         # Schedule next update
         if self.root.winfo_exists():
             self.root.after(30, self.main_loop)
-
-    # def _send_to_filter_router(self, packet_data: dict):
-    #     """Send data to filter_router.py"""
-    #     # This is where you'd send to your filter_router
-    #     # Example: could use ZMQ, WebSocket, Redis, or file-based queue
-    #     try:
-    #         # Format for filter_router
-    #         msg = {
-    #             "source": "acquisition_app",
-    #             "timestamp": packet_data["timestamp"],
-    #             "channels": {
-    #                 "ch0": {
-    #                     "type": packet_data["ch0_type"],
-    #                     "raw_adc": packet_data["ch0_raw_adc"],
-    #                     "uv": packet_data["ch0_uv"]
-    #                 },
-    #                 "ch1": {
-    #                     "type": packet_data["ch1_type"],
-    #                     "raw_adc": packet_data["ch1_raw_adc"],
-    #                     "uv": packet_data["ch1_uv"]
-    #                 }
-    #             }
-    #         }
-    #         # TODO: Implement your routing mechanism here
-    #         # print(f"[Router] {json.dumps(msg)}")  # Uncomment for debugging
-           
-    #     except Exception as e:
-    #         print(f"[Router] Send error: {e}")
 
     def update_plots(self):
         """Update the plot lines"""
