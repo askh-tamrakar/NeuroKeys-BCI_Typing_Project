@@ -551,45 +551,12 @@ TEMPLATES_DIR = PROJECT_ROOT / "src" / "web" / "templates"
 
 
 RAW_STREAM_NAME = "BioSignals-Processed"
-LSL_TIMEOUT = 3.0
-DEFAULT_SR = 512
-
-
-# Ensure config directory exists
-CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-
-# ========== Flask App Setup ==========
-
-
-app = Flask(
-    __name__,
-    template_folder=str(TEMPLATES_DIR) if TEMPLATES_DIR.exists() else None,
-    static_folder=str(TEMPLATES_DIR / "static") if (TEMPLATES_DIR / "static").exists() else None
-)
-
-
-# CORS configuration
-CORS(app, resources={r"/*": {"origins": "*"}})
-
-
-# SocketIO configuration  
-socketio = SocketIO(
-    app,
-    cors_allowed_origins="*",
-    ping_timeout=10,
-    ping_interval=5,
-    engineio_logger=False,
-    logger=False
-)
-
-
-# ========== Global State ==========
-
+EVENT_STREAM_NAME = "BioSignals-Events"
 
 class WebServerState:
     def __init__(self):
         self.inlet = None
+        self.event_inlet = None  # NEW: Event Stream Inlet
         self.channel_mapping = {}
         self.running = False
         self.connected = False
@@ -598,7 +565,6 @@ class WebServerState:
         self.sr = DEFAULT_SR
         self.num_channels = 0
         self.config = {}
-
 
 state = WebServerState()
 
@@ -1028,7 +994,12 @@ def main():
     state.running = True
     broadcast_thread = threading.Thread(target=broadcast_data, daemon=True)
     broadcast_thread.start()
-    print("[WebServer] ✅ Broadcast thread started")
+    
+    # Start Event listener thread
+    event_thread = threading.Thread(target=consume_events, daemon=True)
+    event_thread.start()
+
+    print("[WebServer] ✅ Background threads started")
     print()
 
     # Start SocketIO server

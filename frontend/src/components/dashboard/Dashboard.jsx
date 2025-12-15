@@ -23,7 +23,7 @@ export default function Dashboard() {
   const { user, logout } = useAuth()
   const [currentPage, setCurrentPage] = useState('live')
   // const [sidebarOpen, setSidebarOpen] = useState(true)
-  const { status, lastMessage, lastConfig, latency, connect, disconnect, sendMessage } = useWebSocket(
+  const { status, lastMessage, lastConfig, lastEvent, latency, connect, disconnect, sendMessage } = useWebSocket(
     import.meta.env.VITE_WS_URL || 'ws://localhost:5000'
   )
   const [theme, setTheme] = React.useState(() => localStorage.getItem('theme') || 'theme-violet');
@@ -174,16 +174,11 @@ export default function Dashboard() {
 
       {/* Main Content Area */}
       <div className="container" style={{ flex: 1, padding: '24px 0', overflowY: 'auto' }}>
-        {currentPage === 'live' && <LiveDashboard wsData={lastMessage} wsConfig={lastConfig} sendMessage={sendMessage} />}
+        {currentPage === 'live' && <LiveDashboard wsData={lastMessage} wsConfig={lastConfig} wsEvent={lastEvent} sendMessage={sendMessage} />}
         {currentPage === 'commands' && <CommandVisualizer wsData={lastMessage} />}
         {currentPage === 'recordings' && <RecordingsView />}
         {currentPage === 'devices' && <DevicesView sendMessage={sendMessage} />}
-        {currentPage === 'chat' && <ChatView wsData={lastMessage} />}
-        {currentPage === 'mock' && <MockView />}
-        {currentPage === 'settings' && <SettingsView />}
-        {currentPage === 'test' && <TestView />}
-        {currentPage === 'test' && <TestView />}
-        {currentPage === 'dino' && <DinoView />}
+        {currentPage === 'dino' && <DinoView wsData={lastMessage} wsEvent={lastEvent} isPaused={false} />}
         {currentPage === 'ssvep' && <SSVEPView />}
       </div>
 

@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import SignalChart from '../charts/SignalChart'
 
-export default function LiveView({ wsData, config, isPaused }) {
+export default function LiveView({ wsData, wsEvent, config, isPaused }) {
   const timeWindowMs = config?.display?.timeWindowMs || 10000
   const samplingRate = config?.sampling_rate || 250
   const showGrid = config?.display?.showGrid ?? true
@@ -139,6 +139,44 @@ export default function LiveView({ wsData, config, isPaused }) {
   const displayCh0 = activeChannels.length > 0 ? activeChannels[0] : 0
   const displayCh1 = activeChannels.length > 1 ? activeChannels[1] : 1
 
+  // Zoom State
+  const [zoom, setZoom] = useState(1)
+  const BASE_AMPLITUDE = 500 // uV assumed base range
+
+  // Handle Annotations (Blinks)
+  const [annotations, setAnnotations] = useState([])
+
+  useEffect(() => {
+    if (!wsEvent) return
+    if (wsEvent.event === 'BLINK') {
+      const ts = wsEvent.timestamp ? wsEvent.timestamp * 1000 : Date.now()
+      const chKey = wsEvent.channel
+      let targetData = []
+      if (chKey === 'ch0') targetData = ch0Data
+      if (chKey === 'ch1') targetData = ch1Data
+      if (chKey === 'ch2') targetData = ch2Data
+      if (chKey === 'ch3') targetData = ch3Data
+
+      const point = targetData.length > 0 ? targetData[targetData.length - 1] : { value: 0 }
+
+      setAnnotations(prev => [
+        ...prev,
+        {
+          x: ts, // absolute time, will be mapped later
+          y: point.value,
+          label: 'BLINK',
+          color: '#ef4444',
+          channel: chKey
+        }
+      ].slice(-20))
+    }
+  }, [wsEvent, ch0Data, ch1Data, ch2Data, ch3Data])
+
+  useEffect(() => {
+    const now = Date.now()
+    setAnnotations(prev => prev.filter(a => (now - a.x) < timeWindowMs))
+  }, [timeWindowMs, ch0Data]) // Clean up
+
   const getChannelData = (chIndex) => {
     switch (chIndex) {
       case 0: return ch0Data
@@ -149,69 +187,133 @@ export default function LiveView({ wsData, config, isPaused }) {
     }
   }
 
-  const data1 = getChannelData(displayCh0)
-  const data2 = getChannelData(displayCh1)
+  // --- SWEEP TRANSFORM LOGIC (Dual Segment) ---
+  const processSweep = (data, windowMs) => {
+    if (!data || data.length === 0) return { active: [], history: [], scanner: null, latestTs: 0 }
+    const latestTs = data[data.length - 1].time
+    const scannerPos = latestTs % windowMs
 
-  const getSensorName = (chIndex) => {
-    const chKey = `ch${chIndex}`
-    return channelMapping[chKey]?.sensor || `Channel ${chIndex}`
+    const active = []  // Newest data (0 -> Scanner)
+    const history = [] // Oldest data (Scanner -> Window)
+
+    // Split based on scanner position
+    // We map 0..Window.
+    // Logic: If (originalTime > latestTs - scannerPos), it belongs to Active (New) segment? 
+    // Yes.
+    // Example: Window 10, LastTS 25. Scanner 5.
+    // Active range: 20..25. (Maps to 0..5).
+    // History range: 15..20. (Maps to 5..10).
+
+    // Actually, simpler: just map everything to modulo, then bucket by X position relative to Scanner?
+    // No, overlapping X is possible if we have > Window data.
+    // Robust way: Filter by Absolute Time.
+
+    const cycleStartTs = latestTs - scannerPos // The time corresponding to X=0 in the current sweep
+    // Any point >= cycleStartTs is ACTIVE (0..Scanner).
+    // Any point < cycleStartTs is HISTORY (Scanner..Window).
+
+    data.forEach(d => {
+      const mappedTime = d.time % windowMs
+      // We only care about data within [latestTs - windowMs, latestTs]
+      if (d.time > (latestTs - windowMs)) {
+        if (d.time >= cycleStartTs) {
+          active.push({ ...d, time: mappedTime })
+        } else {
+          history.push({ ...d, time: mappedTime })
+        }
+      }
+    })
+
+    // Sort each segment by X (mappedTime) for correct line drawing
+    active.sort((a, b) => a.time - b.time)
+    history.sort((a, b) => a.time - b.time)
+
+    return { active, history, scanner: scannerPos, latestTs }
   }
 
-  const sensorName1 = getSensorName(displayCh0)
-  const sensorName2 = getSensorName(displayCh1)
+  // Get Sensor Names safely from config or defaults
+  const sensorName1 = channelMapping[`ch${displayCh0}`]?.name || `Channel ${displayCh0}`
+  const sensorName2 = channelMapping[`ch${displayCh1}`]?.name || `Channel ${displayCh1}`
+
+  const rawData1 = getChannelData(displayCh0)
+  const rawData2 = getChannelData(displayCh1)
+
+  const sweep1 = processSweep(rawData1, timeWindowMs)
+  const sweep2 = processSweep(rawData2, timeWindowMs)
+
+  // Map annotations to sweep
+  const mapAnn = (anns, windowMs) => anns.map(a => ({
+    ...a,
+    origX: a.x,
+    x: a.x % windowMs
+  }))
 
   return (
-    <div className="w-full h-full flex flex-col gap-4 p-4 bg-slate-900 rounded-lg overflow-auto">
+    <div className="w-full h-full flex flex-col gap-4 p-4 bg-bg rounded-lg overflow-auto">
+      {/* Controls */}
+      <div className="flex items-center gap-4 bg-surface border border-border p-2 rounded-lg backdrop-blur-sm">
+        <div className="text-sm font-bold text-text">Vertical Zoom:</div>
+        <div className="flex gap-2">
+          {[1, 2, 3, 5, 10].map(z => (
+            <button
+              key={z}
+              onClick={() => setZoom(z)}
+              className={`px-3 py-1 text-xs rounded font-bold transition-all ${zoom === z
+                ? 'bg-primary text-white shadow-lg scale-105'
+                : 'bg-surface hover:bg-white/10 text-muted hover:text-text border border-border'
+                }`}
+            >
+              {z}x
+            </button>
+          ))}
+        </div>
+        <div className="text-xs text-muted ml-auto font-mono">
+          Scanning {timeWindowMs / 1000}s Window
+        </div>
+      </div>
+
       <div className="flex-1 min-h-0">
-        <div className="mb-2 text-sm font-semibold text-slate-300">
+        <div className="mb-2 text-sm font-semibold text-muted flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-blue-500"></span>
           Channel {displayCh0} - {sensorName1}
-          <span className="text-slate-500 ml-2">({data1.length} points)</span>
         </div>
         <SignalChart
-          title={`Ch${displayCh0} ${sensorName1}`}
-          data={data1}
+          title={`${sensorName1}`}
+          byChannel={{ active: sweep1.active, history: sweep1.history }}
+          channelColors={{ active: 'rgb(59, 130, 246)', history: 'rgba(59, 130, 246, 0.3)' }}
           timeWindowMs={timeWindowMs}
           color="rgb(59, 130, 246)"
           height={250}
           showGrid={showGrid}
-          scannerX={scannerX}
+          scannerX={sweep1.scanner}
+          annotations={mapAnn(annotations.filter(a => a.channel === `ch${displayCh0}`), timeWindowMs)}
+          yDomainProp={[-BASE_AMPLITUDE / zoom, BASE_AMPLITUDE / zoom]}
         />
       </div>
 
       <div className="flex-1 min-h-0">
-        <div className="mb-2 text-sm font-semibold text-slate-300">
+        <div className="mb-2 text-sm font-semibold text-muted flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
           Channel {displayCh1} - {sensorName2}
-          <span className="text-slate-500 ml-2">({data2.length} points)</span>
         </div>
         <SignalChart
-          title={`Ch${displayCh1} ${sensorName2}`}
-          data={data2}
+          title={`${sensorName2}`}
+          byChannel={{ active: sweep2.active, history: sweep2.history }}
+          channelColors={{ active: 'rgb(16, 185, 129)', history: 'rgba(16, 185, 129, 0.3)' }}
           timeWindowMs={timeWindowMs}
           color="rgb(16, 185, 129)"
           height={250}
           showGrid={showGrid}
-          scannerX={scannerX}
+          scannerX={sweep2.scanner}
+          annotations={mapAnn(annotations.filter(a => a.channel === `ch${displayCh1}`), timeWindowMs)}
+          yDomainProp={[-BASE_AMPLITUDE / zoom, BASE_AMPLITUDE / zoom]}
         />
       </div>
 
-      <div className="bg-slate-800 rounded p-3 text-xs text-slate-400 font-mono space-y-1">
-        <div>
-          <span className="text-blue-400">Ch0</span>: {ch0Data.length} pts{' '}
-          <span className="ml-4 text-green-400">Ch1</span>: {ch1Data.length} pts{' '}
-          <span className="ml-4 text-yellow-400">Ch2</span>: {ch2Data.length} pts{' '}
-          <span className="ml-4 text-red-400">Ch3</span>: {ch3Data.length} pts
-        </div>
-        <div>
-          <span className="text-cyan-400">Scanner (ts)</span>: {scannerX ? new Date(scannerX).toLocaleTimeString() : '—'}{' '}
-          <span className="ml-4 text-cyan-300">({scannerPercent.toFixed(1)}%)</span>
-          <span className="ml-4"><span className="text-orange-400">Window</span>: {(timeWindowMs / 1000).toFixed(1)}s</span>
-        </div>
-        <div>
-          <span className="text-lime-400">Display Channels</span>: [{displayCh0}, {displayCh1}] <span className="ml-4"><span className="text-pink-400">Active</span>: {activeChannels.join(', ')}</span>
-        </div>
-        {wsData?.raw?.stream_name && (
-          <div><span className="text-violet-400">Stream</span>: {wsData.raw.stream_name}</div>
-        )}
+      <div className="bg-surface/50 border border-border rounded p-3 text-xs text-muted font-mono space-y-1">
+        {/* Footer Info */}
+        <div><span className="text-primary">Zoom</span>: {zoom}x <span className="ml-4 text-orange-400">Range</span>: +/-{(BASE_AMPLITUDE / zoom).toFixed(0)} uV</div>
+        <div><span className="text-purple-400">Stream</span>: {wsData?.raw?.stream_name || 'Disconnected'}</div>
       </div>
     </div>
   )

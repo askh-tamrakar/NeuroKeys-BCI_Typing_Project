@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import '../../styles/DinoView.css'
 
-export default function DinoView({ wsData, isPaused }) {
+export default function DinoView({ wsData, wsEvent, isPaused }) {
     // Game state
     const [gameState, setGameState] = useState('ready') // ready, playing, paused, gameOver
     const [score, setScore] = useState(0)
@@ -46,7 +46,16 @@ export default function DinoView({ wsData, isPaused }) {
         scoreRef.current = score
     }, [score])
 
-    // EOG sensor integration
+    // Listen for WebSocket Events (Blinks)
+    useEffect(() => {
+        if (!wsEvent) return;
+
+        if (wsEvent.event === 'BLINK') {
+            console.log("🦖 Dino: Blink Event Received via Logic Pipeline!");
+            handleEOGBlink();
+        }
+    }, [wsEvent]);
+
     // EOG sensor integration REMOVED - Controlled via external PyAutoGUI keypresses
     // useEffect(() => {
     //     if (!wsData || isPaused) return

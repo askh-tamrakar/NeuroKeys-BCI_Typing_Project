@@ -14,6 +14,7 @@ export function useWebSocket(url = 'http://localhost:5000') {
   const [status, setStatus] = useState('disconnected')
   const [lastMessage, setLastMessage] = useState(null)
   const [lastConfig, setLastConfig] = useState(null)
+  const [lastEvent, setLastEvent] = useState(null)
   const [latency, setLatency] = useState(0)
 
   const socketRef = useRef(null)
@@ -176,6 +177,12 @@ export function useWebSocket(url = 'http://localhost:5000') {
         }
       })
 
+      // === EVENT STREAM ===
+      socketRef.current.on('bio_event', (eventData) => {
+        console.log('⚡ Bio Event:', eventData)
+        setLastEvent(eventData)
+      })
+
       // === STATUS EVENTS ===
       socketRef.current.on('status', (data) => {
         console.log('📊 Server status:', data)
@@ -260,6 +267,7 @@ export function useWebSocket(url = 'http://localhost:5000') {
     status,
     lastMessage,
     lastConfig,
+    lastEvent,
     latency,
     connect,
     disconnect,
