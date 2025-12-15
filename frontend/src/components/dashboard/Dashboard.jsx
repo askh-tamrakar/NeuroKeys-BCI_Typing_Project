@@ -10,6 +10,7 @@ import DevicesView from '../views/DevicesView'
 //import SettingsView from '../views/SettingsView'
 //import TestView from '../views/TestView'
 import DinoView from '../views/DinoView'
+import SSVEPView from '../views/SSVEPView'
 
 import '../../styles/App.css';
 import themePresets from '../themes/presets';
@@ -65,6 +66,19 @@ export default function Dashboard() {
 
   useEffect(() => {
     connect()
+
+    // Handle initial hash
+    const hash = window.location.hash.replace('#', '');
+    if (hash) setCurrentPage(hash);
+
+    // Handle hash changes
+    const handleHashChange = () => {
+      const newHash = window.location.hash.replace('#', '');
+      if (newHash) setCurrentPage(newHash);
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
   }, [])
 
   const handleSignupSuccess = () => {
@@ -85,6 +99,7 @@ export default function Dashboard() {
     //{ label: 'Settings', onClick: () => setCurrentPage('settings'), href: '#settings' },
     //{ label: 'Test', onClick: () => setCurrentPage('test'), href: '#test' },
     { label: 'Dino', onClick: () => setCurrentPage('dino'), href: '#dino' },
+    { label: 'SSVEP', onClick: () => setCurrentPage('ssvep'), href: '#ssvep' },
     {
       label: 'Theme',
       type: 'pill',
@@ -167,7 +182,9 @@ export default function Dashboard() {
         {currentPage === 'mock' && <MockView />}
         {currentPage === 'settings' && <SettingsView />}
         {currentPage === 'test' && <TestView />}
+        {currentPage === 'test' && <TestView />}
         {currentPage === 'dino' && <DinoView />}
+        {currentPage === 'ssvep' && <SSVEPView />}
       </div>
 
       {/* Footer */}

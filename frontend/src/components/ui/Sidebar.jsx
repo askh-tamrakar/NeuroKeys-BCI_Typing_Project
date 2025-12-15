@@ -1,11 +1,11 @@
 import React from 'react'
-// If icons are missing, we can use text or simplistic SVG fallback. 
 
 export default function Sidebar({
     config,
     setConfig,
     isPaused,
     setIsPaused,
+    onSave,
     className = ''
 }) {
 
@@ -111,16 +111,10 @@ export default function Sidebar({
 
                     <button
                         onClick={() => {
-                            // Explicit save action
-                            if (setConfig) {
-                                // Trigger a refresh/save if needed, though onChange handles it. 
-                                // We can force a reload from backend to be sure, or just alert.
-                                // But effectively, since onChange updates config and LiveDashboard auto-saves,
-                                // this button acts as a "Confirm/Sync" visual.
-                                // For strict compliance, we could enforce a save here if we disabled auto-save.
-                                // But sticking to the existing pattern:
-                                // We will just ensure the user feels the "Map" action.
-                                alert("Mapping synced to central config!");
+                            if (onSave) {
+                                onSave();
+                            } else {
+                                console.warn("Sidebar: No onSave handler provided");
                             }
                         }}
                         className="w-full py-2 bg-primary text-primary-contrast rounded-lg font-bold text-sm shadow-glow hover:opacity-90 active:scale-95 transition-all"
