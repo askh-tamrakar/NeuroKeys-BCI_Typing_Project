@@ -55,7 +55,6 @@ class AcquisitionApp:
         self.config = self._load_config()
         
         # Paths
-        # Paths
         # Resolve project root relative to this file: src/acquisition -> src -> root
         project_root = Path(__file__).resolve().parent.parent.parent
         self.save_path = project_root / "data" / "raw" / "session"
@@ -102,12 +101,28 @@ class AcquisitionApp:
         self._build_ui()
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         
+        # Start Sync Thread
+        self.start_sync_thread()
+
         # Start main loop
         self.main_loop()
 
     def _load_config(self) -> dict:
-        """Load configuration from JSON file"""
-        # Resolve project root relative to this file: src/acquisition -> src -> root
+        """Load configuration from API or JSON file"""
+        # Try API first
+        try:
+            import urllib.request
+            import urllib.error
+            url = "http://localhost:5000/api/config"
+            with urllib.request.urlopen(url, timeout=0.5) as response:
+                if response.status == 200:
+                    data = json.loads(response.read().decode())
+                    print("[App] ✅ Loaded config from API")
+                    return data
+        except Exception as e:
+            print(f"[App] ⚠️ API load failed ({e}), falling back to file")
+
+        # Fallback to local file
         project_root = Path(__file__).resolve().parent.parent.parent
         config_path = project_root / "config" / "sensor_config.json"
         if config_path.exists():
@@ -147,7 +162,7 @@ class AcquisitionApp:
         }
 
     def _save_config(self):
-        """Save configuration to JSON file"""
+        """Save configuration to JSON file and API"""
         
         # UPDATE channel mapping from UI BEFORE saving
         self.config["channel_mapping"] = {
@@ -155,15 +170,75 @@ class AcquisitionApp:
             "ch1": {"sensor": self.ch1_var.get(), "enabled": True}
         }
         
-        # NOW save the updated config
+        # 1. Save to Local File (Backup)
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
         try:
             with open(self.config_path, 'w') as f:
                 json.dump(self.config, f, indent=2)
             print(f"[App] Config saved to {self.config_path}")
         except Exception as e:
-            print(f"[App] Error saving config: {e}")
+            print(f"[App] Error saving config locally: {e}")
             messagebox.showerror("Error", f"Failed to save config: {e}")
+
+        # 2. Push to API (Primary)
+        def push_to_api(cfg):
+            try:
+                import urllib.request
+                url = "http://localhost:5000/api/config"
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(cfg).encode('utf-8'),
+                    headers={'Content-Type': 'application/json'},
+                    method='POST'
+                )
+                with urllib.request.urlopen(req, timeout=1) as response:
+                    print(f"[App] 📤 Config pushed to API: {response.status}")
+            except Exception as e:
+                print(f"[App] ❌ Failed to push to API: {e}")
+        
+        threading.Thread(target=push_to_api, args=(self.config,), daemon=True).start()
+
+    def start_sync_thread(self):
+        """Poll API for config changes"""
+        def loop():
+            import urllib.request
+            last_check = 0
+            while True:
+                time.sleep(2)
+                try:
+                    # Don't interrupt if we are actively recording/streaming to avoid jitter
+                    # (optional trade-off)
+                    
+                    url = "http://localhost:5000/api/config"
+                    with urllib.request.urlopen(url, timeout=1) as response:
+                        if response.status == 200:
+                            new_cfg = json.loads(response.read().decode())
+                            
+                            # Simple check if channel mapping changed
+                            current_map = self.config.get("channel_mapping", {})
+                            new_map = new_cfg.get("channel_mapping", {})
+                            
+                            if json.dumps(current_map, sort_keys=True) != json.dumps(new_map, sort_keys=True):
+                                print("[App] 🔄 Remote config change detected, updating UI...")
+                                self.root.after(0, self.update_config_from_remote, new_cfg)
+                except Exception:
+                    pass
+        
+        threading.Thread(target=loop, daemon=True).start()
+
+    def update_config_from_remote(self, new_config):
+        """Update UI and internal state from remote config"""
+        self.config = new_config
+        
+        # Update Channel vars
+        mapping = self.config.get("channel_mapping", {})
+        
+        if "ch0" in mapping:
+            self.ch0_var.set(mapping["ch0"].get("sensor", "EMG"))
+        if "ch1" in mapping:
+            self.ch1_var.set(mapping["ch1"].get("sensor", "EOG"))
+            
+        print("[App] UI Updated from Remote")
 
     def _build_ui(self):
         """Build the entire UI"""
