@@ -1,26 +1,4 @@
 """
-src/processing/filter_router_modified.py
-
-IMPROVED FILTER ROUTER - Production Ready Version
-
-Features:
-- ✅ Sends processed data to single unified LSL stream
-- ✅ Handles both channels different sensors (EMG + EOG)
-- ✅ Handles both channels same sensor (EMG + EMG)
-- ✅ Explicitly handles disabled channels with metadata
-- ✅ Handles missing channel config (applies defaults)
-- ✅ Monitors config changes in real-time
-- ✅ Per-channel processor instances with independent state
-- ✅ Better logging and error handling
-- ✅ Channel metadata in LSL stream
-
-Improvements over original:
-1. Disabled channels get explicit mapping (not skipped)
-2. Missing channels apply sensible defaults
-3. All channels guaranteed to have entries
-4. Better logging with emoji for clarity
-5. More robust error handling
-6. Clear channel metadata in output stream
 
 Usage:
     python -m src.processing.filter_router_modified

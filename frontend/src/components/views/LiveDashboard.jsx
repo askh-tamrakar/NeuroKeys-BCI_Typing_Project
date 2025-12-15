@@ -46,7 +46,7 @@ export default function LiveDashboard({ wsData, wsConfig, sendMessage }) {
                 config: config
             })
         }
-        alert("Configuration saved and synced!")
+        // alert("Configuration saved and synced!")
     }
 
     if (loading) return <div className="flex items-center justify-center h-screen bg-bg text-text">Loading Config...</div>
