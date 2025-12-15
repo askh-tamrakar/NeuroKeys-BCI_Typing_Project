@@ -3,7 +3,7 @@ import Sidebar from '../ui/Sidebar'
 import LiveView from '../views/LiveView'
 import { ConfigService } from '../../Services/ConfigService'
 
-export default function LiveDashboard({ wsData, wsConfig, sendMessage }) {
+export default function LiveDashboard({ wsData, wsConfig, wsEvent, sendMessage }) {
     const [config, setConfig] = useState()
     const [isPaused, setIsPaused] = useState(false)
     const [loading, setLoading] = useState(true)
@@ -71,6 +71,7 @@ export default function LiveDashboard({ wsData, wsConfig, sendMessage }) {
                 <div className="flex-grow p-4 md:p-6 overflow-hidden relative">
                     <LiveView
                         wsData={wsData}
+                        wsEvent={wsEvent}
                         config={config}
                         isPaused={isPaused}
                     />

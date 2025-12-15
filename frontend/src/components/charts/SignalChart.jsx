@@ -1,6 +1,6 @@
-// SignalChart.jsx (updated)
+// SignalChart.jsx
 import React, { useMemo } from 'react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceDot } from 'recharts'
 
 const DEFAULT_PALETTE = [
   '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
@@ -17,14 +17,19 @@ export default function SignalChart({
   height = 300,
   yDomainProp = null,
   showGrid = true,
-  scannerX = null
+  scannerX = null,
+  annotations = [], // New Prop [{ x: timestamp, y: value, label: string, color: string }]
+  channelColors = null // New Prop { [key]: colorString }
 }) {
   const merged = useMemo(() => {
     if (!byChannel || typeof byChannel !== 'object') {
       const arr = Array.isArray(data) ? data.slice() : []
       if (arr.length === 0) return { dataArray: [], channelKeys: [] }
       // ensure numeric times/values
-      arr.forEach(d => { d.time = Number(d.time); d.value = Number(d.value) })
+      arr.forEach(d => {
+        d.time = Number(d.time);
+        d.value = (d.value === null || d.value === undefined) ? null : Number(d.value)
+      })
       // sort ascending
       arr.sort((a, b) => a.time - b.time)
       const newest = arr[arr.length - 1]?.time || Date.now()
@@ -184,11 +189,27 @@ export default function SignalChart({
             {scannerXValue !== null && (
               <ReferenceLine x={scannerXValue} stroke="var(--accent)" strokeOpacity={0.9} strokeWidth={1.5} />
             )}
+
+            {/* Render Annotations (Blinks) */}
+            {annotations.map((ann, idx) => (
+              <ReferenceDot
+                key={`ann-${idx}`}
+                x={ann.x}
+                y={ann.y}
+                r={6}
+                fill={ann.color || "red"}
+                stroke="white"
+                strokeWidth={2}
+                label={{ position: 'top', value: ann.label, fill: ann.color || "red", fontSize: 12, fontWeight: 'bold' }}
+                isFront={true}
+              />
+            ))}
+
             <XAxis
               dataKey="time"
               type="number"
               domain={['dataMin', 'dataMax']}
-              tickFormatter={(t) => new Date(t).toLocaleTimeString([], { hour12: false, minute: '2-digit', second: '2-digit' })}
+              tickFormatter={(t) => (Number.isFinite(t) && t < 86400000) ? (t / 1000).toFixed(1) + 's' : new Date(t).toLocaleTimeString([], { hour12: false, minute: '2-digit', second: '2-digit' })}
               stroke="var(--muted)"
               fontSize={10}
               tickLine={false}
@@ -226,7 +247,7 @@ export default function SignalChart({
                   type="monotone"
                   dataKey={`ch${k}`}
                   name={`${channelLabelPrefix ?? 'Ch'} ${k}`}
-                  stroke={DEFAULT_PALETTE[idx % DEFAULT_PALETTE.length]}
+                  stroke={channelColors?.[k] || DEFAULT_PALETTE[idx % DEFAULT_PALETTE.length]}
                   dot={false}
                   strokeWidth={1.5}
                   isAnimationActive={false}
