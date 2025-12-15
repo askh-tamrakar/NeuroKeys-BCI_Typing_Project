@@ -3,7 +3,7 @@ import Sidebar from '../ui/Sidebar'
 import LiveView from '../views/LiveView'
 import { ConfigService } from '../../Services/ConfigService'
 
-export default function LiveDashboard({ wsData, sendMessage }) {
+export default function LiveDashboard({ wsData, wsConfig, sendMessage }) {
     const [config, setConfig] = useState()
     const [isPaused, setIsPaused] = useState(false)
     const [loading, setLoading] = useState(true)
@@ -16,21 +16,38 @@ export default function LiveDashboard({ wsData, sendMessage }) {
         })
     }, [])
 
-    // Auto-save config when it changes
+    // Sync incoming config from WebSocket
     useEffect(() => {
-        if (!loading) {
-            // Persist locally
-            ConfigService.saveConfig(config)
+        if (wsConfig) {
+            console.log("LiveDashboard: Syncing config from WS", wsConfig)
 
-            // Sync to Backend
-            if (sendMessage) {
-                sendMessage({
-                    type: 'SAVE_CONFIG',
-                    config: config
-                })
-            }
+            // Check if it's actually different to avoid unnecessary resets
+            // But config is an object, so simple reference check might pass if it's the same object (unlikely from WS)
+            // We'll trust the logic for now but log it
+
+            setConfig(wsConfig)
+
+            // Only update local storage to keep them in sync, DO NOT push back to API (causes loop)
+            localStorage.setItem('biosignals-config', JSON.stringify(wsConfig))
         }
-    }, [config, loading, sendMessage])
+    }, [wsConfig])
+
+    // Auto-save removed. Manual save only.
+    const handleManualSave = () => {
+        if (!config) return
+
+        // Persist locally + Backend
+        ConfigService.saveConfig(config)
+
+        // Sync to Backend via WS
+        if (sendMessage) {
+            sendMessage({
+                type: 'SAVE_CONFIG',
+                config: config
+            })
+        }
+        alert("Configuration saved and synced!")
+    }
 
     if (loading) return <div className="flex items-center justify-center h-screen bg-bg text-text">Loading Config...</div>
 
@@ -42,6 +59,7 @@ export default function LiveDashboard({ wsData, sendMessage }) {
                 setConfig={setConfig}
                 isPaused={isPaused}
                 setIsPaused={setIsPaused}
+                onSave={handleManualSave}
                 className="shrink-0 z-20"
             />
 

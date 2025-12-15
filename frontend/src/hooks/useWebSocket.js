@@ -13,6 +13,7 @@ import { useState, useEffect, useRef } from 'react'
 export function useWebSocket(url = 'http://localhost:5000') {
   const [status, setStatus] = useState('disconnected')
   const [lastMessage, setLastMessage] = useState(null)
+  const [lastConfig, setLastConfig] = useState(null)
   const [latency, setLatency] = useState(0)
 
   const socketRef = useRef(null)
@@ -167,6 +168,14 @@ export function useWebSocket(url = 'http://localhost:5000') {
         }
       })
 
+      // === CONFIG UPDATE EVENT ===
+      socketRef.current.on('config_updated', (data) => {
+        console.log('🔄 Config updated from server:', data)
+        if (data && data.config) {
+          setLastConfig(data.config)
+        }
+      })
+
       // === STATUS EVENTS ===
       socketRef.current.on('status', (data) => {
         console.log('📊 Server status:', data)
@@ -250,6 +259,7 @@ export function useWebSocket(url = 'http://localhost:5000') {
   return {
     status,
     lastMessage,
+    lastConfig,
     latency,
     connect,
     disconnect,

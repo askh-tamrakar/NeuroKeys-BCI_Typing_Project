@@ -219,12 +219,15 @@ class AcquisitionApp:
                             new_map = new_cfg.get("channel_mapping", {})
                             
                             if json.dumps(current_map, sort_keys=True) != json.dumps(new_map, sort_keys=True):
-                                print("[App] 🔄 Remote config change detected, updating UI...")
+                                print(f"[App] 🔄 Remote config change detected!")
+                                print(f"[App] Local: {current_map}")
+                                print(f"[App] Remote: {new_map}")
                                 self.root.after(0, self.update_config_from_remote, new_cfg)
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"[App] Sync loop error: {e}")
         
         threading.Thread(target=loop, daemon=True).start()
+
 
     def update_config_from_remote(self, new_config):
         """Update UI and internal state from remote config"""
