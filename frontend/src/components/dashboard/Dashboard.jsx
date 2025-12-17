@@ -183,7 +183,7 @@ export default function Dashboard() {
       </div>
 
       {/* Footer */}
-      <div className="footer">
+      {/* <div className="footer">
         NeuroKeys: BCI Typing Project •{' '}
         <a onClick={() => setAuthView('signup')} className="muted" href="#signup" rel="noreferrer">
           Sign Up
@@ -197,7 +197,7 @@ export default function Dashboard() {
         >
           GitHub
         </a>
-      </div>
+      </div> */}
     </div>
   );
 }

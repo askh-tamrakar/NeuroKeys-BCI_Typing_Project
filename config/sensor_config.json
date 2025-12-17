@@ -1,18 +1,18 @@
 {
   "channel_mapping": {
     "ch0": {
-      "sensor": "EOG",
-      "enabled": true
+      "enabled": true,
+      "sensor": "EOG"
     },
     "ch1": {
-      "sensor": "EOG",
-      "enabled": true
+      "enabled": true,
+      "sensor": "EOG"
     }
   },
   "display": {
     "scannerX": 0,
     "showGrid": true,
-    "timeWindowMs": 15000
+    "timeWindowMs": 16000
   },
   "filters": {
     "EEG": {
