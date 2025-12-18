@@ -22,7 +22,8 @@ except Exception:
     list_ports = None
 
 APP_NAME = "SignalForge (mock device)"
-CONFIG_PATH = Path("../../config/sensor_config.json")
+# Fix path to be relative to this script location
+CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "sensor_config.json"
 SYNC1 = 0xC7
 SYNC2 = 0x7C
 END_BYTE = 0x01
@@ -252,19 +253,25 @@ class MainWindow(QtWidgets.QMainWindow):
         # queue for inter-thread samples
         self.sample_queue = queue.Queue(maxsize=4096)
         self.serial_writer = None
-
+        
+        print(f"[{datetime.now()}] Building UI...")
         self._build_ui()
+        print(f"[{datetime.now()}] Building Plot...")
         self._build_plot()
+        print(f"[{datetime.now()}] Initial port update...")
         self.update_port_list()
+        print(f"[{datetime.now()}] Port update done. Starting timer...")
         self.timer = QtCore.QTimer()
         self.timer.setInterval(50)  # UI refresh ~20 Hz
         self.timer.timeout.connect(self._on_timer)
         self.timer.start()
 
         # generator loop in background
+        print(f"[{datetime.now()}] Starting generator thread...")
         self.gen_thread = threading.Thread(target=self._generator_loop, daemon=True)
         self._gen_stop = threading.Event()
         self.gen_thread.start()
+        print(f"[{datetime.now()}] Init complete.")
 
     def load_config(self):
         try:
@@ -492,13 +499,19 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ch_gens[ch].toggle_ssvep(freq if checked else None, enabled=checked)
 
     def update_port_list(self):
+        print(f"[{datetime.now()}] Updating port list...")
         self.port_combo.clear()
         ports = []
         if list_ports:
             try:
+                print(f"[{datetime.now()}] calling list_ports.comports()...")
                 ports = [p.device for p in list_ports.comports()]
-            except Exception:
+                print(f"[{datetime.now()}] list_ports.comports() returned {len(ports)} ports")
+            except Exception as e:
+                print(f"[{datetime.now()}] Error listing ports: {e}")
                 ports = []
+        else:
+             print(f"[{datetime.now()}] list_ports is None")
         self.port_combo.addItems([""] + ports)
 
     def _build_plot(self):
@@ -630,10 +643,26 @@ class MainWindow(QtWidgets.QMainWindow):
 # Run
 # -------------------------
 def main():
-    app = QtWidgets.QApplication(sys.argv)
-    win = MainWindow()
-    win.show()
-    sys.exit(app.exec())
+    try:
+        print(f"[{datetime.now()}] Starting {APP_NAME}...")
+        print(f"[{datetime.now()}] Config path: {CONFIG_PATH.resolve()}")
+        app = QtWidgets.QApplication(sys.argv)
+        win = MainWindow()
+        win.show()
+        print(f"[{datetime.now()}] Window shown, entering event loop.")
+        ret = app.exec()
+        print(f"[{datetime.now()}] Event loop exited with {ret}")
+        sys.exit(ret)
+    except Exception as e:
+        import traceback
+        err_msg = traceback.format_exc()
+        print(f"CRITICAL ERROR: {err_msg}")
+        try:
+            with open("error.log", "w") as f:
+                f.write(err_msg)
+        except:
+            pass
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
