@@ -252,6 +252,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # queue for inter-thread samples
         self.sample_queue = queue.Queue(maxsize=4096)
+        # Bounded queue for plotting to prevent UI freeze if main thread falls behind
+        self.plot_queue = queue.Queue(maxsize=1024) 
         self.serial_writer = None
         
         print(f"[{datetime.now()}] Building UI...")
@@ -262,7 +264,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.update_port_list()
         print(f"[{datetime.now()}] Port update done. Starting timer...")
         self.timer = QtCore.QTimer()
-        self.timer.setInterval(50)  # UI refresh ~20 Hz
+        self.timer.setInterval(100)  # UI refresh ~10 Hz (relaxed)
         self.timer.timeout.connect(self._on_timer)
         self.timer.start()
 
@@ -520,15 +522,36 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_timer(self):
         # update plots from buffers
-        if self.ptr == 0:
-            data0 = self.buf0
-            data1 = self.buf1
-        else:
-            data0 = np.concatenate((self.buf0[self.ptr:], self.buf0[:self.ptr]))
-            data1 = np.concatenate((self.buf1[self.ptr:], self.buf1[:self.ptr]))
+        if not getattr(self, "_timer_logged", False):
+            print(f"[{datetime.now()}] First _on_timer call")
+            self._timer_logged = True
+
+        # drain queue
+        new_data0 = []
+        new_data1 = []
+        while True:
+            try:
+                v0, v1 = self.plot_queue.get_nowait()
+                new_data0.append(v0)
+                new_data1.append(v1)
+            except queue.Empty:
+                break
         
-        self.curve0.setData(data0)
-        self.curve1.setData(data1)
+        n = len(new_data0)
+        if n > 0:
+            # Shift buffers and append new data
+            # Doing this in main thread is safe
+            if n >= self.plot_len:
+                self.buf0 = np.array(new_data0[-self.plot_len:], dtype=float)
+                self.buf1 = np.array(new_data1[-self.plot_len:], dtype=float)
+            else:
+                self.buf0 = np.roll(self.buf0, -n)
+                self.buf1 = np.roll(self.buf1, -n)
+                self.buf0[-n:] = new_data0
+                self.buf1[-n:] = new_data1
+        
+        self.curve0.setData(self.buf0)
+        self.curve1.setData(self.buf1)
         
         # apply manual Y limits if needed
         if not self.autoscale_chk.isChecked():
@@ -617,6 +640,8 @@ class MainWindow(QtWidgets.QMainWindow):
                     # drop if writer is slow
                     pass
 
+            if frame % 100 == 0:
+                print(f"[{datetime.now()}] Gen loop frame {frame}")
             frame += 1
             # sleep until next sample
             next_target = origin + frame / max(1.0, self.sample_rate)
@@ -627,13 +652,17 @@ class MainWindow(QtWidgets.QMainWindow):
                 time.sleep(sleep_time)
             else:
                 # behind — continue without sleeping to catch up
-                # but limit catch-up to avoid freezing if real-time is impossible
+        # but limit catch-up to avoid freezing if real-time is impossible
                 if frame % 100 == 0:
                     time.sleep(0.001)
 
     def _append_plot(self, v0, v1):
-        # Insert at current pointer
-        self.buf0[self.ptr] = v0
+        # Enqueue for main thread to handle
+        try:
+            self.plot_queue.put_nowait((v0, v1))
+        except queue.Full:
+            # If main thread gets stuck, drop visual frames rather than blocking or OOM
+            pass
         self.buf1[self.ptr] = v1
         self.ptr = (self.ptr + 1) % self.plot_len
 
