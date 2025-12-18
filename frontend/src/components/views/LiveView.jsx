@@ -141,7 +141,16 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
 
   // Zoom State
   const [zoom, setZoom] = useState(1)
+  const [manualYRange, setManualYRange] = useState("")
   const BASE_AMPLITUDE = 500 // uV assumed base range
+
+  const currentYDomain = useMemo(() => {
+    if (manualYRange && !isNaN(parseFloat(manualYRange))) {
+      const r = parseFloat(manualYRange)
+      return [-r, r]
+    }
+    return [-BASE_AMPLITUDE / zoom, BASE_AMPLITUDE / zoom]
+  }, [zoom, manualYRange])
 
   // Handle Annotations (Blinks)
   const [annotations, setAnnotations] = useState([])
@@ -251,24 +260,40 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
   return (
     <div className="w-full h-full flex flex-col gap-4 p-4 bg-bg rounded-lg overflow-auto">
       {/* Controls */}
-      <div className="flex items-center gap-4 bg-surface border border-border p-2 rounded-lg backdrop-blur-sm">
-        <div className="text-sm font-bold text-text">Vertical Zoom:</div>
-        <div className="flex gap-2">
-          {[1, 2, 3, 5, 10].map(z => (
-            <button
-              key={z}
-              onClick={() => setZoom(z)}
-              className={`px-3 py-1 text-xs rounded font-bold transition-all ${zoom === z
-                ? 'bg-primary text-white shadow-lg scale-105'
-                : 'bg-surface hover:bg-white/10 text-muted hover:text-text border border-border'
-                }`}
-            >
-              {z}x
-            </button>
-          ))}
+      <div className="flex flex-wrap items-center gap-4 bg-surface border border-border p-3 rounded-lg backdrop-blur-sm">
+        <div className="flex items-center gap-2">
+          <div className="text-xs font-bold text-muted uppercase tracking-wider">Zoom:</div>
+          <div className="flex gap-1">
+            {[1, 2, 5, 10, 20, 50, 100].map(z => (
+              <button
+                key={z}
+                onClick={() => { setZoom(z); setManualYRange(""); }}
+                className={`px-2 py-1 text-[10px] rounded font-bold transition-all ${zoom === z && !manualYRange
+                  ? 'bg-primary text-white shadow-lg'
+                  : 'bg-surface/50 hover:bg-white/10 text-muted hover:text-text border border-border'
+                  }`}
+              >
+                {z}x
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="text-xs text-muted ml-auto font-mono">
-          Scanning {timeWindowMs / 1000}s Window
+
+        <div className="h-4 w-[1px] bg-border mx-2"></div>
+
+        <div className="flex items-center gap-2">
+          <div className="text-xs font-bold text-muted uppercase tracking-wider">Y-Range (uV):</div>
+          <input
+            type="number"
+            placeholder="+/- uV"
+            value={manualYRange}
+            onChange={(e) => setManualYRange(e.target.value)}
+            className="w-20 bg-bg border border-border rounded px-2 py-1 text-xs text-text focus:outline-none focus:border-primary"
+          />
+        </div>
+
+        <div className="text-[10px] text-muted ml-auto font-mono bg-bg/50 px-2 py-1 rounded border border-border">
+          <span className="text-primary font-bold">RANGE:</span> +/-{Math.abs(currentYDomain[1]).toFixed(1)} uV
         </div>
       </div>
 
@@ -287,7 +312,7 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
           showGrid={showGrid}
           scannerX={sweep1.scanner}
           annotations={mapAnn(annotations.filter(a => a.channel === `ch${displayCh0}`), timeWindowMs)}
-          yDomainProp={[-BASE_AMPLITUDE / zoom, BASE_AMPLITUDE / zoom]}
+          yDomainProp={currentYDomain}
         />
       </div>
 
@@ -306,7 +331,7 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
           showGrid={showGrid}
           scannerX={sweep2.scanner}
           annotations={mapAnn(annotations.filter(a => a.channel === `ch${displayCh1}`), timeWindowMs)}
-          yDomainProp={[-BASE_AMPLITUDE / zoom, BASE_AMPLITUDE / zoom]}
+          yDomainProp={currentYDomain}
         />
       </div>
 

@@ -14,8 +14,12 @@ class EOGFilterProcessor:
         self.sr = int(sr)
         
         # Load params from config or defaults
+        # Load params from config or defaults
         eog_cfg = self.config.get("filters", {}).get("EOG", {})
+        self.type = eog_cfg.get("type", "low_pass")
         self.cutoff = float(eog_cfg.get("cutoff", 10.0))
+        self.low = float(eog_cfg.get("low", 0.5))
+        self.high = float(eog_cfg.get("high", 10.0))
         self.order = int(eog_cfg.get("order", 4))
         
         # Initial design
@@ -24,8 +28,13 @@ class EOGFilterProcessor:
 
     def _design_filter(self):
         nyq = self.sr / 2.0
-        wn = self.cutoff / nyq
-        self.b, self.a = butter(self.order, wn, btype="low", analog=False)
+        if self.type == "bandpass":
+            low = self.low / nyq
+            high = self.high / nyq
+            self.b, self.a = butter(self.order, [low, high], btype="bandpass", analog=False)
+        else:
+            wn = self.cutoff / nyq
+            self.b, self.a = butter(self.order, wn, btype="low", analog=False)
 
     def update_config(self, config: dict, sr: int):
         """Update filter parameters if config changed."""
@@ -33,15 +42,24 @@ class EOGFilterProcessor:
         new_sr = int(sr)
         
         eog_cfg = self.config.get("filters", {}).get("EOG", {})
+        new_type = eog_cfg.get("type", "low_pass")
         new_cutoff = float(eog_cfg.get("cutoff", 10.0))
+        new_low = float(eog_cfg.get("low", 0.5))
+        new_high = float(eog_cfg.get("high", 10.0))
         new_order = int(eog_cfg.get("order", 4))
         
-        if (new_cutoff != self.cutoff or 
+        if (new_type != self.type or
+            new_cutoff != self.cutoff or 
+            new_low != self.low or
+            new_high != self.high or
             new_order != self.order or 
             new_sr != self.sr):
             
-            print(f"[EOG] Config changed -> redesigning filter ({new_cutoff}Hz, order {new_order})")
+            print(f"[EOG] Config changed -> redesigning filter ({new_type}, {new_low}-{new_high}Hz, order {new_order})")
+            self.type = new_type
             self.cutoff = new_cutoff
+            self.low = new_low
+            self.high = new_high
             self.order = new_order
             self.sr = new_sr
             self._design_filter()
