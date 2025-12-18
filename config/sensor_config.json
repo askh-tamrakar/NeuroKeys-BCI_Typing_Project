@@ -12,7 +12,7 @@
   "display": {
     "scannerX": 0,
     "showGrid": true,
-    "timeWindowMs": 25000
+    "timeWindowMs": 12000
   },
   "filters": {
     "EEG": {

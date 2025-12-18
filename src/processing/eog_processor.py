@@ -51,5 +51,6 @@ class EOGFilterProcessor:
     def process_sample(self, val: float) -> float:
         """Process a single sample value."""
         filtered, self.zi = lfilter(self.b, self.a, [val], zi=self.zi)
+        #print(filtered)
         return float(filtered[0])
 
