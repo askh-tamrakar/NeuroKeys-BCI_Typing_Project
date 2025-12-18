@@ -57,6 +57,7 @@ class BlinkExtractor:
                 self.is_collecting = True
                 self.candidate_window = [zero_centered]
                 self.start_idx = self.current_idx
+                
                 print(f"[Extractor] Candidate start at {self.current_idx} (Val: {zero_centered:.2f})")
         else:
             self.candidate_window.append(zero_centered)
@@ -114,3 +115,5 @@ class BlinkExtractor:
     def update_config(self, config: dict):
         eog_cfg = config.get("features", {}).get("EOG", {})
         self.amp_threshold = eog_cfg.get("amp_threshold", self.amp_threshold)
+        self.min_duration_ms = eog_cfg.get("min_duration_ms", self.min_duration_ms)
+        self.max_duration_ms = eog_cfg.get("max_duration_ms", self.max_duration_ms)

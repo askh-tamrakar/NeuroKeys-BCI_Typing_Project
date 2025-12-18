@@ -8,10 +8,10 @@ class BlinkDetector:
         
         # Classification thresholds
         self.min_duration = eog_cfg.get("min_duration_ms", 100.0)
-        self.max_duration = eog_cfg.get("max_duration_ms", 500.0)
-        self.min_asymmetry = eog_cfg.get("min_asymmetry", 0.1) # Blinks can be very fast up
-        self.max_asymmetry = eog_cfg.get("max_asymmetry", 0.5) # Blinks fall slow
-        self.min_kurtosis = eog_cfg.get("min_kurtosis", -2.0) # Scipy kurtosis can be negative for some shapes
+        self.max_duration = eog_cfg.get("max_duration_ms", 600.0)
+        self.min_asymmetry = eog_cfg.get("min_asymmetry", 0.05) 
+        self.max_asymmetry = eog_cfg.get("max_asymmetry", 2.5) 
+        self.min_kurtosis = eog_cfg.get("min_kurtosis", -3.0) 
         
     def detect(self, features: dict) -> bool:
         """
