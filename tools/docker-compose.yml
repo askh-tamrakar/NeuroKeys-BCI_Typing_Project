@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: bci-backend
+    volumes:
+      # Persist data folder to host machine so JSON files are saved locally
+      - ./data:/app/data
+      # Mount source for hot reloading if needed (optional)
+      # - ./src:/app/src
+    ports:
+      # Expose any backend ports if needed (e.g., LSL often uses ports, or WebSocket)
+      - "8000:8000" 
+    stdin_open: true # specific configuration for interactive mode
+    tty: true        # specific configuration for interactive mode
+    networks:
+      - bci-network
+    # Device mapping for Serial Port (Windows example, usually needs adjustment)
+    # devices:
+    #   - "/dev/ttyUSB0:/dev/ttyUSB0" 
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: bci-frontend
+    volumes:
+      - ./frontend/src:/app/src
+    ports:
+      - "5173:5173"
+    environment:
+      - CHOKIDAR_USEPOLLING=true # Fix for hot reload on some systems
+    networks:
+      - bci-network
+    depends_on:
+      - backend
+
+networks:
+  bci-network:
+    driver: bridge

@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BioSignal Live Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #0f3460 100%);
+            color: #fff;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            border-left: 4px solid #00d4ff;
+        }
+
+        header h1 {
+            font-size: 2.5em;
+            margin-bottom: 5px;
+            color: #00d4ff;
+        }
+
+        header p {
+            color: #aaa;
+            font-size: 0.9em;
+        }
+
+        .status-bar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .status-item {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 3px solid #00d4ff;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .status-item label {
+            font-size: 0.85em;
+            color: #aaa;
+        }
+
+        .status-item .value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #00d4ff;
+        }
+
+        .status-item.disconnected .value {
+            color: #ff4444;
+        }
+
+        .status-item.connected .value {
+            color: #00ff00;
+        }
+
+        .channels-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .channel-card {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(0, 212, 255, 0.3);
+            border-radius: 10px;
+            padding: 20px;
+            transition: all 0.3s ease;
+        }
+
+        .channel-card:hover {
+            border-color: rgba(0, 212, 255, 0.7);
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.2);
+        }
+
+        .channel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(0, 212, 255, 0.2);
+        }
+
+        .channel-name {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #00d4ff;
+        }
+
+        .channel-type {
+            display: inline-block;
+            padding: 4px 12px;
+            background: rgba(0, 212, 255, 0.2);
+            border: 1px solid #00d4ff;
+            border-radius: 20px;
+            font-size: 0.8em;
+            color: #00d4ff;
+        }
+
+        .channel-value {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 6px;
+        }
+
+        .value-label {
+            color: #aaa;
+            font-size: 0.9em;
+        }
+
+        .value-display {
+            font-size: 1.4em;
+            font-weight: bold;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 200px;
+            margin-top: 15px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .canvas-placeholder {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .console-log {
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(0, 212, 255, 0.2);
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 30px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .console-entry {
+            margin: 3px 0;
+            padding: 2px 5px;
+        }
+
+        .console-entry.error {
+            color: #ff4444;
+        }
+
+        .console-entry.success {
+            color: #00ff00;
+        }
+
+        .console-entry.info {
+            color: #00d4ff;
+        }
+
+        .console-entry.warning {
+            color: #ffaa00;
+        }
+
+        .connection-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 5px;
+            animation: pulse 2s infinite;
+        }
+
+        .connection-indicator.connected {
+            background: #00ff00;
+            box-shadow: 0 0 10px #00ff00;
+        }
+
+        .connection-indicator.disconnected {
+            background: #ff4444;
+            animation: none;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .grid-2 {
+                grid-template-columns: 1fr;
+            }
+
+            .channels-grid {
+                grid-template-columns: 1fr;
+            }
+
+            header h1 {
+                font-size: 1.8em;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>🧠 BioSignal Live Dashboard</h1>
+            <p>Real-time biometric signal visualization via WebSocket</p>
+        </header>
+
+        <div class="status-bar">
+            <div class="status-item" id="connection-status">
+                <div>
+                    <div class="connection-indicator disconnected"></div>
+                    <label>Connection</label>
+                </div>
+                <div class="value">Disconnected</div>
+            </div>
+
+            <div class="status-item">
+                <label>Streams Connected</label>
+                <div class="value" id="stream-count">0</div>
+            </div>
+
+            <div class="status-item">
+                <label>Data Updates</label>
+                <div class="value" id="update-count">0</div>
+            </div>
+
+            <div class="status-item">
+                <label>Last Update</label>
+                <div class="value" id="last-update">--</div>
+            </div>
+        </div>
+
+        <div class="channels-grid" id="channels-container">
+            <div style="grid-column: 1/-1; text-align: center; color: #666; padding: 40px;">
+                ⏳ Waiting for data...
+            </div>
+        </div>
+
+        <div class="console-log">
+            <div style="color: #00d4ff; margin-bottom: 10px; font-weight: bold;">📋 Connection Log</div>
+            <div id="console"></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script>
+        const CONFIG = {
+            LSL_TIMEOUT: 3000,
+            UPDATE_INTERVAL: 50,
+            BUFFER_SIZE: 512,
+            CONSOLE_MAX_LINES: 100
+        };
+
+        let state = {
+            connected: false,
+            updateCount: 0,
+            streams: {},
+            mapping: {},
+            buffers: {}
+        };
+
+        // ==================== Console Logging ====================
+        function log(message, type = 'info') {
+            const console_elem = document.getElementById('console');
+            const entry = document.createElement('div');
+            entry.className = `console-entry ${type}`;
+
+            const time = new Date().toLocaleTimeString();
+            entry.textContent = `[${time}] ${message}`;
+
+            console_elem.appendChild(entry);
+
+            // Keep only last N lines
+            const entries = console_elem.querySelectorAll('.console-entry');
+            if (entries.length > CONFIG.CONSOLE_MAX_LINES) {
+                entries[0].remove();
+            }
+
+            // Auto-scroll to bottom
+            console_elem.parentElement.scrollTop = console_elem.parentElement.scrollHeight;
+
+            // Also log to browser console
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+
+        // ==================== UI Updates ====================
+        function updateConnectionStatus(connected) {
+            state.connected = connected;
+            const status = document.getElementById('connection-status');
+            const indicator = status.querySelector('.connection-indicator');
+
+            if (connected) {
+                indicator.classList.remove('disconnected');
+                indicator.classList.add('connected');
+                status.querySelector('.value').textContent = 'Connected';
+                status.classList.add('connected');
+                status.classList.remove('disconnected');
+                log('✅ Connected to WebSocket server', 'success');
+            } else {
+                indicator.classList.remove('connected');
+                indicator.classList.add('disconnected');
+                status.querySelector('.value').textContent = 'Disconnected';
+                status.classList.add('disconnected');
+                status.classList.remove('connected');
+                log('❌ Disconnected from server', 'error');
+            }
+        }
+
+        function renderChannels() {
+            const container = document.getElementById('channels-container');
+
+            if (Object.keys(state.mapping).length === 0) {
+                container.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #666; padding: 40px;">📡 No channels mapped yet</div>';
+                return;
+            }
+
+            container.innerHTML = '';
+
+            for (const stream_name in state.streams) {
+                const stream_data = state.streams[stream_name];
+                const channel_count = stream_data.channel_count || 0;
+
+                // Extract channel type from stream name
+                let channel_type = 'UNKNOWN';
+                if (stream_name.includes('EMG')) channel_type = 'EMG';
+                else if (stream_name.includes('EOG')) channel_type = 'EOG';
+                else if (stream_name.includes('EEG')) channel_type = 'EEG';
+
+                const card = document.createElement('div');
+                card.className = 'channel-card';
+                card.id = `channel-${stream_name}`;
+
+                let valuesHTML = '';
+                if (stream_data.values && Array.isArray(stream_data.values)) {
+                    stream_data.values.forEach((val, idx) => {
+                        valuesHTML += `
+                            <div class="channel-value">
+                                <span class="value-label">Channel ${idx}</span>
+                                <span class="value-display">${val.toFixed(2)} µV</span>
+                            </div>
+                        `;
+                    });
+                }
+
+                const timestamp = new Date(stream_data.timestamp * 1000).toLocaleTimeString();
+
+                card.innerHTML = `
+                    <div class="channel-header">
+                        <div class="channel-name">${channel_type}</div>
+                        <div class="channel-type">${channel_count} Channel${channel_count !== 1 ? 's' : ''}</div>
+                    </div>
+                    
+                    <div class="channel-value">
+                        <span class="value-label">Sample Rate</span>
+                        <span class="value-display">${stream_data.sample_rate} Hz</span>
+                    </div>
+                    
+                    ${valuesHTML}
+                    
+                    <div class="channel-value">
+                        <span class="value-label">Last Update</span>
+                        <span class="value-display" style="font-size: 0.9em;">${timestamp}</span>
+                    </div>
+                    
+                    <div class="chart-container">
+                        <div class="canvas-placeholder">📊 Chart visualization (live data)</div>
+                    </div>
+                `;
+
+                container.appendChild(card);
+            }
+        }
+
+        function updateStats() {
+            document.getElementById('update-count').textContent = state.updateCount;
+            document.getElementById('stream-count').textContent = Object.keys(state.streams).length;
+
+            const now = new Date();
+            document.getElementById('last-update').textContent = now.toLocaleTimeString();
+        }
+
+        // ==================== WebSocket Events ====================
+        const socket = io();
+
+        socket.on('connect', () => {
+            updateConnectionStatus(true);
+            log('WebSocket connected to server', 'success');
+            state.updateCount = 0;
+        });
+
+        socket.on('disconnect', () => {
+            updateConnectionStatus(false);
+            log('WebSocket disconnected from server', 'error');
+        });
+
+        socket.on('initial_mapping', (data) => {
+            state.mapping = data.mapping;
+            log(`📍 Received mapping: ${Object.keys(data.mapping).length} channels`, 'info');
+            console.log('Mapping:', state.mapping);
+        });
+
+        socket.on('bio_data_update', (data) => {
+            if (!data || !data.data) return;
+
+            state.streams = data.data;
+            state.mapping = data.mapping || state.mapping;
+            state.updateCount++;
+
+            // Update UI
+            renderChannels();
+            updateStats();
+        });
+
+        socket.on('mapping_update', (data) => {
+            state.mapping = data.mapping;
+            log('🔄 Mapping updated', 'info');
+            renderChannels();
+        });
+
+        socket.on('data_update', (data) => {
+            if (!data || !data.data) return;
+
+            state.streams = data.data;
+            state.updateCount++;
+
+            renderChannels();
+            updateStats();
+        });
+
+        socket.on('subscribed', (data) => {
+            log(`✅ Subscribed to ${data.stream}`, 'success');
+        });
+
+        socket.on('error', (error) => {
+            log(`⚠️ WebSocket error: ${error}`, 'error');
+        });
+
+        // ==================== Initialization ====================
+        window.addEventListener('load', () => {
+            log('🚀 BioSignal Dashboard loaded', 'success');
+            log('⏳ Connecting to WebSocket server...', 'info');
+
+            // Request mapping from server
+            setTimeout(() => {
+                socket.emit('request_mapping');
+            }, 500);
+        });
+
+        // Request data updates periodically (fallback if WebSocket not working)
+        setInterval(() => {
+            if (state.connected) {
+                socket.emit('request_data');
+            }
+        }, CONFIG.UPDATE_INTERVAL);
+
+        // Health check
+        setInterval(() => {
+            if (!state.connected && socket.connected) {
+                updateConnectionStatus(true);
+            }
+        }, 2000);
+    </script>
+</body>
+
+</html>

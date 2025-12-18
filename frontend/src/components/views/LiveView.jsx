@@ -1,221 +1,320 @@
-import React, { useState, useEffect, useMemo } from 'react'
+// LiveView.jsx (updated)
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import SignalChart from '../charts/SignalChart'
 
-/**
- * LiveView (Python-WS streaming) with multi-channel EEG support.
- * - EEG buffer is stored per-channel: eegByChannel = { 0: [{time,value}, ...], 1: [...] }
- * - UI: Single-channel (choose index) or Overlay all channels
- */
+export default function LiveView({ wsData, wsEvent, config, isPaused }) {
+  const timeWindowMs = config?.display?.timeWindowMs || 10000
+  const samplingRate = config?.sampling_rate || 250
+  const showGrid = config?.display?.showGrid ?? true
+  const channelMapping = config?.channel_mapping || {}
+  const numChannels = config?.num_channels || 2
 
-export default function LiveView({ wsData }) {
-  // per-channel buffers for EEG, single buffers for EOG/EMG
-  const [eegByChannel, setEegByChannel] = useState({}) // {chIndex: [{time,value}, ...]}
-  const [eogData, setEogData] = useState([])
-  const [emgData, setEmgData] = useState([])
+  const [ch0Data, setCh0Data] = useState([])
+  const [ch1Data, setCh1Data] = useState([])
+  const [ch2Data, setCh2Data] = useState([])
+  const [ch3Data, setCh3Data] = useState([])
+  const [scannerX, setScannerX] = useState(null)
+  const [scannerPercent, setScannerPercent] = useState(0)
 
-  // UI controls
-  const [timeWindowMs, setTimeWindowMs] = useState(10000) // 10s
-  const [isPaused, setIsPaused] = useState(false)
-  const [displayMode, setDisplayMode] = useState('single') // 'single' | 'overlay'
-  const [selectedChannel, setSelectedChannel] = useState(0)
-
-  // limits
-  const MAX_POINTS_PER_MESSAGE = 120
-  const MAX_POINTS_PER_CHANNEL = 50000
-
-  // helper to push per-channel and trim by time window
-  const pushChannelPoints = (chIdx, pts) => {
-    setEegByChannel(prev => {
-      const current = prev[chIdx] ?? []
-      const merged = [...current, ...pts]
-      const lastTs = merged.length ? merged[merged.length - 1].time : Date.now()
-      const cutoff = lastTs - timeWindowMs
-      const trimmed = merged.filter(p => p.time >= cutoff)
-      if (trimmed.length > MAX_POINTS_PER_CHANNEL) return { ...prev, [chIdx]: trimmed.slice(-MAX_POINTS_PER_CHANNEL) }
-      return { ...prev, [chIdx]: trimmed }
-    })
+  const addDataPoint = (dataArray, newPoint, maxAge) => {
+    const now = newPoint.time
+    const filtered = dataArray.filter(p => (now - p.time) < maxAge)
+    return [...filtered, newPoint]
   }
-
-  const pushSingleByTimeWindow = (setter, pts) => {
-    setter(prev => {
-      if (!pts || pts.length === 0) return prev
-      const merged = [...prev, ...pts]
-      const lastTs = merged.length ? merged[merged.length - 1].time : Date.now()
-      const cutoff = lastTs - timeWindowMs
-      const sliced = merged.filter(p => p.time >= cutoff)
-      if (sliced.length > MAX_POINTS_PER_CHANNEL) return sliced.slice(-MAX_POINTS_PER_CHANNEL)
-      return sliced
-    })
-  }
-
-  // compute known EEG channel count from buffer keys
-  const knownEegChannels = useMemo(() => {
-    return Object.keys(eegByChannel).map(k => Number(k)).sort((a, b) => a - b)
-  }, [eegByChannel])
 
   useEffect(() => {
     if (!wsData || isPaused) return
 
     let payload = null
     try {
-      const jsonText = typeof wsData === 'string' ? wsData : (wsData.data ?? null)
-      if (!jsonText) return
-      payload = JSON.parse(jsonText)
-    } catch (err) {
-      console.error('LiveView: failed to parse wsData', err, wsData)
+      payload = wsData.raw ?? (typeof wsData === 'string' ? JSON.parse(wsData) : wsData)
+    } catch (e) {
+      console.warn('[LiveView] Failed to parse wsData:', e)
       return
     }
 
-    if (!payload || !payload.window || !Array.isArray(payload.window)) return
-    const source = (payload.source || '').toUpperCase()
-    const fs = Number(payload.fs) || 250
-    const endTs = Number(payload.timestamp) || Date.now()
-    const channels = payload.window
-    const nChannels = channels.length
-    const samples = Array.isArray(channels[0]) ? channels[0] : []
-    const n = samples.length
-    if (n === 0) return
-
-    // limit points per message
-    const stride = Math.max(1, Math.floor(n / MAX_POINTS_PER_MESSAGE))
-
-    // Build per-sample timestamps (common for all channels)
-    // sample i offset from end: (i - (n - 1))*(1000/fs)
-    const timestamps = []
-    for (let i = 0; i < n; i += stride) {
-      const offsetMs = Math.round((i - (n - 1)) * (1000 / fs))
-      timestamps.push(endTs + offsetMs)
+    if (!payload?.channels) {
+      console.warn('[LiveView] No channels in payload')
+      return
     }
 
-    // For EEG (multi-channel), create points per channel and push to per-channel buffers
-    if (source === 'EEG' || nChannels >= 8) {
-      // ensure we handle all channels even if some are missing
-      for (let ch = 0; ch < nChannels; ch++) {
-        const chSamples = Array.isArray(channels[ch]) ? channels[ch] : []
-        if (!chSamples || chSamples.length === 0) continue
-        const pts = []
-        for (let i = 0, idx = 0; i < chSamples.length; i += stride, idx++) {
-          const t = timestamps[idx] ?? (endTs - Math.round((n - 1 - i) * (1000 / fs)))
-          const v = Number(chSamples[i])
-          pts.push({ time: t, value: Number.isFinite(v) ? v : 0 })
+    // normalize timestamp (ms)
+    let incomingTs = Number(payload.timestamp)
+
+    if (!incomingTs || incomingTs < 1e9) {
+      incomingTs = Date.now()
+    }
+
+    // sample interval used to bump monotonic timestamps (in ms)
+    const sampleIntervalMs = Math.round(1000 / (samplingRate || 250))
+
+    // global incremental timestamp
+    if (!window.__lastTs) window.__lastTs = incomingTs
+    if (incomingTs <= window.__lastTs) {
+      incomingTs = window.__lastTs + sampleIntervalMs
+    }
+    window.__lastTs = incomingTs
+
+    Object.entries(payload.channels).forEach(([chIdx, chData]) => {
+      const chNum = parseInt(chIdx)
+      const chKey = `ch${chNum}`
+      const chConfig = channelMapping[chKey]
+      if (chConfig?.enabled === false) return
+
+      let value = 0
+      if (typeof chData === 'number') value = chData
+      else if (typeof chData === 'object') value = chData.value ?? chData.val ?? 0
+
+      if (!Number.isFinite(value)) return
+
+      // ensure monotonic timestamp per channel: if incomingTs <= lastTs -> bump
+      const newPointFactory = (ts) => ({ time: ts, value: Number(value) })
+
+      switch (chNum) {
+        case 0:
+          setCh0Data(prev => {
+            const lastTs = prev.length ? prev[prev.length - 1].time : (incomingTs - sampleIntervalMs)
+            const ts = incomingTs <= lastTs ? lastTs + sampleIntervalMs : incomingTs
+            return addDataPoint(prev, newPointFactory(ts), timeWindowMs)
+          })
+          break
+        case 1:
+          setCh1Data(prev => {
+            const lastTs = prev.length ? prev[prev.length - 1].time : (incomingTs - sampleIntervalMs)
+            const ts = incomingTs <= lastTs ? lastTs + sampleIntervalMs : incomingTs
+            return addDataPoint(prev, newPointFactory(ts), timeWindowMs)
+          })
+          break
+        case 2:
+          setCh2Data(prev => {
+            const lastTs = prev.length ? prev[prev.length - 1].time : (incomingTs - sampleIntervalMs)
+            const ts = incomingTs <= lastTs ? lastTs + sampleIntervalMs : incomingTs
+            return addDataPoint(prev, newPointFactory(ts), timeWindowMs)
+          })
+          break
+        case 3:
+          setCh3Data(prev => {
+            const lastTs = prev.length ? prev[prev.length - 1].time : (incomingTs - sampleIntervalMs)
+            const ts = incomingTs <= lastTs ? lastTs + sampleIntervalMs : incomingTs
+            return addDataPoint(prev, newPointFactory(ts), timeWindowMs)
+          })
+          break
+        default:
+          console.warn(`[LiveView] Ch${chNum}: Unknown channel index`)
+      }
+    })
+  }, [wsData, isPaused, timeWindowMs, channelMapping, samplingRate])
+
+  useEffect(() => {
+    const allData = [ch0Data, ch1Data, ch2Data, ch3Data].filter(d => d && d.length)
+    if (allData.length === 0) {
+      setScannerX(null)
+      setScannerPercent(0)
+      return
+    }
+
+    const oldestTs = Math.min(...allData.map(d => d[0].time))
+    const newestTs = Math.max(...allData.map(d => d[d.length - 1].time))
+    const duration = Math.max(timeWindowMs, newestTs - oldestTs || 1)
+
+    // place scanner at newestTs (right edge of visible range)
+    setScannerX(newestTs)
+
+    const posRatio = Math.min((newestTs - oldestTs) / duration, 1.0)
+    setScannerPercent(posRatio * 100)
+  }, [ch0Data, ch1Data, ch2Data, ch3Data, timeWindowMs])
+
+  const getActiveChannels = () => {
+    const active = []
+    for (let i = 0; i < numChannels; i++) {
+      const key = `ch${i}`
+      const chConfig = channelMapping[key]
+      if (chConfig?.enabled !== false) active.push(i)
+    }
+    return active
+  }
+
+  const activeChannels = useMemo(() => getActiveChannels(), [channelMapping, numChannels])
+
+  const displayCh0 = activeChannels.length > 0 ? activeChannels[0] : 0
+  const displayCh1 = activeChannels.length > 1 ? activeChannels[1] : 1
+
+  // Zoom State
+  const [zoom, setZoom] = useState(1)
+  const BASE_AMPLITUDE = 500 // uV assumed base range
+
+  // Handle Annotations (Blinks)
+  const [annotations, setAnnotations] = useState([])
+
+  useEffect(() => {
+    if (!wsEvent) return
+    if (wsEvent.event === 'BLINK') {
+      const ts = wsEvent.timestamp ? wsEvent.timestamp * 1000 : Date.now()
+      const chKey = wsEvent.channel
+      let targetData = []
+      if (chKey === 'ch0') targetData = ch0Data
+      if (chKey === 'ch1') targetData = ch1Data
+      if (chKey === 'ch2') targetData = ch2Data
+      if (chKey === 'ch3') targetData = ch3Data
+
+      const point = targetData.length > 0 ? targetData[targetData.length - 1] : { value: 0 }
+
+      setAnnotations(prev => [
+        ...prev,
+        {
+          x: ts, // absolute time, will be mapped later
+          y: point.value,
+          label: 'BLINK',
+          color: '#ef4444',
+          channel: chKey
         }
-        pushChannelPoints(ch, pts)
-      }
-    } else {
-      // non-EEG: pick first channel only
-      const samples0 = samples
-      const pts = []
-      for (let i = 0, idx = 0; i < samples0.length; i += stride, idx++) {
-        const t = timestamps[idx] ?? (endTs - Math.round((n - 1 - i) * (1000 / fs)))
-        const v = Number(samples0[i])
-        pts.push({ time: t, value: Number.isFinite(v) ? v : 0 })
-      }
-
-      if (source === 'EOG') pushSingleByTimeWindow(setEogData, pts)
-      else if (source === 'EMG') pushSingleByTimeWindow(setEmgData, pts)
-      else {
-        // heuristics: if 2 channels try EOG, else EMG fallback
-        if (nChannels === 2) pushSingleByTimeWindow(setEogData, pts)
-        else pushSingleByTimeWindow(setEmgData, pts)
-      }
+      ].slice(-20))
     }
-  }, [wsData, isPaused, timeWindowMs]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [wsEvent, ch0Data, ch1Data, ch2Data, ch3Data])
 
-  // Select data to pass to SignalChart for EEG:
-  // - single mode: pass selected channel's array as `data`
-  // - overlay mode: pass entire eegByChannel as `byChannel`
-  const eegChartProp = useMemo(() => {
-    if (displayMode === 'overlay') {
-      return { byChannel: eegByChannel }
-    } else {
-      // ensure selectedChannel exists; if not, pick lowest existing
-      const ch = Number(selectedChannel)
-      if (eegByChannel[ch]) return { data: eegByChannel[ch] }
-      const keys = Object.keys(eegByChannel)
-      if (keys.length === 0) return { data: [] }
-      const fallback = Number(keys[0])
-      return { data: eegByChannel[fallback] ?? [] }
+  useEffect(() => {
+    const now = Date.now()
+    setAnnotations(prev => prev.filter(a => (now - a.x) < timeWindowMs))
+  }, [timeWindowMs, ch0Data]) // Clean up
+
+  const getChannelData = (chIndex) => {
+    switch (chIndex) {
+      case 0: return ch0Data
+      case 1: return ch1Data
+      case 2: return ch2Data
+      case 3: return ch3Data
+      default: return []
     }
-  }, [displayMode, selectedChannel, eegByChannel])
+  }
+
+  // --- SWEEP TRANSFORM LOGIC (Dual Segment) ---
+  const processSweep = (data, windowMs) => {
+    if (!data || data.length === 0) return { active: [], history: [], scanner: null, latestTs: 0 }
+    const latestTs = data[data.length - 1].time
+    const scannerPos = latestTs % windowMs
+
+    const active = []  // Newest data (0 -> Scanner)
+    const history = [] // Oldest data (Scanner -> Window)
+
+    // Split based on scanner position
+    // We map 0..Window.
+    // Logic: If (originalTime > latestTs - scannerPos), it belongs to Active (New) segment? 
+    // Yes.
+    // Example: Window 10, LastTS 25. Scanner 5.
+    // Active range: 20..25. (Maps to 0..5).
+    // History range: 15..20. (Maps to 5..10).
+
+    // Actually, simpler: just map everything to modulo, then bucket by X position relative to Scanner?
+    // No, overlapping X is possible if we have > Window data.
+    // Robust way: Filter by Absolute Time.
+
+    const cycleStartTs = latestTs - scannerPos // The time corresponding to X=0 in the current sweep
+    // Any point >= cycleStartTs is ACTIVE (0..Scanner).
+    // Any point < cycleStartTs is HISTORY (Scanner..Window).
+
+    data.forEach(d => {
+      const mappedTime = d.time % windowMs
+      // We only care about data within [latestTs - windowMs, latestTs]
+      if (d.time > (latestTs - windowMs)) {
+        if (d.time >= cycleStartTs) {
+          active.push({ ...d, time: mappedTime })
+        } else {
+          history.push({ ...d, time: mappedTime })
+        }
+      }
+    })
+
+    // Sort each segment by X (mappedTime) for correct line drawing
+    active.sort((a, b) => a.time - b.time)
+    history.sort((a, b) => a.time - b.time)
+
+    return { active, history, scanner: scannerPos, latestTs }
+  }
+
+  // Get Sensor Names safely from config or defaults
+  const sensorName1 = channelMapping[`ch${displayCh0}`]?.name || `Channel ${displayCh0}`
+  const sensorName2 = channelMapping[`ch${displayCh1}`]?.name || `Channel ${displayCh1}`
+
+  const rawData1 = getChannelData(displayCh0)
+  const rawData2 = getChannelData(displayCh1)
+
+  const sweep1 = processSweep(rawData1, timeWindowMs)
+  const sweep2 = processSweep(rawData2, timeWindowMs)
+
+  // Map annotations to sweep
+  const mapAnn = (anns, windowMs) => anns.map(a => ({
+    ...a,
+    origX: a.x,
+    x: a.x % windowMs
+  }))
 
   return (
-    <div className="space-y-4">
-      <div className="bg-white rounded-lg shadow p-4">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <div className="flex gap-2 items-center">
+    <div className="w-full h-full flex flex-col gap-4 p-4 bg-bg rounded-lg overflow-auto">
+      {/* Controls */}
+      <div className="flex items-center gap-4 bg-surface border border-border p-2 rounded-lg backdrop-blur-sm">
+        <div className="text-sm font-bold text-text">Vertical Zoom:</div>
+        <div className="flex gap-2">
+          {[1, 2, 3, 5, 10].map(z => (
             <button
-              onClick={() => setIsPaused(!isPaused)}
-              className={`px-4 py-2 rounded-lg font-medium ${isPaused ? 'bg-green-600' : 'bg-yellow-600'} text-white`}
+              key={z}
+              onClick={() => setZoom(z)}
+              className={`px-3 py-1 text-xs rounded font-bold transition-all ${zoom === z
+                ? 'bg-primary text-white shadow-lg scale-105'
+                : 'bg-surface hover:bg-white/10 text-muted hover:text-text border border-border'
+                }`}
             >
-              {isPaused ? '▶ Resume' : '⏸ Pause'}
+              {z}x
             </button>
-
-            <label className="text-sm text-gray-600 ml-2">Time window:</label>
-            <select
-              value={timeWindowMs}
-              onChange={(e) => setTimeWindowMs(Number(e.target.value))}
-              className="px-3 py-2 border border-gray-300 rounded-lg"
-            >
-              <option value={5000}>5 s</option>
-              <option value={10000}>10 s</option>
-              <option value={30000}>30 s</option>
-              <option value={60000}>60 s</option>
-            </select>
-          </div>
-
-          <div className="flex gap-4 items-center">
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium">EEG Display:</label>
-              <label className="flex items-center gap-1">
-                <input
-                  type="radio"
-                  name="displayMode"
-                  value="single"
-                  checked={displayMode === 'single'}
-                  onChange={() => setDisplayMode('single')}
-                />
-                <span className="text-sm ml-1">Single</span>
-              </label>
-              <label className="flex items-center gap-1">
-                <input
-                  type="radio"
-                  name="displayMode"
-                  value="overlay"
-                  checked={displayMode === 'overlay'}
-                  onChange={() => setDisplayMode('overlay')}
-                />
-                <span className="text-sm ml-1">Overlay all</span>
-              </label>
-            </div>
-
-            <div>
-              <label className="text-sm text-gray-600 mr-2">Channel:</label>
-              <select
-                value={selectedChannel}
-                onChange={(e) => setSelectedChannel(Number(e.target.value))}
-                className="px-2 py-1 border rounded"
-                disabled={displayMode === 'overlay'}
-              >
-                {knownEegChannels.length === 0 && <option value={0}>0</option>}
-                {knownEegChannels.map(ch => (
-                  <option key={ch} value={ch}>Ch {ch}</option>
-                ))}
-              </select>
-            </div>
-          </div>
+          ))}
+        </div>
+        <div className="text-xs text-muted ml-auto font-mono">
+          Scanning {timeWindowMs / 1000}s Window
         </div>
       </div>
 
-      <SignalChart
-        title="EEG - Brain Waves"
-        color="#3b82f6"
-        timeWindowMs={timeWindowMs}
-        {...eegChartProp}
-        channelLabelPrefix="Ch"
-      />
+      <div className="flex-1 min-h-0">
+        <div className="mb-2 text-sm font-semibold text-muted flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+          Channel {displayCh0} - {sensorName1}
+        </div>
+        <SignalChart
+          title={`${sensorName1}`}
+          byChannel={{ active: sweep1.active, history: sweep1.history }}
+          channelColors={{ active: 'rgb(59, 130, 246)', history: 'rgba(59, 130, 246, 0.3)' }}
+          timeWindowMs={timeWindowMs}
+          color="rgb(59, 130, 246)"
+          height={250}
+          showGrid={showGrid}
+          scannerX={sweep1.scanner}
+          annotations={mapAnn(annotations.filter(a => a.channel === `ch${displayCh0}`), timeWindowMs)}
+          yDomainProp={[-BASE_AMPLITUDE / zoom, BASE_AMPLITUDE / zoom]}
+        />
+      </div>
 
-      <SignalChart title="EOG - Eye Movement" data={eogData} color="#10b981" timeWindowMs={timeWindowMs} />
-      <SignalChart title="EMG - Muscle Activity" data={emgData} color="#f59e0b" timeWindowMs={timeWindowMs} />
+      <div className="flex-1 min-h-0">
+        <div className="mb-2 text-sm font-semibold text-muted flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+          Channel {displayCh1} - {sensorName2}
+        </div>
+        <SignalChart
+          title={`${sensorName2}`}
+          byChannel={{ active: sweep2.active, history: sweep2.history }}
+          channelColors={{ active: 'rgb(16, 185, 129)', history: 'rgba(16, 185, 129, 0.3)' }}
+          timeWindowMs={timeWindowMs}
+          color="rgb(16, 185, 129)"
+          height={250}
+          showGrid={showGrid}
+          scannerX={sweep2.scanner}
+          annotations={mapAnn(annotations.filter(a => a.channel === `ch${displayCh1}`), timeWindowMs)}
+          yDomainProp={[-BASE_AMPLITUDE / zoom, BASE_AMPLITUDE / zoom]}
+        />
+      </div>
+
+      <div className="bg-surface/50 border border-border rounded p-3 text-xs text-muted font-mono space-y-1">
+        {/* Footer Info */}
+        <div><span className="text-primary">Zoom</span>: {zoom}x <span className="ml-4 text-orange-400">Range</span>: +/-{(BASE_AMPLITUDE / zoom).toFixed(0)} uV</div>
+        <div><span className="text-purple-400">Stream</span>: {wsData?.raw?.stream_name || 'Disconnected'}</div>
+      </div>
     </div>
   )
 }
