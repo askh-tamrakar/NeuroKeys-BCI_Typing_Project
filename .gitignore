@@ -1,1 +1,6 @@
-\frontend\node_modules
+logs/
+node_modules/
+**/node_modules/
+*.log
+.env
+.DS_Store

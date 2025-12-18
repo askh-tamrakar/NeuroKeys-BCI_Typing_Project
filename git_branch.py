@@ -10,26 +10,26 @@ BRANCH_HIERARCHY = {
     "develop": "master",  # Created from master
     
     # Category branches from develop
-    "sensors/": "develop",
-    "backend/": "develop",
-    "frontend/": "develop",
-    "integration/": "develop",
+    "sensors": "develop",
+    "backend": "develop",
+    "frontend": "develop",
+    "integration": "develop",
     
     # Feature branches from their category
-    "feature/eeg-bandpass": "sensors/",
-    "feature/eog-blink-detection": "sensors/",
-    "feature/emg-envelope": "sensors/",
+    "feature/eeg-bandpass": "sensors",
+    "feature/eog-blink-detection": "sensors",
+    "feature/emg-envelope": "sensors",
     
-    "feature/websocket-server": "backend/",
-    "feature/fusion-server": "backend/",
-    "feature/ml-training": "backend/",
+    "feature/websocket-server": "backend",
+    "feature/fusion-server": "backend",
+    "feature/ml-training": "backend",
     
-    "feature/live-charts": "frontend/",
-    "feature/command-visualizer": "frontend/",
-    "feature/device-config": "frontend/",
+    "feature/live-charts": "frontend",
+    "feature/command-visualizer": "frontend",
+    "feature/device-config": "frontend",
     
-    "feature/realtime-pipeline": "integration/",
-    "feature/chords-serial": "integration/",
+    "feature/realtime-pipeline": "integration",
+    "feature/chords-serial": "integration",
 }
 
 
@@ -269,14 +269,6 @@ def main():
           ├─ feature/realtime-pipeline
           └─ feature/chords-serial
     """)
-    
-    print("\n🎯 Next Steps:")
-    print("   1. Review the created branches on GitHub")
-    print("   2. Set up branch protection rules for master and develop")
-    print("   3. Configure CI/CD for develop branch")
-    print("   4. Share the branch structure with your team")
-    print("\n✅ Done!")
-
 
 if __name__ == "__main__":
     main()

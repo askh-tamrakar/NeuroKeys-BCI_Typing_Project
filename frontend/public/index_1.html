@@ -1,0 +1,656 @@
+<!doctype html>
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <title>EEG • EOG • EMG Dashboard</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root {
+      --bg: #0f1113;
+      --panel: #16181a;
+      --accent: #1f77b4;
+      --accent2: #9467bd;
+      --muted: #9aa
+    }
+
+    body {
+      font-family: Inter, Roboto, Arial, sans-serif;
+      margin: 0;
+      background: var(--bg);
+      color: #eee
+    }
+
+    header {
+      padding: 12px 18px;
+      background: linear-gradient(90deg, #0b0c0d, #121314);
+      display: flex;
+      align-items: center;
+      gap: 12px
+    }
+
+    h1 {
+      font-size: 16px;
+      margin: 0
+    }
+
+    .wrap {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 12px;
+      padding: 12px
+    }
+
+    .panel {
+      background: var(--panel);
+      padding: 12px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, .6)
+    }
+
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center
+    }
+
+    button {
+      background: #222;
+      color: #fff;
+      border: 1px solid #333;
+      padding: 6px 10px;
+      border-radius: 6px;
+      cursor: pointer
+    }
+
+    button.primary {
+      background: var(--accent)
+    }
+
+    label {
+      font-size: 12px;
+      color: var(--muted);
+      display: block;
+      margin-top: 8px
+    }
+
+    input[type=range] {
+      width: 100%
+    }
+
+    input[type=number] {
+      width: 86px;
+      padding: 6px;
+      border-radius: 6px;
+      border: 1px solid #333;
+      background: #0b0b0b;
+      color: #fff
+    }
+
+    #plot {
+      width: 100%;
+      height: 320px;
+      background: #000;
+      border-radius: 6px;
+      display: block
+    }
+
+    .metric {
+      font-size: 18px;
+      font-weight: 600
+    }
+
+    .small {
+      font-size: 12px;
+      color: var(--muted)
+    }
+
+    .modes {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px
+    }
+
+    .mode-btn {
+      flex: 1;
+      padding: 8px;
+      border-radius: 6px;
+      background: #0b0b0b;
+      text-align: center;
+      cursor: pointer
+    }
+
+    .active {
+      outline: 2px solid rgba(31, 119, 180, 0.5)
+    }
+
+    .log {
+      height: 120px;
+      overflow: auto;
+      font-family: monospace;
+      font-size: 12px;
+      background: #050505;
+      padding: 8px;
+      border-radius: 6px;
+      margin-top: 8px
+    }
+
+    .big {
+      font-size: 22px;
+      font-weight: 700
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>EEG • EOG • EMG Dashboard</h1>
+    <small class="small">Multi-modal biosignal dashboard — WebSerial / Synthetic / Manual</small>
+  </header>
+
+  <div class="wrap">
+    <div class="panel">
+      <div class="row" style="justify-content:space-between">
+        <div>
+          <button id="btnConnect">Connect Serial</button>
+          <button id="btnStart" class="primary">Start</button>
+          <button id="btnStop">Stop</button>
+        </div>
+        <div style="text-align:right">
+          <div class="small">Mode</div>
+          <select id="mode">
+            <option value="synthetic">Synthetic</option>
+            <option value="serial">WebSerial</option>
+            <option value="manual">Manual</option>
+          </select>
+        </div>
+      </div>
+
+      <label>Sample rate (Hz)</label>
+      <input id="sampleRate" type="number" value="512" min="50" max="2000" />
+
+      <label>Display window (samples)</label>
+      <input id="windowSamples" type="number" value="1024" min="128" max="4096" />
+
+      <label>RMS / Power window (samples)</label>
+      <input id="metricWindow" type="number" value="128" min="16" max="1024" />
+
+      <label>EMG Threshold (RMS)</label>
+      <input id="thrEMG" type="range" min="0" max="2" step="0.01" value="0.25" />
+
+      <label>EEG Alpha Power Threshold</label>
+      <input id="thrEEG" type="range" min="0" max="1" step="0.01" value="0.06" />
+
+      <label>EOG Threshold (diff)</label>
+      <input id="thrEOG" type="range" min="0" max="1" step="0.01" value="0.05" />
+
+      <label>Debounce (ms) - confirm gesture</label>
+      <input id="holdMs" type="number" value="300" min="0" max="2000" />
+
+      <div style="margin-top:8px" class="row">
+        <button id="calibrate">Calibrate Baseline (1.5s)</button>
+        <button id="applyBase">Apply</button>
+        <button id="resetBtn">Reset</button>
+      </div>
+
+      <label>Manual Input (for manual mode)</label>
+      <div class="row">
+        <input id="mEmg" type="number" step="0.01" value="0.00" />
+        <input id="mEeg" type="number" step="0.01" value="0.00" />
+        <input id="mEog" type="number" step="0.01" value="0.00" />
+        <button id="pushManual">Push</button>
+      </div>
+
+      <div style="margin-top:10px">
+        <div class="small">Screens (auto-switch on detection)</div>
+        <div class="modes">
+          <div id="screenEmg" class="mode-btn">EMG</div>
+          <div id="screenEeg" class="mode-btn">EEG</div>
+          <div id="screenEog" class="mode-btn">EOG</div>
+        </div>
+      </div>
+
+      <label style="margin-top:10px">Status</label>
+      <div id="status" class="small">Idle</div>
+
+      <label style="margin-top:8px">Log</label>
+      <div id="log" class="log"></div>
+    </div>
+
+    <div class="panel">
+      <canvas id="plot"></canvas>
+
+      <div style="display:flex;gap:12px;margin-top:12px">
+        <div style="flex:1" class="panel">
+          <div class="small">EMG (RMS)</div>
+          <div id="metricEmg" class="metric">0.00</div>
+          <div class="small" style="margin-top:6px">EEG (Alpha 8–12Hz power)</div>
+          <div id="metricEeg" class="metric">0.000</div>
+          <div class="small" style="margin-top:6px">EOG (LR diff)</div>
+          <div id="metricEog" class="metric">0.00</div>
+        </div>
+
+        <div style="width:220px" class="panel">
+          <div class="small">Detected Gesture</div>
+          <div id="detected" class="big">—</div>
+          <div style="height:8px"></div>
+          <button id="forceEmg">Force EMG</button>
+          <button id="forceEeg">Force EEG</button>
+          <button id="forceEog">Force EOG</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* -------------------- Multi-modal Dashboard --------------------
+      Channels:
+        ch0 = EMG  (muscle)
+        ch1 = EEG  (brain)
+        ch2 = EOG  (eye)
+      Input formats:
+        - WebSerial: "v0,v1,v2\n" (floats)
+        - Synthetic: generated internally
+        - Manual: typed and pushed
+    -----------------------------------------------------------------*/
+
+    const btnConnect = document.getElementById('btnConnect');
+    const btnStart = document.getElementById('btnStart');
+    const btnStop = document.getElementById('btnStop');
+    const modeEl = document.getElementById('mode');
+    const statusEl = document.getElementById('status');
+    const logEl = document.getElementById('log');
+
+    const sampleRateEl = document.getElementById('sampleRate');
+    const windowSamplesEl = document.getElementById('windowSamples');
+    const metricWindowEl = document.getElementById('metricWindow');
+
+    const thrEMG = document.getElementById('thrEMG');
+    const thrEEG = document.getElementById('thrEEG');
+    const thrEOG = document.getElementById('thrEOG');
+    const holdMsEl = document.getElementById('holdMs');
+
+    const calibrateBtn = document.getElementById('calibrate');
+    const applyBaseBtn = document.getElementById('applyBase');
+    const resetBtn = document.getElementById('resetBtn');
+
+    const mEmg = document.getElementById('mEmg');
+    const mEeg = document.getElementById('mEeg');
+    const mEog = document.getElementById('mEog');
+    const pushManual = document.getElementById('pushManual');
+
+    const screenEmg = document.getElementById('screenEmg');
+    const screenEeg = document.getElementById('screenEeg');
+    const screenEog = document.getElementById('screenEog');
+
+    const plot = document.getElementById('plot');
+    const ctx = plot.getContext('2d');
+
+    const metricEmgEl = document.getElementById('metricEmg');
+    const metricEegEl = document.getElementById('metricEeg');
+    const metricEogEl = document.getElementById('metricEog');
+    const detectedEl = document.getElementById('detected');
+
+    let SAMPLE_RATE = parseInt(sampleRateEl.value);
+    let WINDOW = parseInt(windowSamplesEl.value);
+    let METRIC_WINDOW = parseInt(metricWindowEl.value);
+
+    let ch0 = new Float32Array(WINDOW).fill(0); // EMG
+    let ch1 = new Float32Array(WINDOW).fill(0); // EEG
+    let ch2 = new Float32Array(WINDOW).fill(0); // EOG
+
+    let running = false;
+    let port = null;
+    let reader = null;
+    let readLoopActive = false;
+
+    let syntheticState = 'rest';
+    let lastSynthChange = 0;
+
+    // baseline arrays
+    let base0 = 0, base1 = 0, base2 = 0;
+    let baselineSamples0 = [], baselineSamples1 = [], baselineSamples2 = [];
+
+    // detection
+    let lastGesture = null;
+    let pending = null;
+    let lastConfirm = 0;
+
+    // UI screen
+    let currentScreen = 'EMG'; // EMG / EEG / EOG
+
+    // Logging helper
+    function log(s) { logEl.innerText = `[${new Date().toLocaleTimeString()}] ${s}\n` + logEl.innerText; }
+
+    // canvas size
+    function resize() { plot.width = plot.clientWidth; plot.height = 320; }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // ----------------- WebSerial -----------------
+    btnConnect.onclick = async () => {
+      if (!('serial' in navigator)) { alert('WebSerial not supported.'); return; }
+      try {
+        port = await navigator.serial.requestPort();
+        await port.open({ baudRate: 115200 });
+        status('Serial: open');
+        log('Serial port opened');
+        readSerial();
+      } catch (e) {
+        status('Serial: failed');
+        log('Serial open error: ' + e);
+      }
+    };
+
+    async function readSerial() {
+      if (!port) return;
+      const textDecoder = new TextDecoderStream();
+      port.readable.pipeTo(textDecoder.writable);
+      reader = textDecoder.readable.getReader();
+      readLoopActive = true;
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (!value) continue;
+          const lines = value.split(/\r?\n/);
+          for (let ln of lines) {
+            ln = ln.trim();
+            if (!ln) continue;
+            const parts = ln.split(/[, ]+/);
+            if (parts.length < 3) continue;
+            const v0 = parseFloat(parts[0]);
+            const v1 = parseFloat(parts[1]);
+            const v2 = parseFloat(parts[2]);
+            if (!isNaN(v0) && !isNaN(v1) && !isNaN(v2)) pushSample(v0, v1, v2);
+          }
+        }
+      } catch (e) {
+        log('readSerial stopped: ' + e);
+      } finally {
+        readLoopActive = false;
+        try { reader.releaseLock(); } catch (e) { }
+      }
+    }
+
+    async function disconnectSerial() {
+      try { if (reader) await reader.cancel(); } catch (e) { }
+      try { if (port) await port.close(); } catch (e) { }
+      port = null; reader = null; readLoopActive = false;
+      status('Serial: closed');
+    }
+
+    // --------------- Synthetic generator ----------------
+    function syntheticTick() {
+      if (Date.now() - lastSynthChange > 700 && syntheticState === 'auto') {
+        const r = Math.random();
+        syntheticState = r < .33 ? 'rest' : (r < .66 ? 'emg' : 'eeg');
+        lastSynthChange = Date.now();
+      }
+      let v0 = 0, v1 = 0, v2 = 0;
+      if (syntheticState === 'emg') {
+        v0 = 1.2 * (0.7 + 0.5 * Math.random());
+        v1 = 0.02 * (Math.random() - 0.5);
+        v2 = 0.02 * (Math.random() - 0.5);
+      } else if (syntheticState === 'eeg') {
+        v1 = 0.6 * (0.8 + 0.4 * Math.random());
+        v0 = 0.02 * (Math.random() - 0.5);
+        v2 = 0.02 * (Math.random() - 0.5);
+      } else if (syntheticState === 'eog') {
+        v2 = (Math.random() > 0.5) ? 0.6 : -0.6;
+        v0 = 0.02 * (Math.random() - 0.5);
+        v1 = 0.02 * (Math.random() - 0.5);
+      } else {
+        v0 = 0.02 * (Math.random() - 0.5); v1 = 0.02 * (Math.random() - 0.5); v2 = 0.02 * (Math.random() - 0.5);
+      }
+      pushSample(v0, v1, v2);
+    }
+
+    // --------------- push sample ---------------
+    function pushSample(v0, v1, v2) {
+      // apply baseline subtraction and arrays shift
+      const g0 = 1.0, g1 = 1.0, g2 = 1.0;
+      v0 = (v0 - base0) * g0;
+      v1 = (v1 - base1) * g1;
+      v2 = (v2 - base2) * g2;
+
+      if (ch0.length !== WINDOW) {
+        ch0 = new Float32Array(WINDOW).fill(0);
+        ch1 = new Float32Array(WINDOW).fill(0);
+        ch2 = new Float32Array(WINDOW).fill(0);
+      }
+      // shift
+      for (let i = 0; i < WINDOW - 1; i++) { ch0[i] = ch0[i + 1]; ch1[i] = ch1[i + 1]; ch2[i] = ch2[i + 1]; }
+      ch0[WINDOW - 1] = v0;
+      ch1[WINDOW - 1] = v1;
+      ch2[WINDOW - 1] = v2;
+    }
+
+    // --------------- Manual push ---------------
+    pushManual.onclick = () => {
+      const v0 = parseFloat(mEmg.value) || 0;
+      const v1 = parseFloat(mEeg.value) || 0;
+      const v2 = parseFloat(mEog.value) || 0;
+      pushSample(v0, v1, v2);
+      log(`Manual pushed ${v0}, ${v1}, ${v2}`);
+    };
+
+    // --------------- Calibration ---------------
+    calibrateBtn.onclick = async () => {
+      status('Calibrating — relax for 1.5s');
+      baselineSamples0 = []; baselineSamples1 = []; baselineSamples2 = [];
+      const t0 = performance.now();
+      while (performance.now() - t0 < 1500) {
+        baselineSamples0.push(ch0[WINDOW - 1] || 0);
+        baselineSamples1.push(ch1[WINDOW - 1] || 0);
+        baselineSamples2.push(ch2[WINDOW - 1] || 0);
+        await new Promise(r => setTimeout(r, 25));
+      }
+      status('Baseline captured — click Apply');
+      log(`Captured ${baselineSamples0.length} baseline samples`);
+    };
+
+    applyBaseBtn.onclick = () => {
+      if (!baselineSamples0.length) { alert('No baseline recorded'); return; }
+      base0 = baselineSamples0.reduce((s, v) => s + v, 0) / baselineSamples0.length;
+      base1 = baselineSamples1.reduce((s, v) => s + v, 0) / baselineSamples1.length;
+      base2 = baselineSamples2.reduce((s, v) => s + v, 0) / baselineSamples2.length;
+      status('Baseline applied');
+      log(`Baseline: ${base0.toFixed(4)}, ${base1.toFixed(4)}, ${base2.toFixed(4)}`);
+    };
+
+    // reset
+    resetBtn.onclick = () => { ch0.fill(0); ch1.fill(0); ch2.fill(0); base0 = base1 = base2 = 0; log('Reset'); };
+
+    // --------------- small DFT for alpha (8-12Hz) ---------------
+    function alphaPower(arr, fs) {
+      // compute power in 8-12 Hz via naive DFT over last N samples (METRIC_WINDOW)
+      const N = Math.min(METRIC_WINDOW, arr.length);
+      if (N < 8) return 0;
+      const start = arr.length - N;
+      let pow = 0;
+      const twoPi = 2 * Math.PI;
+      for (let f = 8; f <= 12; f++) {
+        let re = 0, im = 0;
+        for (let n = 0; n < N; n++) {
+          const x = arr[start + n];
+          const angle = twoPi * f * n / fs;
+          re += x * Math.cos(angle);
+          im -= x * Math.sin(angle);
+        }
+        pow += (re * re + im * im) / N;
+      }
+      return pow / 5; // average across 8..12
+    }
+
+    // --------------- RMS ---------------
+    function rms(arr) {
+      const N = Math.min(METRIC_WINDOW, arr.length);
+      if (N === 0) return 0;
+      let s = 0;
+      const start = arr.length - N;
+      for (let i = start; i < arr.length; i++) { const v = arr[i] || 0; s += v * v; }
+      return Math.sqrt(s / N);
+    }
+
+    // --------------- Detection & debounce ---------------
+    function detectAndMaybeSwitch() {
+      METRIC_WINDOW = parseInt(metricWindowEl.value);
+      const emgVal = rms(ch0);
+      const eegPow = alphaPower(ch1, SAMPLE_RATE);
+      // normalized eog diff value (left-right)
+      const eogVal = (rms(ch2)); // for simplicity eog channel signed values expected
+
+      document.getElementById('metricEmg').innerText = emgVal.toFixed(3);
+      document.getElementById('metricEeg').innerText = eegPow.toFixed(4);
+      document.getElementById('metricEog').innerText = eogVal.toFixed(3);
+
+      const tEMG = parseFloat(thrEMG.value);
+      const tEEG = parseFloat(thrEEG.value);
+      const tEOG = parseFloat(thrEOG.value);
+      let gesture = null;
+      if (emgVal >= tEMG) gesture = 'EMG';
+      else if (eegPow >= tEEG) gesture = 'EEG';
+      else if (Math.abs(eogVal) >= tEOG) gesture = 'EOG';
+      else gesture = null;
+
+      // debounce
+      const now = performance.now();
+      if (gesture !== pending) {
+        pending = gesture;
+        lastConfirm = now;
+        return;
+      }
+      if (!gesture) { pending = null; return; }
+      if (now - lastConfirm >= parseInt(holdMsEl.value)) {
+        if (gesture !== lastGesture) {
+          lastGesture = gesture;
+          onGestureConfirmed(gesture);
+        }
+      }
+    }
+
+    function onGestureConfirmed(g) {
+      detectedEl.innerText = g;
+      log(`Gesture detected: ${g}`);
+      // switch screen
+      currentScreen = g;
+      highlightScreen(g);
+    }
+
+    // --------------- Screen highlight ---------------
+    function highlightScreen(g) {
+      screenEmg.classList.remove('active'); screenEeg.classList.remove('active'); screenEog.classList.remove('active');
+      if (g === 'EMG') screenEmg.classList.add('active');
+      else if (g === 'EEG') screenEeg.classList.add('active');
+      else if (g === 'EOG') screenEog.classList.add('active');
+    }
+
+    // manual force buttons
+    document.getElementById('forceEmg').onclick = () => { onGestureConfirmed('EMG'); };
+    document.getElementById('forceEeg').onclick = () => { onGestureConfirmed('EEG'); };
+    document.getElementById('forceEog').onclick = () => { onGestureConfirmed('EOG'); };
+
+    screenEmg.onclick = () => { currentScreen = 'EMG'; highlightScreen('EMG'); };
+    screenEeg.onclick = () => { currentScreen = 'EEG'; highlightScreen('EEG'); };
+    screenEog.onclick = () => { currentScreen = 'EOG'; highlightScreen('EOG'); };
+
+    // --------------- Main loop & drawing ----------------
+    let raf = null;
+    let lastTick = 0;
+
+    btnStart.onclick = () => {
+      if (running) return;
+      running = true;
+      SAMPLE_RATE = parseInt(sampleRateEl.value);
+      WINDOW = parseInt(windowSamplesEl.value);
+      METRIC_WINDOW = parseInt(metricWindowEl.value);
+      status('Running');
+      btnStart.disabled = true; btnStop.disabled = false;
+      loopTick();
+    };
+
+    btnStop.onclick = async () => {
+      running = false;
+      btnStart.disabled = false; btnStop.disabled = true;
+      status('Stopped');
+      await disconnectSerial();
+      if (raf) cancelAnimationFrame(raf);
+    };
+
+    function loopTick() {
+      if (!running) return;
+      // feed data if synthetic or nothing
+      if (modeEl.value === 'synthetic') syntheticTick();
+      // detection
+      detectAndMaybeSwitch();
+      // draw
+      drawPlot();
+      raf = requestAnimationFrame(loopTick);
+    }
+
+    // draw stacked traces
+    function drawPlot() {
+      const w = plot.width, h = plot.height;
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h);
+
+      const rows = 3;
+      const rowH = h / rows;
+      // grid
+      ctx.strokeStyle = '#111'; ctx.lineWidth = 1;
+      for (let r = 0; r < rows; r++) {
+        ctx.beginPath(); ctx.moveTo(0, (r + 0.5) * rowH); ctx.lineTo(w, (r + 0.5) * rowH); ctx.stroke();
+      }
+
+      drawChannel(ch0, '#1f77b4', 0);
+      drawChannel(ch1, '#ff7f0e', 1);
+      drawChannel(ch2, '#2ca02c', 2);
+
+      // labels
+      ctx.fillStyle = '#9aa'; ctx.font = '12px monospace';
+      ctx.fillText(`EMG (ch0) RMS: ${document.getElementById('metricEmg').innerText}`, 8, 14);
+      ctx.fillText(`EEG (ch1) Alpha: ${document.getElementById('metricEeg').innerText}`, 8, rowH + 14);
+      ctx.fillText(`EOG (ch2) Diff: ${document.getElementById('metricEog').innerText}`, 8, rowH * 2 + 14);
+
+      // indicate screen
+      ctx.fillStyle = 'rgba(255,255,255,0.03)';
+      if (currentScreen === 'EMG') ctx.fillRect(0, 0, w, rowH);
+      if (currentScreen === 'EEG') ctx.fillRect(0, rowH, w, rowH);
+      if (currentScreen === 'EOG') ctx.fillRect(0, rowH * 2, w, rowH);
+    }
+
+    function drawChannel(arr, color, idx) {
+      const w = plot.width, h = plot.height;
+      const rowH = h / 3;
+      const y0 = idx * rowH + rowH / 2;
+      ctx.strokeStyle = color; ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      const N = arr.length;
+      for (let i = 0; i < N; i++) {
+        const x = i * (w / N);
+        const v = arr[i] || 0;
+        // scale factor tuned for typical normalized signals
+        const y = y0 - v * (rowH * 0.9);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+
+    // --------------- manual Serial close when leaving ---------------
+    window.addEventListener('beforeunload', async () => {
+      try { if (reader) await reader.cancel(); } catch (e) { }
+      try { if (port) await port.close(); } catch (e) { }
+    });
+
+    // status helper
+    function status(s) { statusEl.innerText = s; }
+
+    // initial UI
+    status('Idle — choose mode and Start');
+    log('Dashboard ready');
+
+  </script>
+</body>
+
+</html>

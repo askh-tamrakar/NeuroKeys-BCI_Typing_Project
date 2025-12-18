@@ -36,3 +36,14 @@ pytest
 python-dotenv
 
 #
+PyQt5 
+pyserial
+
+flask-socketio 
+python-socketio 
+python-engineio
+
+# GUI
+PySide6>=6.4.0
+pyqtgraph>=0.13.0
+
