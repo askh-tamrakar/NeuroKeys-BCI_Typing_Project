@@ -74,3 +74,15 @@ class LSLStreamer:
                 self.outlet.push_sample(sample)
         except Exception as e:
             print(f"[LSLStreamer] push_sample error for '{self.name}': {e}")
+
+    def push_chunk(self, chunk: List[List[float]], ts: Optional[float] = None):
+        """Push a list of samples at once"""
+        if not LSL_AVAILABLE or self.outlet is None or not chunk:
+            return
+        try:
+            if ts is not None:
+                self.outlet.push_chunk(chunk, ts)
+            else:
+                self.outlet.push_chunk(chunk)
+        except Exception as e:
+            print(f"[LSLStreamer] push_chunk error for '{self.name}': {e}")

@@ -134,27 +134,32 @@ class SerialPacketReader:
                 time.sleep(0.05)
 
     def _process_buffer(self, buffer: bytearray):
-        """Process incoming buffer for valid packets"""
-        while len(buffer) >= self.packet_len:
-            if buffer[0] == self.sync1 and buffer[1] == self.sync2:
+        """Process incoming buffer for valid packets (Optimized)"""
+        i = 0
+        while i <= len(buffer) - self.packet_len:
+            if buffer[i] == self.sync1 and buffer[i+1] == self.sync2:
                 # Candidate packet
-                if buffer[self.packet_len - 1] == self.end_byte:
-                    packet_bytes = bytes(buffer[:self.packet_len])
+                if buffer[i + self.packet_len - 1] == self.end_byte:
+                    packet_bytes = bytes(buffer[i : i + self.packet_len])
                     try:
                         self.data_queue.put_nowait(packet_bytes)
                         self.packets_received += 1
                         self.last_packet_time = time.time()
                     except queue.Full:
                         self.packets_dropped += 1
-                    del buffer[:self.packet_len]
+                    i += self.packet_len
                 else:
                     # Bad end byte
-                    del buffer[0]
+                    i += 1
                     self.sync_errors += 1
             else:
                 # Not synced
-                del buffer[0]
+                i += 1
                 self.sync_errors += 1
+        
+        # Remove processed bytes in one go
+        if i > 0:
+            del buffer[:i]
 
     def get_packet(self, timeout: float = 0.1) -> Optional[bytes]:
         """Get next packet from queue"""

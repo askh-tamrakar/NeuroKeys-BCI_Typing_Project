@@ -1,12 +1,12 @@
 {
   "channel_mapping": {
     "ch0": {
-      "sensor": "EOG",
-      "enabled": true
+      "enabled": true,
+      "sensor": "EMG"
     },
     "ch1": {
-      "sensor": "EMG",
-      "enabled": true
+      "enabled": true,
+      "sensor": "EOG"
     }
   },
   "display": {

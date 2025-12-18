@@ -17,7 +17,7 @@ import json
 import os
 from pathlib import Path
 
-CONFIG_PATH = Path("src/utils/sensor_config.json")
+CONFIG_PATH = Path("./config/sensor_config.json")
 
 
 # -----------------------------------------------------
