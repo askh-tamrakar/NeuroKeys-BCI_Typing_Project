@@ -22,7 +22,7 @@ jobs:
         run: npm ci
 
       - name: Build React App
-        run: CI=false npm run build
+        run: CI=false npm create vite@latest
 
       - name: Deploy via SSH to cPanel
         uses: easingthemes/ssh-deploy@v5.0.1

@@ -492,6 +492,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ch_gens[ch].toggle_ssvep(freq if checked else None, enabled=checked)
 
     def update_port_list(self):
+        current = self.port_combo.currentText()
         self.port_combo.clear()
         ports = []
         if list_ports:
@@ -499,7 +500,15 @@ class MainWindow(QtWidgets.QMainWindow):
                 ports = [p.device for p in list_ports.comports()]
             except Exception:
                 ports = []
-        self.port_combo.addItems([""] + ports)
+        
+        all_ports = [""] + ports
+        self.port_combo.addItems(all_ports)
+        
+        # restore selection
+        if current in all_ports:
+            self.port_combo.setCurrentText(current)
+        elif self.port in all_ports:
+            self.port_combo.setCurrentText(self.port)
 
     def _build_plot(self):
         # rolling buffers for plotting
@@ -510,9 +519,16 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_timer(self):
         # update plots from buffers
-        # show only latest plot_len points
-        self.curve0.setData(self.buf0)
-        self.curve1.setData(self.buf1)
+        if self.ptr == 0:
+            data0 = self.buf0
+            data1 = self.buf1
+        else:
+            data0 = np.concatenate((self.buf0[self.ptr:], self.buf0[:self.ptr]))
+            data1 = np.concatenate((self.buf1[self.ptr:], self.buf1[:self.ptr]))
+        
+        self.curve0.setData(data0)
+        self.curve1.setData(data1)
+        
         # apply manual Y limits if needed
         if not self.autoscale_chk.isChecked():
             try:
@@ -534,6 +550,9 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, "Invalid", "Please enter valid baud and sample rate")
             return
 
+        # re-initialize plot buffers with new sample rate if it changed
+        self._build_plot()
+
         # update generator rates
         for g in self.ch_gens:
             g.set_rate(self.sample_rate)
@@ -547,7 +566,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.streaming = True
         self.btn_start.setEnabled(False)
         self.btn_stop.setEnabled(True)
-        self.log("Streaming started")
+        self.log(f"Streaming started on {self.port if self.port else 'LOOPBACK'}")
         # start pushing samples from generator loop (already running)
 
     def stop_stream(self):
@@ -585,8 +604,10 @@ class MainWindow(QtWidgets.QMainWindow):
             # map normalized [-1..1] -> 14-bit ADC
             a0 = int(round(((v0 + 1.0) / 2.0) * ADC_MAX))
             a1 = int(round(((v1 + 1.0) / 2.0) * ADC_MAX))
-            # push to plot buffers
-            self._append_plot(a0 / ADC_MAX * 2 - 1, a1 / ADC_MAX * 2 - 1)  # scale back to -1..1 for plot
+            
+            # push to plot buffers (scale back to -1..1 for plot)
+            self._append_plot(v0, v1)
+            
             # enqueue for serial writer if streaming
             if self.streaming and self.serial_writer:
                 try:
@@ -600,17 +621,20 @@ class MainWindow(QtWidgets.QMainWindow):
             next_target = origin + frame / max(1.0, self.sample_rate)
             sleep_time = next_target - time.perf_counter()
             if sleep_time > 0:
+                # If sleep_time is large, sleep in small increments to maintain responsiveness
+                # or just sleep if it's small enough.
                 time.sleep(sleep_time)
             else:
                 # behind — continue without sleeping to catch up
-                pass
+                # but limit catch-up to avoid freezing if real-time is impossible
+                if frame % 100 == 0:
+                    time.sleep(0.001)
 
     def _append_plot(self, v0, v1):
-        # shift buffers circularly
-        self.buf0 = np.roll(self.buf0, -1)
-        self.buf1 = np.roll(self.buf1, -1)
-        self.buf0[-1] = v0
-        self.buf1[-1] = v1
+        # Insert at current pointer
+        self.buf0[self.ptr] = v0
+        self.buf1[self.ptr] = v1
+        self.ptr = (self.ptr + 1) % self.plot_len
 
     def log(self, s):
         now = datetime.now().strftime("%H:%M:%S")
