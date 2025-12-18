@@ -167,112 +167,13 @@
   .dino-pixel-overlay { left: 10px; top: 10px; font-size:12px; }
 }
 
-.eye-tracker {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: 0 10px 30px var(--shadow);
-    padding: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 15px;
+/* Hide scrollbar for Chrome, Safari and Opera */
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
 }
 
-.eye-tracker h3 {
-    margin: 0;
-    font-size: 16px;
-    color: var(--text);
-    font-weight: bold;
+/* Hide scrollbar for IE, Edge and Firefox */
+.no-scrollbar {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
 }
-
-.eyes-container {
-    display: flex;
-    gap: 20px;
-    justify-content: center;
-    margin: 15px 0;
-}
-
-.eye {
-    width: 80px;
-    height: 80px;
-    border-radius: 50%;
-    background: var(--bg);
-    border: 2px solid var(--primary);
-    position: relative;
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.pupil {
-    width: 30px;
-    height: 30px;
-    background: var(--text);
-    border-radius: 50%;
-    position: absolute;
-}
-
-.eye.blink .pupil {
-    animation: eyeBlink 0.3s ease-in-out;
-}
-
-@keyframes eyeBlink {
-    0% {
-        height: 30px;
-        opacity: 1;
-    }
-
-    50% {
-        height: 2px;
-        opacity: 0.3;
-    }
-
-    100% {
-        height: 30px;
-        opacity: 1;
-    }
-}
-
-.eye.double-blink .pupil {
-    animation: doubleBlink 0.6s ease-in-out;
-}
-
-@keyframes doubleBlink {
-    0%,
-    100% {
-        height: 30px;
-        opacity: 1;
-    }
-
-    25% {
-        height: 2px;
-        opacity: 0.3;
-    }
-
-    50% {
-        height: 30px;
-        opacity: 1;
-    }
-
-    75% {
-        height: 2px;
-        opacity: 0.3;
-    }
-}
-
-.blink-info {
-    background: var(--bg);
-    border-radius: 8px;
-    padding: 12px;
-    font-size: 13px;
-    color: var(--muted);
-    line-height: 1.6;
-}
-
-.blink-info strong {
-    color: var(--primary);
-}
-
-/* Optional: when canvas container is shown, make it crisp */
-.canvas { background: transparent; }

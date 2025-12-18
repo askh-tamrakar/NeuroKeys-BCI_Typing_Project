@@ -6,9 +6,6 @@ import LiveDashboard from '../views/LiveDashboard'
 import CommandVisualizer from '../views/CommandVisualizer'
 import RecordingsView from '../views/RecordingsView'
 import DevicesView from '../views/DevicesView'
-//import ChatView from '../views/ChatView'
-//import SettingsView from '../views/SettingsView'
-//import TestView from '../views/TestView'
 import DinoView from '../views/DinoView'
 import SSVEPView from '../views/SSVEPView'
 
@@ -183,7 +180,7 @@ export default function Dashboard() {
       </div>
 
       {/* Footer */}
-      <div className="footer">
+      {/* <div className="footer">
         NeuroKeys: BCI Typing Project •{' '}
         <a onClick={() => setAuthView('signup')} className="muted" href="#signup" rel="noreferrer">
           Sign Up
@@ -197,7 +194,7 @@ export default function Dashboard() {
         >
           GitHub
         </a>
-      </div>
+      </div> */}
     </div>
   );
 }

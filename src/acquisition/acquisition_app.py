@@ -602,65 +602,58 @@ class AcquisitionApp:
         messagebox.showinfo("Saved", f"Saved {len(self.session_data)} packets to {filepath}")
 
     def main_loop(self):
-        """Main acquisition and update loop"""
+        """Main acquisition and update loop (Optimized)"""
         try:
             if self.is_acquiring and not self.is_paused and self.serial_reader:
-                # Drain queued packets
+                # 1. Collect all packets currently in queue
+                batch_raw = []
                 while True:
-                    pkt_bytes = self.serial_reader.get_packet(timeout=0.001)
+                    pkt_bytes = self.serial_reader.get_packet(timeout=0)
                     if pkt_bytes is None:
                         break
+                    batch_raw.append(pkt_bytes)
+                
+                if batch_raw:
+                    # 2. Batch parse
+                    ctrs, r0, r1 = self.packet_parser.parse_batch(batch_raw)
                     
-                    try:
-                        pkt = self.packet_parser.parse(pkt_bytes)
-                    except Exception as e:
-                        print(f"Parse error: {e}")
-                        continue
+                    # 3. Convert to uV
+                    u0 = adc_to_uv(r0)
+                    u1 = adc_to_uv(r1)
                     
-                    # Duplicate check
-                    if self.last_packet_counter is not None:
-                        if pkt.counter == self.last_packet_counter:
+                    # 4. Push to LSL in chunk
+                    if LSL_AVAILABLE and self.lsl_raw_uV:
+                        chunk = np.column_stack((u0, u1)).tolist()
+                        self.lsl_raw_uV.push_chunk(chunk)
+                    
+                    # 5. Update buffers efficiently
+                    n = len(u0)
+                    for i in range(n):
+                        # Simple duplicate check (last counter)
+                        if self.last_packet_counter == ctrs[i]:
                             continue
-                    
-                    self.last_packet_counter = pkt.counter
-                    
-                    # Convert to µV
-                    ch0_uv = adc_to_uv(pkt.ch0_raw)
-                    ch1_uv = adc_to_uv(pkt.ch1_raw)
-                    
-                    # Push to LSL
-                    if LSL_AVAILABLE:
-                        if self.lsl_raw_uV:
-                            self.lsl_raw_uV.push_sample([ch0_uv, ch1_uv], None)
-                    
-                    # Add to buffers
-                    self.ch0_buffer[self.buffer_ptr] = ch0_uv
-                    self.ch1_buffer[self.buffer_ptr] = ch1_uv
-                    self.buffer_ptr = (self.buffer_ptr + 1) % self.buffer_size
-                    
-                    # # Record if enabled
-                    if self.is_recording:
-                        entry = {
-                            "timestamp": pkt.timestamp.isoformat(),
-                            "packet_seq": int(pkt.counter),
-                            "ch0_raw_adc": int(pkt.ch0_raw),
-                            "ch1_raw_adc": int(pkt.ch1_raw),
-                            "ch0_uv": float(ch0_uv),
-                            "ch1_uv": float(ch1_uv),
-                            "ch0_type": self.ch0_type,
-                            "ch1_type": self.ch1_type
-                        }
-                        self.session_data.append(entry)
+                        self.last_packet_counter = ctrs[i]
                         
-                    #     # SEND TO filter_router.py via your bridge/queue
-                    #     self._send_to_filter_router(entry)
-                    
-                    self.packet_count += 1
-            
+                        self.ch0_buffer[self.buffer_ptr] = u0[i]
+                        self.ch1_buffer[self.buffer_ptr] = u1[i]
+                        self.buffer_ptr = (self.buffer_ptr + 1) % self.buffer_size
+                        
+                        if self.is_recording:
+                            # Still using dict for now, but batching parser already saved time
+                            self.session_data.append({
+                                "packet_seq": int(ctrs[i]),
+                                "ch0_raw_adc": int(r0[i]),
+                                "ch1_raw_adc": int(r1[i]),
+                                "ch0_uv": float(u0[i]),
+                                "ch1_uv": float(u1[i])
+                            })
+                        
+                        self.packet_count += 1
+
             # Update UI labels
             self.packet_label.config(text=str(self.packet_count))
             
-            # Update plots
+            # Update plots (every 30ms call, but update_plots itself is faster now)
             self.update_plots()
         
         except Exception as e:
@@ -671,8 +664,11 @@ class AcquisitionApp:
             self.root.after(30, self.main_loop)
 
     def update_plots(self):
-        """Update the plot lines"""
+        """Update the plot lines (Optimized)"""
         try:
+            if not self.is_acquiring or self.is_paused:
+                return
+
             # Rotate buffers so latest data is on the right
             ch0_rotated = np.roll(self.ch0_buffer, -self.buffer_ptr)
             ch1_rotated = np.roll(self.ch1_buffer, -self.buffer_ptr)
@@ -681,11 +677,7 @@ class AcquisitionApp:
             self.line0.set_ydata(ch0_rotated)
             self.line1.set_ydata(ch1_rotated)
             
-            # Update titles dynamically if channel type changed
-            self.ax0.set_title(f"📍 Channel 0 ({self.ch0_type})", fontsize=12, fontweight='bold', pad=10)
-            self.ax1.set_title(f"📍 Channel 1 ({self.ch1_type})", fontsize=12, fontweight='bold', pad=10)
-            
-            # Redraw
+            # Redraw only when needed
             self.canvas.draw_idle()
         except Exception as e:
             print(f"Plot update error: {e}")
