@@ -18,6 +18,8 @@ except ImportError:
 
 from .extractors.blink_extractor import BlinkExtractor
 from .detectors.blink_detector import BlinkDetector
+from .extractors.rps_extractor import RPSExtractor
+from .detectors.rps_detector import RPSDetector
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 CONFIG_PATH = PROJECT_ROOT / "config" / "sensor_config.json"
@@ -109,7 +111,11 @@ class FeatureRouter:
                     extractor = BlinkExtractor(i, self.config, self.sr)
                     detector = BlinkDetector(self.config)
                     self.pipeline[i] = (extractor, detector)
-                # Add EEG/EMG extractors here later
+                elif sensor == "EMG":
+                    print(f" [{i}] -> EMG RPS Pipeline (Extractor + Detector)")
+                    extractor = RPSExtractor(i, self.config, self.sr)
+                    detector = RPSDetector(self.config)
+                    self.pipeline[i] = (extractor, detector)
 
     def run(self):
         self.running = True
