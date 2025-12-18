@@ -31,6 +31,6 @@ jobs:
           REMOTE_HOST: ${{ secrets.CPANEL_HOST }}
           REMOTE_USER: ${{ secrets.CPANEL_USER }}
           SOURCE: "build/"
-          TARGET: ${{ secrets.CPANEL_PATH }}
+          TARGET: ${{secrets.CPANEL_PATH}}
           ARGS: "-avz --delete"
           SSH_ARGS: "-o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
