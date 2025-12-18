@@ -5,14 +5,14 @@
       "enabled": true
     },
     "ch1": {
-      "sensor": "EOG",
+      "sensor": "EMG",
       "enabled": true
     }
   },
   "display": {
     "scannerX": 0,
     "showGrid": true,
-    "timeWindowMs": 15000
+    "timeWindowMs": 16000
   },
   "filters": {
     "EEG": {
