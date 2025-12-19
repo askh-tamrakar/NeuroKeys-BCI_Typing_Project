@@ -6,6 +6,16 @@ Feature Router
 - Output: BioSignals-Events (LSL Markers)
 """
 
+import sys
+import os
+
+# UTF-8 encoding for standard output to avoid UnicodeEncodeError in some terminals
+try:
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
+except Exception:
+    pass
+
 import time
 import json
 import threading
@@ -16,7 +26,10 @@ try:
 except ImportError:
     LSL_AVAILABLE = False
 
-from .extractors.eog import EOGExtractor
+from .extractors.blink_extractor import BlinkExtractor
+from .detectors.blink_detector import BlinkDetector
+from .extractors.rps_extractor import RPSExtractor
+from .detectors.rps_detector import RPSDetector
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 CONFIG_PATH = PROJECT_ROOT / "config" / "sensor_config.json"
@@ -42,8 +55,8 @@ class FeatureRouter:
         self.outlet = None
         self.running = False
         
-        # Map channel_index -> Extractor Instance
-        self.extractors = {} 
+        # Map channel_index -> (Extractor Instance, Detector Instance)
+        self.pipeline = {} 
         self.channel_labels = []
 
     def resolve_stream(self):
@@ -51,10 +64,10 @@ class FeatureRouter:
             print("[FeatureRouter] ❌ pylsl not installed")
             return False
 
-        print(f"[FeatureRouter] 🔍 Searching for {INPUT_STREAM_NAME}...")
-        streams = pylsl.resolve_stream('name', INPUT_STREAM_NAME)
+        print(f"[FeatureRouter] [SEARCH] Searching for {INPUT_STREAM_NAME}...")
+        streams = pylsl.resolve_byprop('name', INPUT_STREAM_NAME, timeout=5.0)
         if not streams:
-            print("[FeatureRouter] ❌ Stream not found")
+            print("[FeatureRouter] [ERROR] Stream not found")
             return False
             
         self.inlet = pylsl.StreamInlet(streams[0])
@@ -62,7 +75,7 @@ class FeatureRouter:
         self.sr = int(info.nominal_srate())
         self.parse_channels(info)
         
-        print(f"[FeatureRouter] ✅ Connected to {INPUT_STREAM_NAME} ({len(self.channel_labels)} ch @ {self.sr} Hz)")
+        print(f"[FeatureRouter] [OK] Connected to {INPUT_STREAM_NAME} ({len(self.channel_labels)} ch @ {self.sr} Hz)")
         
         # Create Event Outlet
         self.create_outlet()
@@ -75,7 +88,7 @@ class FeatureRouter:
     def create_outlet(self):
         info = pylsl.StreamInfo(OUTPUT_STREAM_NAME, 'Markers', 1, 0, 'string', 'BioEvents123')
         self.outlet = pylsl.StreamOutlet(info)
-        print(f"[FeatureRouter] 📤 Created Event Outlet: {OUTPUT_STREAM_NAME}")
+        print(f"[FeatureRouter] [OUTLET] Created Event Outlet: {OUTPUT_STREAM_NAME}")
 
     def parse_channels(self, info):
         # Simplistic parsing - relying on config mostly, but let's see what stream says
@@ -92,7 +105,7 @@ class FeatureRouter:
         self.extractors = {}
         mapping = self.config.get("channel_mapping", {})
         
-        print(f"[FeatureRouter] ⚙️ Configuring features for {self.num_channels} channels...")
+        print(f"[FeatureRouter] [CONFIG] Configuring features for {self.num_channels} channels...")
         
         for i in range(self.num_channels):
             ch_key = f"ch{i}"
@@ -104,13 +117,19 @@ class FeatureRouter:
                 sensor = info.get("sensor", "UNKNOWN")
                 
                 if sensor == "EOG":
-                    print(f" [{i}] → EOG Extractor (Blink Detection)")
-                    self.extractors[i] = EOGExtractor(i, self.config, self.sr)
-                # Add EEG/EMG extractors here later
+                    print(f" [{i}] -> EOG Blink Pipeline (Extractor + Detector)")
+                    extractor = BlinkExtractor(i, self.config, self.sr)
+                    detector = BlinkDetector(self.config)
+                    self.pipeline[i] = (extractor, detector, "EOG")
+                elif sensor == "EMG":
+                    print(f" [{i}] -> EMG RPS Pipeline (Extractor + Detector)")
+                    extractor = RPSExtractor(i, self.config, self.sr)
+                    detector = RPSDetector(self.config)
+                    self.pipeline[i] = (extractor, detector, "EMG")
 
     def run(self):
         self.running = True
-        print("[FeatureRouter] ▶️ Loop started")
+        print("[FeatureRouter] [START] Loop started")
         
         while self.running:
             try:
@@ -119,23 +138,37 @@ class FeatureRouter:
                 sample, ts = self.inlet.pull_sample(timeout=1.0)
                 
                 if sample:
-                    # Route to extractors
+                    # Route to pipeline
                     for ch_idx, val in enumerate(sample):
-                        if ch_idx in self.extractors:
-                            event = self.extractors[ch_idx].process(val)
+                        if ch_idx in self.pipeline:
+                            extractor, detector, sensor_type = self.pipeline[ch_idx]
+                            features = extractor.process(val)
                             
-                            if event:
-                                # emit event
-                                formatted_event = json.dumps({
-                                    "event": event,
-                                    "channel": f"ch{ch_idx}",
-                                    "timestamp": ts 
-                                })
-                                print(f"[FeatureRouter] ⚡ Event: {formatted_event}")
-                                self.outlet.push_sample([formatted_event])
+                            if features:
+                                detection_result = detector.detect(features)
+                                
+                                if detection_result:
+                                    # Determine event name
+                                    if sensor_type == "EOG":
+                                        event_name = "BLINK"
+                                    elif sensor_type == "EMG":
+                                        event_name = detection_result # e.g. "ROCK", "PAPER", "SCISSORS"
+                                    else:
+                                        event_name = "UNKNOWN_EVENT"
+
+                                    # emit event
+                                    event_data = {
+                                        "event": event_name,
+                                        "channel": f"ch{ch_idx}",
+                                        "timestamp": ts,
+                                        "features": features
+                                    }
+                                    formatted_event = json.dumps(event_data)
+                                    # print(f"[FeatureRouter] [EVENT] {formatted_event}")
+                                    self.outlet.push_sample([formatted_event])
 
             except Exception as e:
-                print(f"[FeatureRouter] ⚠️ Error: {e}")
+                print(f"[FeatureRouter] [WARNING] Error: {e}")
                 time.sleep(0.1)
 
 if __name__ == "__main__":

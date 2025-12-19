@@ -228,7 +228,6 @@ class AcquisitionApp:
         
         threading.Thread(target=loop, daemon=True).start()
 
-
     def update_config_from_remote(self, new_config):
         """Update UI and internal state from remote config"""
         self.config = new_config

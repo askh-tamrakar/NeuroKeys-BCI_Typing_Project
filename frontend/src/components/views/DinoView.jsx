@@ -141,16 +141,17 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
     // Handle EOG blink detection
     const handleEOGBlink = () => {
         const now = Date.now()
-        const timeSinceLastBlink = now - blinkPressTimeRef.current
+        //const timeSinceLastBlink = now - blinkPressTimeRef.current
 
-        if (timeSinceLastBlink < 500) {
-            // Double blink detected
-            handleDoublePress()
-        } else {
-            // Single blink
-            handleSinglePress()
-        }
+        // if (timeSinceLastBlink < 500) {
+        //     // Double blink detected
+        //     handleDoublePress()
+        // } else {
+        //     // Single blink
+        //     handleSinglePress()
+        // }
 
+        handleSinglePress()
         blinkPressTimeRef.current = now
     }
 

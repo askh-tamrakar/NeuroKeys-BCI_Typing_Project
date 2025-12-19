@@ -1,6 +1,6 @@
 // SignalChart.jsx
 import React, { useMemo } from 'react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceDot } from 'recharts'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceDot, ReferenceArea } from 'recharts'
 
 const DEFAULT_PALETTE = [
   '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
@@ -19,7 +19,9 @@ export default function SignalChart({
   showGrid = true,
   scannerX = null,
   annotations = [], // New Prop [{ x: timestamp, y: value, label: string, color: string }]
-  channelColors = null // New Prop { [key]: colorString }
+  channelColors = null, // New Prop { [key]: colorString }
+  markedWindows = [],
+  activeWindow = null
 }) {
   const merged = useMemo(() => {
     if (!byChannel || typeof byChannel !== 'object') {
@@ -152,6 +154,14 @@ export default function SignalChart({
     }
   }
 
+  // Helper to get color for window status (Synchronized with TimeSeriesZoomChart)
+  const getWindowColor = (status, isMissed) => {
+    if (isMissed) return 'rgba(239, 68, 68, 0.2)'; // Red
+    if (status === 'correct') return 'rgba(16, 185, 129, 0.2)'; // Green
+    if (status === 'incorrect') return 'rgba(245, 158, 11, 0.2)'; // Orange
+    return 'rgba(156, 163, 175, 0.1)'; // Gray
+  };
+
   return (
     <div className="bg-card surface-panel border border-border shadow-sm rounded-xl overflow-hidden flex flex-col h-full bg-surface">
       <div className="px-5 py-3 border-b border-border bg-bg/50 backdrop-blur-sm flex justify-between items-center">
@@ -188,6 +198,35 @@ export default function SignalChart({
             {showGrid && <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />}
             {scannerXValue !== null && (
               <ReferenceLine x={scannerXValue} stroke="var(--accent)" strokeOpacity={0.9} strokeWidth={1.5} />
+            )}
+
+            {/* Render Marked Windows */}
+            {markedWindows.map((win) => {
+              const x1 = win.startTime % timeWindowMs;
+              const x2 = win.endTime % timeWindowMs;
+              if (isNaN(x1) || isNaN(x2)) return null;
+              return (
+                <ReferenceArea
+                  key={win.id}
+                  x1={x1}
+                  x2={x2}
+                  fill={getWindowColor(win.status, win.isMissedActual)}
+                  stroke={win.isMissedActual ? '#ef4444' : (win.status === 'correct' ? '#10b981' : '#9ca3af')}
+                  strokeOpacity={0.5}
+                  label={{ position: 'top', value: win.label, fill: 'var(--muted)', fontSize: 10 }}
+                />
+              );
+            })}
+
+            {activeWindow && !isNaN(activeWindow.startTime) && !isNaN(activeWindow.endTime) && (
+              <ReferenceArea
+                x1={activeWindow.startTime % timeWindowMs}
+                x2={activeWindow.endTime % timeWindowMs}
+                fill="var(--primary)"
+                fillOpacity={0.1}
+                stroke="var(--primary)"
+                strokeDasharray="3 3"
+              />
             )}
 
             {/* Render Annotations (Blinks) */}
@@ -263,7 +302,6 @@ export default function SignalChart({
                 dot={false}
                 strokeWidth={2}
                 isAnimationActive={false}
-                fill={`url(#gradient-${title})`}
               />
             )}
           </LineChart>

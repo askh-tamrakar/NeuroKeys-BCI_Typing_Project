@@ -22,7 +22,8 @@ except Exception:
     list_ports = None
 
 APP_NAME = "SignalForge (mock device)"
-CONFIG_PATH = Path("../../config/sensor_config.json")
+# Fix path to be relative to this script location
+CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "sensor_config.json"
 SYNC1 = 0xC7
 SYNC2 = 0x7C
 END_BYTE = 0x01
@@ -251,20 +252,28 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # queue for inter-thread samples
         self.sample_queue = queue.Queue(maxsize=4096)
+        # Bounded queue for plotting to prevent UI freeze if main thread falls behind
+        self.plot_queue = queue.Queue(maxsize=1024) 
         self.serial_writer = None
-
+        
+        print(f"[{datetime.now()}] Building UI...")
         self._build_ui()
+        print(f"[{datetime.now()}] Building Plot...")
         self._build_plot()
+        print(f"[{datetime.now()}] Initial port update...")
         self.update_port_list()
+        print(f"[{datetime.now()}] Port update done. Starting timer...")
         self.timer = QtCore.QTimer()
-        self.timer.setInterval(50)  # UI refresh ~20 Hz
+        self.timer.setInterval(100)  # UI refresh ~10 Hz (relaxed)
         self.timer.timeout.connect(self._on_timer)
         self.timer.start()
 
         # generator loop in background
+        print(f"[{datetime.now()}] Starting generator thread...")
         self.gen_thread = threading.Thread(target=self._generator_loop, daemon=True)
         self._gen_stop = threading.Event()
         self.gen_thread.start()
+        print(f"[{datetime.now()}] Init complete.")
 
     def load_config(self):
         try:
@@ -496,8 +505,11 @@ class MainWindow(QtWidgets.QMainWindow):
         ports = []
         if list_ports:
             try:
+                print(f"[{datetime.now()}] calling list_ports.comports()...")
                 ports = [p.device for p in list_ports.comports()]
-            except Exception:
+                print(f"[{datetime.now()}] list_ports.comports() returned {len(ports)} ports")
+            except Exception as e:
+                print(f"[{datetime.now()}] Error listing ports: {e}")
                 ports = []
         self.port_combo.addItems([""] + ports)
 
@@ -510,9 +522,37 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_timer(self):
         # update plots from buffers
-        # show only latest plot_len points
+        if not getattr(self, "_timer_logged", False):
+            print(f"[{datetime.now()}] First _on_timer call")
+            self._timer_logged = True
+
+        # drain queue
+        new_data0 = []
+        new_data1 = []
+        while True:
+            try:
+                v0, v1 = self.plot_queue.get_nowait()
+                new_data0.append(v0)
+                new_data1.append(v1)
+            except queue.Empty:
+                break
+        
+        n = len(new_data0)
+        if n > 0:
+            # Shift buffers and append new data
+            # Doing this in main thread is safe
+            if n >= self.plot_len:
+                self.buf0 = np.array(new_data0[-self.plot_len:], dtype=float)
+                self.buf1 = np.array(new_data1[-self.plot_len:], dtype=float)
+            else:
+                self.buf0 = np.roll(self.buf0, -n)
+                self.buf1 = np.roll(self.buf1, -n)
+                self.buf0[-n:] = new_data0
+                self.buf1[-n:] = new_data1
+        
         self.curve0.setData(self.buf0)
         self.curve1.setData(self.buf1)
+        
         # apply manual Y limits if needed
         if not self.autoscale_chk.isChecked():
             try:
@@ -534,6 +574,9 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, "Invalid", "Please enter valid baud and sample rate")
             return
 
+        # re-initialize plot buffers with new sample rate if it changed
+        self._build_plot()
+
         # update generator rates
         for g in self.ch_gens:
             g.set_rate(self.sample_rate)
@@ -547,7 +590,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.streaming = True
         self.btn_start.setEnabled(False)
         self.btn_stop.setEnabled(True)
-        self.log("Streaming started")
+        self.log(f"Streaming started on {self.port if self.port else 'LOOPBACK'}")
         # start pushing samples from generator loop (already running)
 
     def stop_stream(self):
@@ -585,8 +628,10 @@ class MainWindow(QtWidgets.QMainWindow):
             # map normalized [-1..1] -> 14-bit ADC
             a0 = int(round(((v0 + 1.0) / 2.0) * ADC_MAX))
             a1 = int(round(((v1 + 1.0) / 2.0) * ADC_MAX))
-            # push to plot buffers
-            self._append_plot(a0 / ADC_MAX * 2 - 1, a1 / ADC_MAX * 2 - 1)  # scale back to -1..1 for plot
+            
+            # push to plot buffers (scale back to -1..1 for plot)
+            self._append_plot(v0, v1)
+            
             # enqueue for serial writer if streaming
             if self.streaming and self.serial_writer:
                 try:
@@ -595,22 +640,31 @@ class MainWindow(QtWidgets.QMainWindow):
                     # drop if writer is slow
                     pass
 
+            if frame % 100 == 0:
+                print(f"[{datetime.now()}] Gen loop frame {frame}")
             frame += 1
             # sleep until next sample
             next_target = origin + frame / max(1.0, self.sample_rate)
             sleep_time = next_target - time.perf_counter()
             if sleep_time > 0:
+                # If sleep_time is large, sleep in small increments to maintain responsiveness
+                # or just sleep if it's small enough.
                 time.sleep(sleep_time)
             else:
                 # behind — continue without sleeping to catch up
-                pass
+        # but limit catch-up to avoid freezing if real-time is impossible
+                if frame % 100 == 0:
+                    time.sleep(0.001)
 
     def _append_plot(self, v0, v1):
-        # shift buffers circularly
-        self.buf0 = np.roll(self.buf0, -1)
-        self.buf1 = np.roll(self.buf1, -1)
-        self.buf0[-1] = v0
-        self.buf1[-1] = v1
+        # Enqueue for main thread to handle
+        try:
+            self.plot_queue.put_nowait((v0, v1))
+        except queue.Full:
+            # If main thread gets stuck, drop visual frames rather than blocking or OOM
+            pass
+        self.buf1[self.ptr] = v1
+        self.ptr = (self.ptr + 1) % self.plot_len
 
     def log(self, s):
         now = datetime.now().strftime("%H:%M:%S")
@@ -630,10 +684,26 @@ class MainWindow(QtWidgets.QMainWindow):
 # Run
 # -------------------------
 def main():
-    app = QtWidgets.QApplication(sys.argv)
-    win = MainWindow()
-    win.show()
-    sys.exit(app.exec())
+    try:
+        print(f"[{datetime.now()}] Starting {APP_NAME}...")
+        print(f"[{datetime.now()}] Config path: {CONFIG_PATH.resolve()}")
+        app = QtWidgets.QApplication(sys.argv)
+        win = MainWindow()
+        win.show()
+        print(f"[{datetime.now()}] Window shown, entering event loop.")
+        ret = app.exec()
+        print(f"[{datetime.now()}] Event loop exited with {ret}")
+        sys.exit(ret)
+    except Exception as e:
+        import traceback
+        err_msg = traceback.format_exc()
+        print(f"CRITICAL ERROR: {err_msg}")
+        try:
+            with open("error.log", "w") as f:
+                f.write(err_msg)
+        except:
+            pass
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

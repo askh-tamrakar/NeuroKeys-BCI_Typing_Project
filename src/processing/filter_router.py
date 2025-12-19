@@ -10,7 +10,16 @@ import time
 import json
 import threading
 import hashlib
+import sys
+import os
 from typing import List, Tuple, Dict, Optional
+
+# UTF-8 encoding for standard output to avoid UnicodeEncodeError in some terminals
+try:
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
+except Exception:
+    pass
 
 try:
     import numpy as np
@@ -171,14 +180,14 @@ class FilterRouter:
                     
                     # 1. Channel mapping changed? Reconfigure pipeline
                     if map_hash != last_map_hash:
-                        print("[Router] 🔄 Channel mapping changed - reconfiguring pipeline...")
+                        print("[Router] [CONFIG] Channel mapping changed - reconfiguring pipeline...")
                         self._configure_pipeline()
                         last_map_hash = map_hash
                         last_cfg_hash = cfg_hash
                     
                     # 2. Only filter params changed? Update processors
                     elif cfg_hash != last_cfg_hash:
-                        print("[Router] ⚙️ Filter parameters updated - updating processors...")
+                        print("[Router] [CONFIG] Filter parameters updated - updating processors...")
                         for p in self.channel_processors.values():
                             if p and hasattr(p, 'update_config'):
                                 p.update_config(self.config, self.sr)
@@ -217,16 +226,16 @@ class FilterRouter:
             if target:
                 self.inlet = pylsl.StreamInlet(target, max_buflen=1, recover=True)
                 self.raw_index_map = parse_channel_map(self.inlet.info())
-                print(f"[Router] ✅ Connected to raw stream: {target.name()}")
+                print(f"[Router] [OK] Connected to raw stream: {target.name()}")
                 print(f"[Router]    Channels: {len(self.raw_index_map)} @ {target.nominal_srate()} Hz")
                 self._configure_pipeline()
                 return True
             
-            print("[Router] ❌ Could not find raw stream")
+            print("[Router] [ERROR] Could not find raw stream")
             return False
         
         except Exception as e:
-            print(f"[Router] ❌ Resolution error: {e}")
+            print(f"[Router] [ERROR] Resolution error: {e}")
             return False
     
     def _configure_pipeline(self):
@@ -243,13 +252,19 @@ class FilterRouter:
         # Clean up old configuration
         self.channel_processors = {}
         self.channel_mapping = {}
-        self.outlet = None
+        
+        # ========== IMPROVED: Explicitly close old outlet ==========
+        if self.outlet is not None:
+            print("[Router] 🔄 Closing old LSL outlet...")
+            del self.outlet
+            self.outlet = None
+            time.sleep(0.2)  # Small delay to let LSL unregister from network
         
         mapping_cfg = self.config.get("channel_mapping", {})
         num_channels = len(self.raw_index_map)
         
         if num_channels == 0:
-            print("[Router] ⚠️ No channels found in raw stream!")
+            print("[Router] [WARNING] No channels found in raw stream!")
             return
         
         self.num_channels = num_channels
@@ -338,21 +353,21 @@ class FilterRouter:
                     ch.append_child_value("enabled", "true" if ch_info.get("enabled", True) else "false")
                 
                 self.outlet = pylsl.StreamOutlet(info)
-                print(f"[Router] 📤 Publishing unified stream: {PROCESSED_STREAM_NAME}")
+                print(f"[Router] [OUTLET] Publishing unified stream: {PROCESSED_STREAM_NAME}")
                 print(f"[Router]    Channels: {num_channels} @ {self.sr} Hz")
-                print(f"[Router] ✅ Pipeline configured successfully")
+                print(f"[Router] [OK] Pipeline configured successfully")
                 
             except Exception as e:
-                print(f"[Router] ❌ Error creating outlet: {e}")
+                print(f"[Router] [ERROR] Error creating outlet: {e}")
     
     def run(self):
         """Main processing loop."""
         if not self.inlet or not self.outlet:
-            print("[Router] ❌ Error: Inlet or outlet not ready!")
+            print("[Router] [ERROR] Error: Inlet or outlet not ready!")
             return
         
         self.running = True
-        print("[Router] ▶️ Starting processing loop...")
+        print("[Router] [START] Starting processing loop...")
         print("[Router] Press Ctrl+C to stop\n")
         
         sample_count = 0
@@ -378,6 +393,7 @@ class FilterRouter:
                                     filtered_val = processor.process_sample(raw_val)
                                 else:
                                     # ✅ Channel disabled or unmapped - pass through
+                                    print(f"[Router] [WARNING] Channel {ch_idx} disabled or unmapped - passing through")
                                     filtered_val = raw_val
                                 
                                 processed_sample.append(filtered_val)
@@ -393,12 +409,12 @@ class FilterRouter:
                     except Exception as e:
                         error_count += 1
                         if error_count <= 5:  # Only log first 5 errors
-                            print(f"[Router] ⚠️ Error processing sample: {e}")
+                            print(f"[Router] [WARNING] Error processing sample: {e}")
                         if error_count == 6:
-                            print(f"[Router] ⚠️ (suppressing further error messages)")
+                            print(f"[Router] [WARNING] (suppressing further error messages)")
         
         except KeyboardInterrupt:
-            print("\n[Router] ⏹️ Stopping...")
+            print("\n[Router] [STOP] Stopping...")
         
         finally:
             self.running = False
@@ -412,11 +428,17 @@ class FilterRouter:
             
             if self.outlet:
                 try:
-                    self.outlet.close_stream()
+                    # StreamOutlet is closed on destruction in pylsl
+                    del self.outlet
+                    self.outlet = None
                 except:
                     pass
             
-            print("[Router] ✅ Cleanup complete")
+            print("[Router] [OK] Cleanup complete")
+    
+    def stop(self):
+        """Stop the processing loop."""
+        self.running = False
 
 
 def main():
