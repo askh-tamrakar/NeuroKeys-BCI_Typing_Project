@@ -20,7 +20,7 @@ export default function TestView({ wsData, wsEvent, config: initialConfig }) {
     // Load config if prop is empty
     useEffect(() => {
         if (!initialConfig || Object.keys(initialConfig).length === 0) {
-            import('../../Services/ConfigService').then(({ ConfigService }) => {
+            import('../../services/ConfigService').then(({ ConfigService }) => {
                 ConfigService.loadConfig().then(cfg => {
                     setConfig(cfg);
                 });

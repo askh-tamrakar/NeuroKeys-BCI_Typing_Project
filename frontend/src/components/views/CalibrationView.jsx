@@ -179,17 +179,12 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                 </div>
             </div>
 
-            {/* Main Workspace */}
+            {/* Main Workspace: Graph full-width on top, panels below */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-grow">
-                {/* Left Panel: Config */}
-                <div className="lg:col-span-3 h-full">
-                    <ConfigPanel config={config} sensor={activeSensor} onSave={setConfig} />
-                </div>
-
-                {/* Center: Graph */}
-                <div className="lg:col-span-6 flex flex-col gap-6">
+                {/* Graph: full width on large screens */}
+                <div className="lg:col-span-12">
                     <div className="card bg-surface border border-border p-6 rounded-2xl shadow-card flex flex-col gap-4">
-                        <div className="flex justify-between items-center">
+                        <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
                             <div className="flex items-center gap-3">
                                 <label className="text-xs font-bold text-muted uppercase">Target Class:</label>
                                 <select
@@ -203,33 +198,35 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                                 </select>
                             </div>
 
-                            <button
-                                onClick={isCalibrating ? handleStopCalibration : handleStartCalibration}
-                                className={`px-8 py-2 rounded-xl font-bold transition-all shadow-glow ${isCalibrating
-                                    ? 'bg-red-500 text-white hover:opacity-90'
-                                    : 'bg-primary text-primary-contrast hover:opacity-90 hover:translate-y-[-2px]'
-                                    }`}
-                            >
-                                {isCalibrating ? 'Stop Calibration' : 'Start Calibration'}
-                            </button>
+                            <div className="flex items-center gap-4">
+                                {mode === 'recording' && (
+                                    <div className="flex items-center gap-3 p-3 bg-bg/50 border border-border rounded-xl">
+                                        <label className="text-xs font-bold text-muted uppercase">Load File:</label>
+                                        <select
+                                            onChange={(e) => setSelectedRecording(e.target.value)}
+                                            className="flex-grow bg-transparent border-none text-sm font-mono text-primary outline-none"
+                                        >
+                                            <option value="">Choose a recording...</option>
+                                            {availableRecordings.filter(r => r.type === activeSensor).map(r => (
+                                                <option key={r.id} value={r.name}>{r.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+
+                                <button
+                                    onClick={isCalibrating ? handleStopCalibration : handleStartCalibration}
+                                    className={`px-6 py-2 rounded-xl font-bold transition-all shadow-glow ${isCalibrating
+                                        ? 'bg-red-500 text-white hover:opacity-90'
+                                        : 'bg-primary text-primary-contrast hover:opacity-90 hover:translate-y-[-2px]'
+                                        }`}
+                                >
+                                    {isCalibrating ? 'Stop Calibration' : 'Start Calibration'}
+                                </button>
+                            </div>
                         </div>
 
-                        {mode === 'recording' && (
-                            <div className="flex items-center gap-3 p-3 bg-bg/50 border border-border rounded-xl">
-                                <label className="text-xs font-bold text-muted uppercase">Load File:</label>
-                                <select
-                                    onChange={(e) => setSelectedRecording(e.target.value)}
-                                    className="flex-grow bg-transparent border-none text-sm font-mono text-primary outline-none"
-                                >
-                                    <option value="">Choose a recording...</option>
-                                    {availableRecordings.filter(r => r.type === activeSensor).map(r => (
-                                        <option key={r.id} value={r.name}>{r.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-                        )}
-
-                        <div className="h-[400px]">
+                        <div className="w-full h-[420px]">
                             <TimeSeriesZoomChart
                                 data={chartData}
                                 title={`${activeSensor} Signal Stream`}
@@ -246,36 +243,40 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                             <span>Windows: {markedWindows.length}</span>
                         </div>
                     </div>
+                </div>
 
-                    {/* Progress Card (Optional extra visual) */}
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="card bg-surface/50 border border-border p-4 rounded-xl flex items-center justify-between">
-                            <div>
-                                <div className="text-[10px] text-muted uppercase font-bold">Accuracy</div>
-                                <div className="text-lg font-bold text-emerald-400">
-                                    {markedWindows.length > 0 ? ((markedWindows.filter(w => w.status === 'correct').length / markedWindows.length) * 100).toFixed(0) : 0}%
-                                </div>
-                            </div>
-                            <div className="w-10 h-10 rounded-full border-2 border-emerald-500/20 flex items-center justify-center text-emerald-400 text-xs font-bold">
-                                GC
+                {/* Bottom row: Config (left), Stats (center), Windows (right) */}
+                <div className="lg:col-span-4 h-full">
+                    <ConfigPanel config={config} sensor={activeSensor} onSave={setConfig} />
+                </div>
+
+                <div className="lg:col-span-4 h-full flex flex-col gap-6">
+                    <div className="card bg-surface/50 border border-border p-4 rounded-xl flex items-center justify-between">
+                        <div>
+                            <div className="text-[10px] text-muted uppercase font-bold">Accuracy</div>
+                            <div className="text-lg font-bold text-emerald-400">
+                                {markedWindows.length > 0 ? ((markedWindows.filter(w => w.status === 'correct').length / markedWindows.length) * 100).toFixed(0) : 0}%
                             </div>
                         </div>
-                        <div className="card bg-surface/50 border border-border p-4 rounded-xl flex items-center justify-between">
-                            <div>
-                                <div className="text-[10px] text-muted uppercase font-bold">Missed Signals</div>
-                                <div className="text-lg font-bold text-red-400">
-                                    {markedWindows.filter(w => w.isMissedActual).length}
-                                </div>
+                        <div className="w-10 h-10 rounded-full border-2 border-emerald-500/20 flex items-center justify-center text-emerald-400 text-xs font-bold">
+                            GC
+                        </div>
+                    </div>
+
+                    <div className="card bg-surface/50 border border-border p-4 rounded-xl flex items-center justify-between">
+                        <div>
+                            <div className="text-[10px] text-muted uppercase font-bold">Missed Signals</div>
+                            <div className="text-lg font-bold text-red-400">
+                                {markedWindows.filter(w => w.isMissedActual).length}
                             </div>
-                            <div className="w-10 h-10 rounded-full border-2 border-red-500/20 flex items-center justify-center text-red-400 text-xs font-bold">
-                                ER
-                            </div>
+                        </div>
+                        <div className="w-10 h-10 rounded-full border-2 border-red-500/20 flex items-center justify-center text-red-400 text-xs font-bold">
+                            ER
                         </div>
                     </div>
                 </div>
 
-                {/* Right Panel: Windows */}
-                <div className="lg:col-span-3 h-full">
+                <div className="lg:col-span-4 h-full">
                     <WindowListPanel
                         windows={markedWindows}
                         onDelete={deleteWindow}
