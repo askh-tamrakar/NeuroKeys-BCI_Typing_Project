@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import TimeSeriesZoomChart from '../charts/TimeSeriesZoomChart';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import SignalChart from '../charts/SignalChart';
 import WindowListPanel from '../calibration/WindowListPanel';
 import ConfigPanel from '../calibration/ConfigPanel';
 import { CalibrationApi } from '../../services/calibrationApi';
@@ -14,6 +14,8 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     const [mode, setMode] = useState('realtime'); // 'realtime' | 'recording'
     const [config, setConfig] = useState(initialConfig || {});
     const [isCalibrating, setIsCalibrating] = useState(false);
+
+    const timeWindowMs = 10000;
 
     // Load config if prop is empty
     useEffect(() => {
@@ -33,11 +35,57 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     const [targetLabel, setTargetLabel] = useState('Rock'); // e.g., 'Rock', 'Paper', etc.
 
     // Recording mode states
-    const [availableRecordings, setAvailableRecordings] = useState([
-        { id: '1', name: 'EMG-19-12-2025__12-00-00.json', type: 'EMG' },
-        { id: '2', name: 'EOG-18-12-2025__10-30-00.json', type: 'EOG' },
-    ]);
+    const [availableRecordings, setAvailableRecordings] = useState([]);
     const [selectedRecording, setSelectedRecording] = useState(null);
+    const [isLoadingRecording, setIsLoadingRecording] = useState(false);
+
+    // Fetch recordings list
+    const refreshRecordings = useCallback(async () => {
+        const list = await CalibrationApi.listRecordings();
+        setAvailableRecordings(list);
+    }, []);
+
+    useEffect(() => {
+        refreshRecordings();
+    }, [refreshRecordings]);
+
+    // Handle recording selection and data loading
+    useEffect(() => {
+        const loadSelectedRecording = async () => {
+            if (!selectedRecording || mode !== 'recording') return;
+
+            setIsLoadingRecording(true);
+            try {
+                const recording = await CalibrationApi.getRecording(selectedRecording);
+
+                // recording.data is Array of { timestamp, channels: { ch0, ch1... } }
+                if (recording && recording.data) {
+                    // Map to chartData format { time, value }
+                    // We need to pick the correct channel for activeSensor
+                    const mapping = config.channel_mapping || {};
+                    const targetChIdx = Object.keys(recording.data[0]?.channels || {}).find(idx => {
+                        const chKey = `ch${idx}`;
+                        return mapping[chKey]?.sensor === activeSensor || mapping[chKey]?.type === activeSensor;
+                    }) || "0";
+
+                    const formattedData = recording.data.map(point => ({
+                        time: point.timestamp,
+                        value: point.channels[`ch${targetChIdx}`] || point.channels[targetChIdx] || 0
+                    }));
+
+                    setChartData(formattedData);
+                    console.log(`[CalibrationView] Loaded ${formattedData.length} samples for ${activeSensor}`);
+                }
+            } catch (error) {
+                console.error('[CalibrationView] Failed to load recording:', error);
+                alert('Failed to load recording data.');
+            } finally {
+                setIsLoadingRecording(false);
+            }
+        };
+
+        loadSelectedRecording();
+    }, [selectedRecording, mode, activeSensor, config.channel_mapping]);
 
     // Refs for real-time windowing
     const windowIntervalRef = useRef(null);
@@ -52,6 +100,10 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
         if (sensor === 'EMG') setTargetLabel('Rock');
         else if (sensor === 'EOG') setTargetLabel('blink');
         else if (sensor === 'EEG') setTargetLabel('target_10Hz');
+
+        // Clear selection when sensor changes
+        setSelectedRecording(null);
+        if (mode === 'recording') setChartData([]);
     };
 
     const handleStartCalibration = async () => {
@@ -109,7 +161,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             startTime: start,
             endTime: end,
             label: targetLabel,
-            status: 'correct' // Assume user marking is ground truth
+            status: 'correct'
         };
         setMarkedWindows(prev => [...prev, newWindow]);
     };
@@ -128,7 +180,6 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             const payload = wsData.raw || wsData;
             if (payload?.channels) {
                 // Find correct channel for active sensor type
-                let val = null;
                 const mapping = config.channel_mapping || {};
 
                 // Try to find the first enabled channel matching the active sensor
@@ -140,7 +191,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                 const channelData = payload.channels[targetChIdx] || payload.channels[0] || payload.channels["0"];
 
                 if (channelData !== undefined) {
-                    val = typeof channelData === 'number' ? channelData : (channelData.value ?? 0);
+                    const val = typeof channelData === 'number' ? channelData : (channelData.value ?? 0);
 
                     // Normalize timestamp (ms) - Match LiveView.jsx logic
                     let ts = Number(payload.timestamp);
@@ -154,7 +205,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                     const point = { time: ts, value: numericVal };
                     setChartData(prev => {
                         const newArr = [...prev, point];
-                        const cutoff = ts - 10000; // Keep 10 seconds of data
+                        const cutoff = ts - timeWindowMs; // Match sweep window
                         return newArr.filter(p => p.time > cutoff);
                     });
                 }
@@ -169,9 +220,36 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
         };
     }, []);
 
+    // --- SWEEP TRANSFORM LOGIC (from LiveView.jsx) ---
+    const sweepData = useMemo(() => {
+        if (chartData.length === 0) return { active: [], history: [], scanner: null };
+        const latestTs = chartData[chartData.length - 1].time;
+        const scannerPos = latestTs % timeWindowMs;
+        const cycleStartTs = latestTs - scannerPos;
+
+        const active = [];
+        const history = [];
+
+        chartData.forEach(d => {
+            const mappedTime = d.time % timeWindowMs;
+            if (d.time > (latestTs - timeWindowMs)) {
+                if (d.time >= cycleStartTs) {
+                    active.push({ ...d, time: mappedTime });
+                } else {
+                    history.push({ ...d, time: mappedTime });
+                }
+            }
+        });
+
+        active.sort((a, b) => a.time - b.time);
+        history.sort((a, b) => a.time - b.time);
+
+        return { active, history, scanner: scannerPos };
+    }, [chartData, timeWindowMs]);
+
     return (
-        <div className="flex flex-col gap-6 h-full min-h-[800px] p-6 bg-bg text-text animate-in fade-in duration-500">
-            {/* Header / Tabs */}
+        <div className="flex flex-col gap-6 h-full p-6 bg-bg text-text animate-in fade-in duration-500 overflow-y-auto">
+            {/* Header */}
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 card bg-surface border border-border p-6 rounded-2xl shadow-card">
                 <div className="flex items-center gap-4">
                     <div className="p-3 bg-primary/10 rounded-xl border border-primary/20">
@@ -216,120 +294,93 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                 </div>
             </div>
 
-            {/* Main Workspace */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-grow">
-                {/* Left Panel: Config */}
-                <div className="lg:col-span-3 h-full">
-                    <ConfigPanel config={config} sensor={activeSensor} onSave={setConfig} />
-                </div>
-
-                {/* Center: Graph */}
-                <div className="lg:col-span-6 flex flex-col gap-6">
-                    <div className="card bg-surface border border-border p-6 rounded-2xl shadow-card flex flex-col gap-4">
-                        <div className="flex justify-between items-center">
-                            <div className="flex items-center gap-3">
-                                <label className="text-xs font-bold text-muted uppercase">Target Class:</label>
-                                <select
-                                    value={targetLabel}
-                                    onChange={(e) => setTargetLabel(e.target.value)}
-                                    className="bg-bg border border-border rounded-lg px-3 py-1.5 text-sm font-bold focus:border-primary outline-none"
-                                >
-                                    {activeSensor === 'EMG' && ['Rock', 'Paper', 'Scissors', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
-                                    {activeSensor === 'EOG' && ['blink', 'doubleBlink', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
-                                    {activeSensor === 'EEG' && ['target_10Hz', 'target_12Hz', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
-                                </select>
-                            </div>
-
-                            <button
-                                onClick={isCalibrating ? handleStopCalibration : handleStartCalibration}
-                                className={`px-8 py-2 rounded-xl font-bold transition-all shadow-glow ${isCalibrating
-                                    ? 'bg-red-500 text-white hover:opacity-90'
-                                    : 'bg-primary text-primary-contrast hover:opacity-90 hover:translate-y-[-2px]'
-                                    }`}
+            {/* Top Row: Full-width Graph */}
+            <div className="card bg-surface border border-border p-6 rounded-2xl shadow-card flex flex-col gap-4">
+                <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-6">
+                        <div className="flex items-center gap-2">
+                            <label className="text-xs font-bold text-muted uppercase">Target Class:</label>
+                            <select
+                                value={targetLabel}
+                                onChange={(e) => setTargetLabel(e.target.value)}
+                                className="bg-bg border border-border rounded-lg px-3 py-1.5 text-sm font-bold focus:border-primary outline-none"
                             >
-                                {isCalibrating ? 'Stop Calibration' : 'Start Calibration'}
-                            </button>
+                                {activeSensor === 'EMG' && ['Rock', 'Paper', 'Scissors', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
+                                {activeSensor === 'EOG' && ['blink', 'doubleBlink', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
+                                {activeSensor === 'EEG' && ['target_10Hz', 'target_12Hz', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
+                            </select>
                         </div>
 
                         {mode === 'recording' && (
-                            <div className="flex items-center gap-3 p-3 bg-bg/50 border border-border rounded-xl">
-                                <label className="text-xs font-bold text-muted uppercase">Load File:</label>
+                            <div className="flex items-center gap-3 p-2 bg-bg/50 border border-border rounded-xl">
+                                <label className="text-[10px] font-bold text-muted uppercase">Recording:</label>
                                 <select
                                     onChange={(e) => setSelectedRecording(e.target.value)}
-                                    className="flex-grow bg-transparent border-none text-sm font-mono text-primary outline-none"
+                                    className="bg-transparent border-none text-xs font-mono text-primary outline-none min-w-[200px]"
                                 >
                                     <option value="">Choose a recording...</option>
                                     {availableRecordings.filter(r => r.type === activeSensor).map(r => (
-                                        <option key={r.id} value={r.name}>{r.name}</option>
+                                        <option value={r.name}>{r.name}</option>
                                     ))}
                                 </select>
                             </div>
                         )}
-
-                        <div className="h-[400px]">
-                            <TimeSeriesZoomChart
-                                data={chartData}
-                                title={`${activeSensor} Signal Stream`}
-                                mode={mode}
-                                markedWindows={markedWindows}
-                                activeWindow={activeWindow}
-                                onWindowSelect={handleManualWindowSelect}
-                                color={activeSensor === 'EMG' ? '#3b82f6' : (activeSensor === 'EOG' ? '#10b981' : '#f59e0b')}
-                            />
-                        </div>
-
-                        <div className="flex justify-between items-center text-[10px] text-muted font-mono uppercase tracking-widest pt-2">
-                            <span>Status: {isCalibrating ? 'Active Collection' : 'Idle'}</span>
-                            <span>Windows: {markedWindows.length}</span>
-                        </div>
                     </div>
 
-                    {/* Progress Card (Optional extra visual) */}
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="card bg-surface/50 border border-border p-4 rounded-xl flex items-center justify-between">
-                            <div>
-                                <div className="text-[10px] text-muted uppercase font-bold">Accuracy</div>
-                                <div className="text-lg font-bold text-emerald-400">
-                                    {markedWindows.length > 0 ? ((markedWindows.filter(w => w.status === 'correct').length / markedWindows.length) * 100).toFixed(0) : 0}%
-                                </div>
-                            </div>
-                            <div className="w-10 h-10 rounded-full border-2 border-emerald-500/20 flex items-center justify-center text-emerald-400 text-xs font-bold">
-                                GC
-                            </div>
-                        </div>
-                        <div className="card bg-surface/50 border border-border p-4 rounded-xl flex items-center justify-between">
-                            <div>
-                                <div className="text-[10px] text-muted uppercase font-bold">Missed Signals</div>
-                                <div className="text-lg font-bold text-red-400">
-                                    {markedWindows.filter(w => w.isMissedActual).length}
-                                </div>
-                            </div>
-                            <div className="w-10 h-10 rounded-full border-2 border-red-500/20 flex items-center justify-center text-red-400 text-xs font-bold">
-                                ER
-                            </div>
-                        </div>
-                    </div>
+                    <button
+                        onClick={isCalibrating ? handleStopCalibration : handleStartCalibration}
+                        className={`px-10 py-3 rounded-xl font-bold transition-all shadow-glow ${isCalibrating
+                            ? 'bg-red-500 text-white hover:opacity-90'
+                            : 'bg-primary text-primary-contrast hover:opacity-90 hover:translate-y-[-2px]'
+                            }`}
+                    >
+                        {isCalibrating ? 'Stop Calibration' : 'Start Calibration'}
+                    </button>
                 </div>
 
-                {/* Right Panel: Windows */}
-                <div className="lg:col-span-3 h-full">
-                    <WindowListPanel
-                        windows={markedWindows}
-                        onDelete={deleteWindow}
-                        onMarkMissed={markMissed}
-                        activeSensor={activeSensor}
+                <div className="h-[400px]">
+                    <SignalChart
+                        title={`${activeSensor} Signal Stream`}
+                        byChannel={{ active: sweepData.active, history: sweepData.history }}
+                        channelColors={{ active: activeSensor === 'EMG' ? '#3b82f6' : (activeSensor === 'EOG' ? '#10b981' : '#f59e0b'), history: 'rgba(255,255,255,0.1)' }}
+                        timeWindowMs={timeWindowMs}
+                        color={activeSensor === 'EMG' ? '#3b82f6' : (activeSensor === 'EOG' ? '#10b981' : '#f59e0b')}
+                        height={400}
+                        scannerX={sweepData.scanner}
+                        markedWindows={markedWindows}
+                        activeWindow={activeWindow}
                     />
+                </div>
+
+                <div className="flex justify-between items-center text-[10px] text-muted font-mono uppercase tracking-widest pt-2">
+                    <div className="flex gap-4">
+                        <span>Status: <span className={isCalibrating ? 'text-primary' : ''}>{isCalibrating ? 'Active Collection' : 'Idle'}</span></span>
+                        <span>Windows: {markedWindows.length}</span>
+                    </div>
+                    <div className="flex gap-4">
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-primary/20"></span> Active Window</span>
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500/20"></span> Labeled Window</span>
+                    </div>
                 </div>
             </div>
 
-            {/* Diagnostic Overlay (temporary for debugging) */}
+            {/* Bottom Row: Config & Windows */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-fit">
+                <ConfigPanel config={config} sensor={activeSensor} onSave={setConfig} />
+                <WindowListPanel
+                    windows={markedWindows}
+                    onDelete={deleteWindow}
+                    onMarkMissed={markMissed}
+                    activeSensor={activeSensor}
+                />
+            </div>
+
+            {/* Diagnostic Overlay */}
             <div className="card bg-surface/80 border border-primary/20 p-2 rounded-lg fixed bottom-4 right-4 text-[9px] font-mono z-50 max-w-xs shadow-xl backdrop-blur-md">
                 <div className="font-bold text-primary mb-1 uppercase tracking-wider">Debug Info</div>
                 <div>Status: <span className={wsData ? 'text-emerald-400' : 'text-red-400'}>{wsData ? '✅ DATA ACTIVE' : '❌ NO DATA'}</span></div>
-                <div>Sensor: {activeSensor}</div>
-                <div>Channels in payload: {wsData?.raw?.channels ? Object.keys(wsData.raw.channels).join(', ') : 'none'}</div>
+                <div>Sample Rate: {config.sampling_rate || 250}Hz</div>
                 <div>Mapped Channel Val: {chartData.length > 0 ? chartData[chartData.length - 1].value.toFixed(2) : 'N/A'}</div>
-                <div>Sample Count: {wsData?.raw?.sample_count || '0'}</div>
                 <div className="mt-1 opacity-50 truncate">Last Payload: {wsData ? JSON.stringify(wsData.raw).slice(0, 50) + '...' : 'none'}</div>
             </div>
         </div>

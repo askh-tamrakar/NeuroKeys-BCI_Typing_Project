@@ -1,14 +1,11 @@
 import React, { useState, useEffect } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
-import { ConfigService } from '../../Services/ConfigService'
 import LiveDashboard from '../views/LiveDashboard'
-import CommandVisualizer from '../views/CommandVisualizer'
-import RecordingsView from '../views/RecordingsView'
-import DevicesView from '../views/DevicesView'
 import DinoView from '../views/DinoView'
 import SSVEPView from '../views/SSVEPView'
 import CalibrationView from '../views/CalibrationView'
+import TestView from '../views/TestView'
 
 import '../../styles/App.css';
 import themePresets from '../themes/presets';
@@ -90,12 +87,10 @@ export default function Dashboard() {
 
   const navItems = React.useMemo(() => [
     { label: 'Live', onClick: () => setCurrentPage('live'), href: '#live' },
-    { label: 'Commands', onClick: () => setCurrentPage('commands'), href: '#commands' },
-    { label: 'Recordings', onClick: () => setCurrentPage('recordings'), href: '#recordings' },
-    { label: 'Devices', onClick: () => setCurrentPage('devices'), href: '#devices' },
     { label: 'Dino', onClick: () => setCurrentPage('dino'), href: '#dino' },
     { label: 'SSVEP', onClick: () => setCurrentPage('ssvep'), href: '#ssvep' },
     { label: 'Calibration', onClick: () => setCurrentPage('calibration'), href: '#calibration' },
+    { label: 'Test', onClick: () => setCurrentPage('test'), href: '#test' },
     {
       label: 'Theme',
       type: 'pill',
@@ -171,12 +166,10 @@ export default function Dashboard() {
       {/* Main Content Area */}
       <div className="container" style={{ flex: 1, padding: '24px 0', overflowY: 'auto' }}>
         {currentPage === 'live' && <LiveDashboard wsData={lastMessage} wsConfig={lastConfig} wsEvent={lastEvent} sendMessage={sendMessage} />}
-        {currentPage === 'commands' && <CommandVisualizer wsData={lastMessage} />}
-        {currentPage === 'recordings' && <RecordingsView />}
-        {currentPage === 'devices' && <DevicesView sendMessage={sendMessage} />}
         {currentPage === 'dino' && <DinoView wsData={lastMessage} wsEvent={lastEvent} isPaused={false} />}
         {currentPage === 'ssvep' && <SSVEPView />}
         {currentPage === 'calibration' && <CalibrationView wsData={lastMessage} wsEvent={lastEvent} config={lastConfig} />}
+        {currentPage === 'test' && <TestView />}
       </div>
 
       {/* Footer */}

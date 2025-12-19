@@ -119,5 +119,37 @@ export const CalibrationApi = {
         }
 
         return { recommendations: {}, summary: { total: 0, correct: 0, missed: 0 } };
+    },
+
+    /**
+     * Lists all available recordings from the server.
+     * @returns {Promise<Array<{name: string, size: number, created: number}>>}
+     */
+    async listRecordings() {
+        try {
+            const response = await fetch('/api/recordings');
+            if (!response.ok) throw new Error('Failed to list recordings');
+            return response.json();
+        } catch (error) {
+            console.error('[CalibrationApi] Error listing recordings:', error);
+            return [];
+        }
+    },
+
+    /**
+     * Fetches the content of a specific recording.
+     * @param {string} filename 
+     * @returns {Promise<Object>}
+     */
+    async getRecording(filename) {
+        try {
+            const response = await fetch(`/api/recordings/${encodeURIComponent(filename)}`);
+            console.log(response);
+            if (!response.ok) throw new Error('Failed to fetch recording');
+            return response.json();
+        } catch (error) {
+            console.error('[CalibrationApi] Error getting recording:', error);
+            throw error;
+        }
     }
 };
