@@ -28,10 +28,24 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     ]);
     const [selectedRecording, setSelectedRecording] = useState(null);
 
+    // Zoom state (Y-axis) similar to LiveView
+    const [zoom, setZoom] = useState(1);
+    const [manualYRange, setManualYRange] = useState("");
+    const BASE_AMPLITUDE = 500;
+
+    const currentYDomain = (() => {
+        if (manualYRange && !isNaN(parseFloat(manualYRange))) {
+            const r = parseFloat(manualYRange);
+            return [-r, r];
+        }
+        return [-BASE_AMPLITUDE / zoom, BASE_AMPLITUDE / zoom];
+    })();
+
     // Refs for real-time windowing
     const windowIntervalRef = useRef(null);
     const WINDOW_DURATION = 1500; // ms
     const GAP_DURATION = 500; // ms
+    const SWEEP_WINDOW_MS = 5000; // visible sweep window length for calibration plot
 
     // Handlers
     const handleSensorChange = (sensor) => {
@@ -125,6 +139,52 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
         }
     }, [wsData, mode, activeSensor]);
 
+    // Compute sweep-style data for calibration: plotted portion left of center, unplotted baseline to right
+    const sweepChartData = (() => {
+        const w = SWEEP_WINDOW_MS;
+        const center = Math.round(w / 2);
+        const now = Date.now();
+
+        // plotted points: newest at center, older to the left
+        const plotted = chartData.map(d => {
+            const age = now - d.time;
+            const x = Math.round(center - age);
+            return { time: x, value: d.value };
+        }).filter(p => Number.isFinite(p.time) && p.time >= 0 && p.time <= center);
+
+        // baseline (unplotted) to right of center
+        const baselineVal = plotted.length ? plotted[plotted.length - 1].value : 0;
+        const step = 100; // ms resolution
+        const baseline = [];
+        for (let t = center; t <= w; t += step) {
+            baseline.push({ time: Math.round(t), future: baselineVal });
+        }
+
+        const merged = [...plotted, ...baseline];
+        merged.sort((a, b) => a.time - b.time);
+        return merged;
+    })();
+
+    // Map action windows to sweep coordinates so they travel right->left and disappear at left edge
+    const mappedWindows = (() => {
+        const now = Date.now();
+        const w = SWEEP_WINDOW_MS;
+        return markedWindows.map(win => {
+            const x1 = Math.round(w - (now - win.endTime));
+            const x2 = Math.round(w - (now - win.startTime));
+            return { ...win, startTime: x2, endTime: x1 };
+        }).filter(win => win.endTime >= 0 && win.startTime <= w);
+    })();
+
+    const activeWindowMapped = (() => {
+        if (!activeWindow) return null;
+        const now = Date.now();
+        const w = SWEEP_WINDOW_MS;
+        const x1 = Math.round(w - (now - activeWindow.endTime));
+        const x2 = Math.round(w - (now - activeWindow.startTime));
+        return { ...activeWindow, startTime: x2, endTime: x1 };
+    })();
+
     // Cleanup
     useEffect(() => {
         return () => {
@@ -186,19 +246,37 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                     <div className="card bg-surface border border-border p-6 rounded-2xl shadow-card flex flex-col gap-4">
                         <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
                             <div className="flex items-center gap-3">
-                                <label className="text-xs font-bold text-muted uppercase">Target Class:</label>
-                                <select
-                                    value={targetLabel}
-                                    onChange={(e) => setTargetLabel(e.target.value)}
-                                    className="bg-bg border border-border rounded-lg px-3 py-1.5 text-sm font-bold focus:border-primary outline-none"
-                                >
-                                    {activeSensor === 'EMG' && ['Rock', 'Paper', 'Scissors', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
-                                    {activeSensor === 'EOG' && ['blink', 'doubleBlink', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
-                                    {activeSensor === 'EEG' && ['target_10Hz', 'target_12Hz', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
-                                </select>
+                                <div className="text-xs font-bold text-muted uppercase">Zoom:</div>
+                                <div className="flex gap-1">
+                                    {[1, 2, 5, 10, 20].map(z => (
+                                        <button
+                                            key={z}
+                                            onClick={() => { setZoom(z); setManualYRange(""); }}
+                                            className={`px-2 py-1 text-[10px] rounded font-bold transition-all ${zoom === z && !manualYRange
+                                                ? 'bg-primary text-white shadow-lg'
+                                                : 'bg-surface/50 hover:bg-white/10 text-muted hover:text-text border border-border'
+                                                }`}
+                                        >
+                                            {z}x
+                                        </button>
+                                    ))}
+                                </div>
+
+                                <div className="h-4 w-[1px] bg-border mx-2"></div>
+
+                                <div className="flex items-center gap-2">
+                                    <div className="text-xs font-bold text-muted uppercase">Y-Range (uV):</div>
+                                    <input
+                                        type="number"
+                                        placeholder="+/- uV"
+                                        value={manualYRange}
+                                        onChange={(e) => setManualYRange(e.target.value)}
+                                        className="w-20 bg-bg border border-border rounded px-2 py-1 text-xs text-text focus:outline-none focus:border-primary"
+                                    />
+                                </div>
                             </div>
 
-                            <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-3">
                                 {mode === 'recording' && (
                                     <div className="flex items-center gap-3 p-3 bg-bg/50 border border-border rounded-xl">
                                         <label className="text-xs font-bold text-muted uppercase">Load File:</label>
@@ -213,7 +291,22 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                                         </select>
                                     </div>
                                 )}
+                            </div>
 
+                            <div className="flex items-center gap-3">
+                                <label className="text-xs font-bold text-muted uppercase">Target Class:</label>
+                                <select
+                                    value={targetLabel}
+                                    onChange={(e) => setTargetLabel(e.target.value)}
+                                    className="bg-bg border border-border rounded-lg px-3 py-1.5 text-sm font-bold focus:border-primary outline-none"
+                                >
+                                    {activeSensor === 'EMG' && ['Rock', 'Paper', 'Scissors', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
+                                    {activeSensor === 'EOG' && ['blink', 'doubleBlink', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
+                                    {activeSensor === 'EEG' && ['target_10Hz', 'target_12Hz', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
+                                </select>
+                            </div>
+
+                            <div className="flex items-center gap-3">
                                 <button
                                     onClick={isCalibrating ? handleStopCalibration : handleStartCalibration}
                                     className={`px-6 py-2 rounded-xl font-bold transition-all shadow-glow ${isCalibrating
@@ -228,12 +321,15 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
                         <div className="w-full h-[420px]">
                             <TimeSeriesZoomChart
-                                data={chartData}
+                                data={sweepChartData}
                                 title={`${activeSensor} Signal Stream`}
                                 mode={mode}
-                                markedWindows={markedWindows}
-                                activeWindow={activeWindow}
+                                markedWindows={mappedWindows}
+                                activeWindow={activeWindowMapped}
                                 onWindowSelect={handleManualWindowSelect}
+                                yDomain={currentYDomain}
+                                scannerX={Math.round(SWEEP_WINDOW_MS / 2)}
+                                timeWindowMs={SWEEP_WINDOW_MS}
                                 color={activeSensor === 'EMG' ? '#3b82f6' : (activeSensor === 'EOG' ? '#10b981' : '#f59e0b')}
                             />
                         </div>

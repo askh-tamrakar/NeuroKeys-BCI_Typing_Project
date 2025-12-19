@@ -26,7 +26,8 @@ export default function TimeSeriesZoomChart({
     onWindowSelect = null, // (startTime, endTime) => void
     activeWindow = null, // { startTime, endTime }
     mode = 'realtime',
-    scannerX = null
+    scannerX = null,
+    yDomain = null // optional external Y domain: [min, max]
 }) {
     // Zoom and Pan state
     const [left, setLeft] = useState('dataMin');
@@ -88,6 +89,17 @@ export default function TimeSeriesZoomChart({
         return 'rgba(156, 163, 175, 0.1)'; // Gray
     };
 
+    // Small helper to convert hex color to rgba string
+    const hexToRgba = (hex, alpha = 0.25) => {
+        if (!hex) return `rgba(59,130,246,${alpha})`;
+        const h = hex.replace('#', '');
+        const bigint = parseInt(h.length === 3 ? h.split('').map(c => c + c).join('') : h, 16);
+        const r = (bigint >> 16) & 255;
+        const g = (bigint >> 8) & 255;
+        const b = bigint & 255;
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    };
+
     return (
         <div className="flex flex-col h-full bg-surface border border-border mt-1 rounded-xl overflow-hidden shadow-sm">
             <div className="px-4 py-2 border-b border-border bg-bg/30 flex justify-between items-center">
@@ -122,6 +134,8 @@ export default function TimeSeriesZoomChart({
                             type="number"
                             domain={[left, right]}
                             tickFormatter={(t) => {
+                                // If a sweep-style time window is used (ms across 0..timeWindowMs), show seconds
+                                if (timeWindowMs && Number.isFinite(t)) return (Number(t) / 1000).toFixed(2) + 's';
                                 const date = new Date(t);
                                 return `${date.getMinutes()}:${date.getSeconds().toString().padStart(2, '0')}.${date.getMilliseconds().toString().padStart(3, '0').slice(0, 1)}`;
                             }}
@@ -131,7 +145,7 @@ export default function TimeSeriesZoomChart({
                             axisLine={false}
                         />
                         <YAxis
-                            domain={[bottom, top]}
+                            domain={yDomain && Array.isArray(yDomain) ? yDomain : [bottom, top]}
                             stroke="var(--muted)"
                             fontSize={10}
                             tickLine={false}
@@ -140,7 +154,7 @@ export default function TimeSeriesZoomChart({
                         />
 
                         <Tooltip
-                            labelFormatter={(t) => new Date(t).toLocaleTimeString() + '.' + new Date(t).getMilliseconds()}
+                            labelFormatter={(t) => (timeWindowMs && Number.isFinite(t)) ? (Number(t) / 1000).toFixed(3) + 's' : (new Date(t).toLocaleTimeString() + '.' + new Date(t).getMilliseconds())}
                             contentStyle={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', borderRadius: '8px', color: 'var(--text)' }}
                         />
 
@@ -176,15 +190,39 @@ export default function TimeSeriesZoomChart({
                             <ReferenceArea x1={refAreaLeft} x2={refAreaRight} strokeOpacity={0.3} fill="var(--accent)" fillOpacity={0.2} />
                         )}
 
-                        <Line
-                            type="monotone"
-                            dataKey="value"
-                            stroke={color}
-                            dot={false}
-                            strokeWidth={2}
-                            isAnimationActive={false}
-                            connectNulls
-                        />
+                        {/* Render main plotted values (left of center) and baseline/future (right of center) if present */}
+                        {data && data.some(d => d.future !== undefined) ? (
+                            <>
+                                <Line
+                                    type="monotone"
+                                    dataKey="value"
+                                    stroke={color}
+                                    dot={false}
+                                    strokeWidth={2}
+                                    isAnimationActive={false}
+                                    connectNulls
+                                />
+                                <Line
+                                    type="monotone"
+                                    dataKey="future"
+                                    stroke={hexToRgba(color, 0.35)}
+                                    dot={false}
+                                    strokeWidth={1.5}
+                                    isAnimationActive={false}
+                                    connectNulls
+                                />
+                            </>
+                        ) : (
+                            <Line
+                                type="monotone"
+                                dataKey="value"
+                                stroke={color}
+                                dot={false}
+                                strokeWidth={2}
+                                isAnimationActive={false}
+                                connectNulls
+                            />
+                        )}
                     </LineChart>
                 </ResponsiveContainer>
             </div>
