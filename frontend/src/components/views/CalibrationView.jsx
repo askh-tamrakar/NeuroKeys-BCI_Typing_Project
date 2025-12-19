@@ -43,7 +43,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
     // Refs for real-time windowing
     const windowIntervalRef = useRef(null);
-    const WINDOW_DURATION = 1500; // ms
+    const [windowDuration, setWindowDuration] = useState(1500); // ms
     const GAP_DURATION = 500; // ms
     const SWEEP_WINDOW_MS = 5000; // visible sweep window length for calibration plot
 
@@ -59,7 +59,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
     const handleStartCalibration = async () => {
         setIsCalibrating(true);
-        await CalibrationApi.startCalibration(activeSensor, mode, targetLabel, WINDOW_DURATION);
+        await CalibrationApi.startCalibration(activeSensor, mode, targetLabel, windowDuration);
 
         if (mode === 'realtime') {
             // Start auto-windowing logic
@@ -77,7 +77,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     const startAutoWindowing = () => {
         const createNextWindow = () => {
             const start = Date.now();
-            const end = start + WINDOW_DURATION;
+            const end = start + windowDuration;
             const newWindow = {
                 id: Math.random().toString(36).substr(2, 9),
                 sensor: activeSensor,
@@ -101,7 +101,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
         };
 
         createNextWindow();
-        windowIntervalRef.current = setInterval(createNextWindow, WINDOW_DURATION + GAP_DURATION);
+        windowIntervalRef.current = setInterval(createNextWindow, windowDuration + GAP_DURATION);
     };
 
     const handleManualWindowSelect = (start, end) => {
@@ -152,12 +152,11 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             return { time: x, value: d.value };
         }).filter(p => Number.isFinite(p.time) && p.time >= 0 && p.time <= center);
 
-        // baseline (unplotted) to right of center
-        const baselineVal = plotted.length ? plotted[plotted.length - 1].value : 0;
+        // baseline (unplotted) to right of center — keep static at 0 to avoid vertical movement
         const step = 100; // ms resolution
         const baseline = [];
         for (let t = center; t <= w; t += step) {
-            baseline.push({ time: Math.round(t), future: baselineVal });
+            baseline.push({ time: Math.round(t), future: 0 });
         }
 
         const merged = [...plotted, ...baseline];
@@ -184,6 +183,9 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
         const x2 = Math.round(w - (now - activeWindow.startTime));
         return { ...activeWindow, startTime: x2, endTime: x1 };
     })();
+
+    // scanner value is the latest sample value (will be plotted at center)
+    const scannerValue = chartData.length ? chartData[chartData.length - 1].value : 0;
 
     // Cleanup
     useEffect(() => {
@@ -294,6 +296,17 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                             </div>
 
                             <div className="flex items-center gap-3">
+                                <label className="text-xs font-bold text-muted uppercase">Window (ms):</label>
+                                <select
+                                    value={windowDuration}
+                                    onChange={(e) => setWindowDuration(Number(e.target.value))}
+                                    className="bg-bg border border-border rounded-lg px-2 py-1 text-sm font-bold focus:border-primary outline-none"
+                                >
+                                    {[500, 1000, 1500, 2000, 3000].map(v => (
+                                        <option key={v} value={v}>{v} ms</option>
+                                    ))}
+                                </select>
+
                                 <label className="text-xs font-bold text-muted uppercase">Target Class:</label>
                                 <select
                                     value={targetLabel}
@@ -329,6 +342,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                                 onWindowSelect={handleManualWindowSelect}
                                 yDomain={currentYDomain}
                                 scannerX={Math.round(SWEEP_WINDOW_MS / 2)}
+                                scannerValue={scannerValue}
                                 timeWindowMs={SWEEP_WINDOW_MS}
                                 color={activeSensor === 'EMG' ? '#3b82f6' : (activeSensor === 'EOG' ? '#10b981' : '#f59e0b')}
                             />

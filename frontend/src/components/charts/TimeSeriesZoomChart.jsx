@@ -8,7 +8,8 @@ import {
     Tooltip,
     ResponsiveContainer,
     ReferenceArea,
-    ReferenceLine
+    ReferenceLine,
+    ReferenceDot
 } from 'recharts';
 
 /**
@@ -27,6 +28,7 @@ export default function TimeSeriesZoomChart({
     activeWindow = null, // { startTime, endTime }
     mode = 'realtime',
     scannerX = null,
+    scannerValue = null,
     yDomain = null // optional external Y domain: [min, max]
 }) {
     // Zoom and Pan state
@@ -172,7 +174,15 @@ export default function TimeSeriesZoomChart({
                         ))}
 
                         {/* Real-time scanner or current active window */}
-                        {scannerX && <ReferenceLine x={scannerX} stroke="var(--primary)" strokeWidth={2} />}
+                        {scannerX !== null && scannerX !== undefined && (
+                            <>
+                                <ReferenceLine x={scannerX} stroke="var(--primary)" strokeWidth={2} />
+                                {/* moving point at center */}
+                                {typeof scannerValue === 'number' && Number.isFinite(scannerValue) && (
+                                    <ReferenceDot x={scannerX} y={scannerValue} r={6} fill={color} stroke="#fff" strokeWidth={1.5} />
+                                )}
+                            </>
+                        )}
 
                         {activeWindow && (
                             <ReferenceArea
@@ -184,6 +194,9 @@ export default function TimeSeriesZoomChart({
                                 strokeDasharray="3 3"
                             />
                         )}
+
+                        {/* Mark zero (center of Y domain) on left side */}
+                        <ReferenceLine y={0} stroke="var(--muted)" strokeDasharray="3 3" label={{ position: 'left', value: '0', fill: 'var(--muted)' }} />
 
                         {/* Interactive Selection Area */}
                         {refAreaLeft && refAreaRight && (
