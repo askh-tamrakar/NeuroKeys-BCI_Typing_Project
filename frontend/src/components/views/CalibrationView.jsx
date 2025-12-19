@@ -125,6 +125,48 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
         setMarkedWindows(prev => prev.map(w => w.id === id ? { ...w, isMissedActual: !w.isMissedActual } : w));
     };
 
+    // Run calibration logic: send each window to backend for saving + feature extraction
+    const runCalibration = async () => {
+        if (!markedWindows || markedWindows.length === 0) return;
+
+        const updated = [];
+
+        for (const w of markedWindows) {
+            try {
+                // extract samples from chartData that fall within the window range
+                const samplesPoints = chartData.filter(p => p.time >= w.startTime && p.time <= w.endTime);
+                const samples = samplesPoints.map(p => p.value);
+                const timestamps = samplesPoints.map(p => p.time);
+
+                // If no samples available (e.g., old recording), still send an empty array
+                const resp = await CalibrationApi.sendWindow(activeSensor, {
+                    action: w.label,
+                    channel: w.channel,
+                    samples,
+                    timestamps
+                });
+
+                // resp contains features, detected, csv_path, updated_thresholds
+                const detected = resp.detected === true;
+                const predicted = detected ? w.label : 'Rest';
+
+                updated.push({ ...w, predictedLabel: predicted, status: detected ? 'correct' : 'incorrect', features: resp.features });
+            } catch (err) {
+                console.error('runCalibration: error sending window', err);
+                updated.push({ ...w, predictedLabel: 'Error', status: 'incorrect' });
+            }
+        }
+
+        setMarkedWindows(updated);
+        // Refresh config from server (server may have updated thresholds)
+        try {
+            const refreshed = await CalibrationApi.fetchSensorConfig();
+            setConfig(refreshed);
+        } catch (e) {
+            console.warn('Could not refresh config after calibration run', e);
+        }
+    };
+
     // Update chart data from WS or Mock
     useEffect(() => {
         if (mode === 'realtime' && wsData) {
@@ -408,6 +450,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                         onDelete={deleteWindow}
                         onMarkMissed={markMissed}
                         activeSensor={activeSensor}
+                        onRun={runCalibration}
                     />
                 </div>
             </div>
