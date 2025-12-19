@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import SignalChart from '../charts/SignalChart';
 import WindowListPanel from '../calibration/WindowListPanel';
 import ConfigPanel from '../calibration/ConfigPanel';
-import { CalibrationApi } from '../../services/calibrationApi';
+import { CalibrationApi } from '../../Services/calibrationApi';
 
 /**
  * CalibrationView
