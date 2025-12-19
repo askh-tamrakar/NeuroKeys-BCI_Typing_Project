@@ -303,16 +303,16 @@ class FilterRouter:
                 
                 # Create processor instance for this channel
                 if sensor_type == "EMG":
-                    self.channel_processors[i] = EMGFilterProcessor(self.config, self.sr)
-                    print(f" [{i}] → EMG (EMG Processor)")
+                    self.channel_processors[i] = EMGFilterProcessor(self.config, self.sr, channel_key=ch_key)
+                    print(f" [{i}] → EMG (EMG Processor) | Key: {ch_key}")
                 
                 elif sensor_type == "EOG":
-                    self.channel_processors[i] = EOGFilterProcessor(self.config, self.sr)
-                    print(f" [{i}] → EOG (EOG Processor)")
+                    self.channel_processors[i] = EOGFilterProcessor(self.config, self.sr, channel_key=ch_key)
+                    print(f" [{i}] → EOG (EOG Processor) | Key: {ch_key}")
                 
                 elif sensor_type == "EEG":
-                    self.channel_processors[i] = EEGFilterProcessor(self.config, self.sr)
-                    print(f" [{i}] → EEG (EEG Processor)")
+                    self.channel_processors[i] = EEGFilterProcessor(self.config, self.sr, channel_key=ch_key)
+                    print(f" [{i}] → EEG (EEG Processor) | Key: {ch_key}")
                 
                 else:
                     # Unknown type - pass-through
