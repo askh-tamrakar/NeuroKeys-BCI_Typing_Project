@@ -22,6 +22,10 @@ const RPSGame = ({ wsEvent }) => {
     const [computerMove, setComputerMove] = useState(null);
     const [result, setResult] = useState(null);
     const [countdown, setCountdown] = useState(0);
+    // Mode: automatic via WS events, or manual via on-screen buttons
+    const [manualMode, setManualMode] = useState(false);
+    // Difficulty for computer move randomness: 'low' (repeats sometimes), 'moderate' (avoid repeats), 'high' (fully random)
+    const [difficulty, setDifficulty] = useState('moderate');
 
     // Stats
     const [score, setScore] = useState({ player: 0, computer: 0 });
@@ -32,11 +36,27 @@ const RPSGame = ({ wsEvent }) => {
 
     // Initialize Computer Move
     const pickComputerMove = useCallback(() => {
-        const randomMove = MOVES[Math.floor(Math.random() * MOVES.length)];
-        computerMoveRef.current = randomMove;
-        setComputerMove(randomMove); // Stored but hidden event in Waiting state
-        console.log("Computer chose (hidden):", randomMove);
-    }, []);
+        const last = computerMoveRef.current;
+        let choice;
+        if (difficulty === 'low') {
+            // slight bias to repeat last move (~60%) to make it more predictable
+            if (last && Math.random() < 0.6) {
+                choice = last;
+            } else {
+                choice = MOVES[Math.floor(Math.random() * MOVES.length)];
+            }
+        } else if (difficulty === 'moderate') {
+            // avoid repeating the last move to increase variety
+            const options = MOVES.filter((m) => m !== last);
+            choice = options[Math.floor(Math.random() * options.length)];
+        } else {
+            // high = fully random
+            choice = MOVES[Math.floor(Math.random() * MOVES.length)];
+        }
+        computerMoveRef.current = choice;
+        setComputerMove(choice); // Stored but hidden until reveal
+        console.log("Computer chose (hidden):", choice, "(difficulty:", difficulty, ")");
+    }, [difficulty]);
 
     const resetGame = useCallback(() => {
         setGameState('waiting');
@@ -51,9 +71,12 @@ const RPSGame = ({ wsEvent }) => {
         pickComputerMove();
     }, [pickComputerMove]);
 
-    // Handle Event via Prop
+    // Handle Event via Prop (only if NOT in manual mode)
     useEffect(() => {
         if (!wsEvent) return;
+
+        // Ignore WS events when manual mode is active
+        if (manualMode) return;
 
         // Check if we are in waiting state
         if (gameState !== 'waiting' || processingRef.current) return;
@@ -64,9 +87,11 @@ const RPSGame = ({ wsEvent }) => {
         if (MOVES.includes(eventName)) {
             handlePlayerMove(eventName);
         }
-    }, [wsEvent, gameState]);
+    }, [wsEvent, gameState, manualMode]);
 
     const handlePlayerMove = (pMove) => {
+        // prevent double-processing
+        if (processingRef.current) return;
         processingRef.current = true;
         const cMove = computerMoveRef.current || MOVES[Math.floor(Math.random() * MOVES.length)];
 
@@ -88,6 +113,32 @@ const RPSGame = ({ wsEvent }) => {
             }
         }, 1000);
     };
+
+    // Manual UI helpers
+    const onManualMove = (move) => {
+        // Only allow when waiting and not currently processing
+        if (gameState !== 'waiting' || processingRef.current) return;
+        handlePlayerMove(move);
+    };
+
+    const toggleManualMode = () => {
+        // switching modes won't reset the current round, but will ignore WS events when manual
+        setManualMode((v) => !v);
+    };
+
+    // Keyboard handling: map R / P / S to moves when in manual mode
+    useEffect(() => {
+        const onKeyDown = (ev) => {
+            if (!manualMode) return;
+            const k = ev.key.toLowerCase();
+            if (k === 'r') onManualMove('ROCK');
+            if (k === 'p') onManualMove('PAPER');
+            if (k === 's') onManualMove('SCISSORS');
+        };
+
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [manualMode, gameState]);
 
     const determineWinner = (p, c) => {
         if (p === c) {
@@ -137,12 +188,33 @@ const RPSGame = ({ wsEvent }) => {
 
     return (
         <div className="rps-container">
-            <div className="rps-title">NEURO RPS</div>
+            <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                    <div className="rps-title">NEURO RPS</div>
+                    <div className="top-controls">
+                        <button className={`mode-btn ${manualMode ? 'active' : ''}`} onClick={toggleManualMode} title="Toggle manual mode">
+                            {manualMode ? 'Manual' : 'Auto'}
+                        </button>
+                        <select className="difficulty-select" value={difficulty} onChange={(e) => setDifficulty(e.target.value)} title="Computer difficulty">
+                            <option value="low">Low</option>
+                            <option value="moderate">Moderate</option>
+                            <option value="high">High</option>
+                        </select>
+                    </div>
+                </div>
+                <div className="scoreboard">
+                    <div>Player: <strong>{score.player}</strong></div>
+                    <div>Computer: <strong>{score.computer}</strong></div>
+                </div>
+            </div>
 
             <div className="status-text">
-                {gameState === 'waiting' && <span className="pulse">Waiting for Player Gesture...</span>}
-                {gameState !== 'waiting' && <span>Result Recieved</span>}
+                {gameState === 'waiting' && !manualMode && <span className="pulse">Waiting for Player Gesture...</span>}
+                {gameState === 'waiting' && manualMode && <span className="pulse">Manual Mode: press <strong>R</strong>/<strong>P</strong>/<strong>S</strong></span>}
+                {gameState !== 'waiting' && <span>Result Received</span>}
             </div>
+
+            
 
             <div className="cards-row">
                 {renderCard('player', playerMove, !!playerMove)}
@@ -164,19 +236,8 @@ const RPSGame = ({ wsEvent }) => {
                 </div>
             )}
 
-            <div style={{
-                position: 'absolute',
-                bottom: '20px',
-                display: 'flex',
-                gap: '2rem',
-                background: 'rgba(0,0,0,0.4)',
-                padding: '10px 20px',
-                borderRadius: '30px'
-            }}>
-                <div>Player: <strong>{score.player}</strong></div>
-                <div>Computer: <strong>{score.computer}</strong></div>
-            </div>
-
+            
+            {/* bottom controls removed — mode selector moved to top */}
         </div>
     );
 };
