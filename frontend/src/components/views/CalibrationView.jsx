@@ -45,7 +45,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     const windowIntervalRef = useRef(null);
     const [windowDuration, setWindowDuration] = useState(1500); // ms
     const GAP_DURATION = 500; // ms
-    const SWEEP_WINDOW_MS = 5000; // visible sweep window length for calibration plot
+    const [timeWindow, setTimeWindow] = useState(5000); // visible sweep window length for calibration plot
 
     // Handlers
     const handleSensorChange = (sensor) => {
@@ -97,7 +97,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                     { ...newWindow, predictedLabel: Math.random() > 0.3 ? targetLabel : 'Rest', status: 'correct' }
                 ]);
                 setActiveWindow(null);
-            }, WINDOW_DURATION);
+            }, windowDuration);
         };
 
         createNextWindow();
@@ -141,7 +141,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
     // Compute sweep-style data for calibration: plotted portion left of center, unplotted baseline to right
     const sweepChartData = (() => {
-        const w = SWEEP_WINDOW_MS;
+        const w = timeWindow;
         const center = Math.round(w / 2);
         const now = Date.now();
 
@@ -167,20 +167,22 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     // Map action windows to sweep coordinates so they travel right->left and disappear at left edge
     const mappedWindows = (() => {
         const now = Date.now();
-        const w = SWEEP_WINDOW_MS;
+        const w = timeWindow;
+        const entrancePad = Math.round(w * 0.08);
         return markedWindows.map(win => {
-            const x1 = Math.round(w - (now - win.endTime));
-            const x2 = Math.round(w - (now - win.startTime));
+            const x1 = Math.round(w + entrancePad - (now - win.endTime));
+            const x2 = Math.round(w + entrancePad - (now - win.startTime));
             return { ...win, startTime: x2, endTime: x1 };
-        }).filter(win => win.endTime >= 0 && win.startTime <= w);
+        }).filter(win => win.endTime >= -entrancePad && win.startTime <= (w + entrancePad));
     })();
 
     const activeWindowMapped = (() => {
         if (!activeWindow) return null;
         const now = Date.now();
-        const w = SWEEP_WINDOW_MS;
-        const x1 = Math.round(w - (now - activeWindow.endTime));
-        const x2 = Math.round(w - (now - activeWindow.startTime));
+        const w = timeWindow;
+        const entrancePad = Math.round(w * 0.08);
+        const x1 = Math.round(w + entrancePad - (now - activeWindow.endTime));
+        const x2 = Math.round(w + entrancePad - (now - activeWindow.startTime));
         return { ...activeWindow, startTime: x2, endTime: x1 };
     })();
 
@@ -329,6 +331,43 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                                 >
                                     {isCalibrating ? 'Stop Calibration' : 'Start Calibration'}
                                 </button>
+
+                                {/* Controls aligned to the right of the Start button: Time window, Window duration, Target */}
+                                <div className="flex items-center gap-2 ml-2">
+                                    <label className="text-xs font-bold text-muted uppercase">Time Win:</label>
+                                    <select
+                                        value={timeWindow}
+                                        onChange={(e) => setTimeWindow(Number(e.target.value))}
+                                        className="bg-bg border border-border rounded px-2 py-1 text-sm font-bold outline-none"
+                                    >
+                                        {[3000, 5000, 8000, 10000].map(v => (
+                                            <option key={v} value={v}>{v / 1000}s</option>
+                                        ))}
+                                    </select>
+
+                                    <label className="text-xs font-bold text-muted uppercase">Window:</label>
+                                    <select
+                                        value={windowDuration}
+                                        onChange={(e) => setWindowDuration(Number(e.target.value))}
+                                        className="bg-bg border border-border rounded px-2 py-1 text-sm font-bold outline-none"
+                                    >
+                                        {[500, 1000, 1500, 2000].map(v => (
+                                            <option key={v} value={v}>{v}ms</option>
+                                        ))}
+                                    </select>
+
+                                    <label className="text-xs font-bold text-muted uppercase">Target:</label>
+                                    <select
+                                        value={targetLabel}
+                                        onChange={(e) => setTargetLabel(e.target.value)}
+                                        className="bg-bg border border-border rounded px-2 py-1 text-sm font-bold outline-none"
+                                    >
+                                        {activeSensor === 'EMG' && ['Rock', 'Paper', 'Scissors', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
+                                        {activeSensor === 'EOG' && ['blink', 'doubleBlink', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
+                                        {activeSensor === 'EEG' && ['target_10Hz', 'target_12Hz', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
+                                    </select>
+                                </div>
+
                             </div>
                         </div>
 
@@ -341,9 +380,9 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                                 activeWindow={activeWindowMapped}
                                 onWindowSelect={handleManualWindowSelect}
                                 yDomain={currentYDomain}
-                                scannerX={Math.round(SWEEP_WINDOW_MS / 2)}
+                                scannerX={Math.round(timeWindow / 2)}
                                 scannerValue={scannerValue}
-                                timeWindowMs={SWEEP_WINDOW_MS}
+                                timeWindowMs={timeWindow}
                                 color={activeSensor === 'EMG' ? '#3b82f6' : (activeSensor === 'EOG' ? '#10b981' : '#f59e0b')}
                             />
                         </div>
