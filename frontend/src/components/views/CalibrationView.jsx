@@ -14,6 +14,8 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     const [mode, setMode] = useState('realtime'); // 'realtime' | 'recording'
     const [config, setConfig] = useState(initialConfig || {});
     const [isCalibrating, setIsCalibrating] = useState(false);
+    const [runInProgress, setRunInProgress] = useState(false);
+    const [windowProgress, setWindowProgress] = useState({});
 
     // Data states
     const [chartData, setChartData] = useState([]);
@@ -129,16 +131,21 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     const runCalibration = async () => {
         if (!markedWindows || markedWindows.length === 0) return;
 
+        setRunInProgress(true);
+        setWindowProgress({});
+
         const updated = [];
 
         for (const w of markedWindows) {
+            // mark saving
+            setWindowProgress(prev => ({ ...prev, [w.id]: { status: 'saving' } }));
+
             try {
                 // extract samples from chartData that fall within the window range
                 const samplesPoints = chartData.filter(p => p.time >= w.startTime && p.time <= w.endTime);
                 const samples = samplesPoints.map(p => p.value);
                 const timestamps = samplesPoints.map(p => p.time);
 
-                // If no samples available (e.g., old recording), still send an empty array
                 const resp = await CalibrationApi.sendWindow(activeSensor, {
                     action: w.label,
                     channel: w.channel,
@@ -146,18 +153,22 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                     timestamps
                 });
 
-                // resp contains features, detected, csv_path, updated_thresholds
+                // success
+                setWindowProgress(prev => ({ ...prev, [w.id]: { status: 'saved' } }));
+
                 const detected = resp.detected === true;
                 const predicted = detected ? w.label : 'Rest';
 
                 updated.push({ ...w, predictedLabel: predicted, status: detected ? 'correct' : 'incorrect', features: resp.features });
             } catch (err) {
                 console.error('runCalibration: error sending window', err);
+                setWindowProgress(prev => ({ ...prev, [w.id]: { status: 'error', message: err?.message || String(err) } }));
                 updated.push({ ...w, predictedLabel: 'Error', status: 'incorrect' });
             }
         }
 
         setMarkedWindows(updated);
+
         // Refresh config from server (server may have updated thresholds)
         try {
             const refreshed = await CalibrationApi.fetchSensorConfig();
@@ -165,6 +176,8 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
         } catch (e) {
             console.warn('Could not refresh config after calibration run', e);
         }
+
+        setRunInProgress(false);
     };
 
     // Update chart data from WS or Mock
@@ -451,6 +464,8 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                         onMarkMissed={markMissed}
                         activeSensor={activeSensor}
                         onRun={runCalibration}
+                        running={runInProgress}
+                        windowProgress={windowProgress}
                     />
                 </div>
             </div>
