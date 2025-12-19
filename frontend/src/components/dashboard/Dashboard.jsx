@@ -5,6 +5,7 @@ import LiveDashboard from '../views/LiveDashboard'
 import DinoView from '../views/DinoView'
 import SSVEPView from '../views/SSVEPView'
 import TestView from '../views/TestView'
+import RPSGame from '../views/RPSGame'
 
 import '../../styles/App.css';
 import themePresets from '../themes/presets';
@@ -88,6 +89,7 @@ export default function Dashboard() {
     { label: 'Live', onClick: () => setCurrentPage('live'), href: '#live' },
     { label: 'Dino', onClick: () => setCurrentPage('dino'), href: '#dino' },
     { label: 'SSVEP', onClick: () => setCurrentPage('ssvep'), href: '#ssvep' },
+    { label: 'RPS', onClick: () => setCurrentPage('rps'), href: '#rps' },
     { label: 'Test', onClick: () => setCurrentPage('test'), href: '#test' },
     {
       label: 'Theme',
@@ -167,6 +169,7 @@ export default function Dashboard() {
         {currentPage === 'dino' && <DinoView wsData={lastMessage} wsEvent={lastEvent} isPaused={false} />}
         {currentPage === 'ssvep' && <SSVEPView />}
         {currentPage === 'test' && <TestView wsData={lastMessage} wsEvent={lastEvent} config={lastConfig} />}
+        {currentPage === 'rps' && <RPSGame wsEvent={lastEvent} />}
       </div>
 
       {/* Footer */}
