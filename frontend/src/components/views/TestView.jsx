@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import SignalChart from '../charts/SignalChart';
 import WindowListPanel from '../calibration/WindowListPanel';
 import ConfigPanel from '../calibration/ConfigPanel';
-import { CalibrationApi } from '../../Services/calibrationApi';
+import { CalibrationApi } from '../../services/calibrationApi';
 
 /**
  * CalibrationView
@@ -20,7 +20,7 @@ export default function TestView({ wsData, wsEvent, config: initialConfig }) {
     // Load config if prop is empty
     useEffect(() => {
         if (!initialConfig || Object.keys(initialConfig).length === 0) {
-            import('../../Services/ConfigService').then(({ ConfigService }) => {
+            import('../../services/ConfigService').then(({ ConfigService }) => {
                 ConfigService.loadConfig().then(cfg => {
                     setConfig(cfg);
                 });
