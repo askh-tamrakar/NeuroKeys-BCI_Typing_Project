@@ -8,6 +8,7 @@ import RecordingsView from '../views/RecordingsView'
 import DevicesView from '../views/DevicesView'
 import DinoView from '../views/DinoView'
 import SSVEPView from '../views/SSVEPView'
+import CalibrationView from '../views/CalibrationView'
 
 import '../../styles/App.css';
 import themePresets from '../themes/presets';
@@ -92,11 +93,9 @@ export default function Dashboard() {
     { label: 'Commands', onClick: () => setCurrentPage('commands'), href: '#commands' },
     { label: 'Recordings', onClick: () => setCurrentPage('recordings'), href: '#recordings' },
     { label: 'Devices', onClick: () => setCurrentPage('devices'), href: '#devices' },
-    //{ label: 'Chat', onClick: () => setCurrentPage('chat'), href: '#chat' },
-    //{ label: 'Settings', onClick: () => setCurrentPage('settings'), href: '#settings' },
-    //{ label: 'Test', onClick: () => setCurrentPage('test'), href: '#test' },
     { label: 'Dino', onClick: () => setCurrentPage('dino'), href: '#dino' },
     { label: 'SSVEP', onClick: () => setCurrentPage('ssvep'), href: '#ssvep' },
+    { label: 'Calibration', onClick: () => setCurrentPage('calibration'), href: '#calibration' },
     {
       label: 'Theme',
       type: 'pill',
@@ -177,6 +176,7 @@ export default function Dashboard() {
         {currentPage === 'devices' && <DevicesView sendMessage={sendMessage} />}
         {currentPage === 'dino' && <DinoView wsData={lastMessage} wsEvent={lastEvent} isPaused={false} />}
         {currentPage === 'ssvep' && <SSVEPView />}
+        {currentPage === 'calibration' && <CalibrationView wsData={lastMessage} wsEvent={lastEvent} config={lastConfig} />}
       </div>
 
       {/* Footer */}
