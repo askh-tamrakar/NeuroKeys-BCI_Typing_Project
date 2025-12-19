@@ -88,6 +88,7 @@ class RPSExtractor:
             "timestamp": self.sample_count / self.sr
         }
         
+        print(features)
         return features
 
     def update_config(self, config: dict):

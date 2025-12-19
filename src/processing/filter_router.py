@@ -393,6 +393,7 @@ class FilterRouter:
                                     filtered_val = processor.process_sample(raw_val)
                                 else:
                                     # ✅ Channel disabled or unmapped - pass through
+                                    print(f"[Router] [WARNING] Channel {ch_idx} disabled or unmapped - passing through")
                                     filtered_val = raw_val
                                 
                                 processed_sample.append(filtered_val)

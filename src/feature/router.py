@@ -6,6 +6,16 @@ Feature Router
 - Output: BioSignals-Events (LSL Markers)
 """
 
+import sys
+import os
+
+# UTF-8 encoding for standard output to avoid UnicodeEncodeError in some terminals
+try:
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
+except Exception:
+    pass
+
 import time
 import json
 import threading
@@ -110,12 +120,12 @@ class FeatureRouter:
                     print(f" [{i}] -> EOG Blink Pipeline (Extractor + Detector)")
                     extractor = BlinkExtractor(i, self.config, self.sr)
                     detector = BlinkDetector(self.config)
-                    self.pipeline[i] = (extractor, detector)
+                    self.pipeline[i] = (extractor, detector, "EOG")
                 elif sensor == "EMG":
                     print(f" [{i}] -> EMG RPS Pipeline (Extractor + Detector)")
                     extractor = RPSExtractor(i, self.config, self.sr)
                     detector = RPSDetector(self.config)
-                    self.pipeline[i] = (extractor, detector)
+                    self.pipeline[i] = (extractor, detector, "EMG")
 
     def run(self):
         self.running = True
@@ -131,16 +141,24 @@ class FeatureRouter:
                     # Route to pipeline
                     for ch_idx, val in enumerate(sample):
                         if ch_idx in self.pipeline:
-                            extractor, detector = self.pipeline[ch_idx]
+                            extractor, detector, sensor_type = self.pipeline[ch_idx]
                             features = extractor.process(val)
                             
                             if features:
-                                is_blink = detector.detect(features)
+                                detection_result = detector.detect(features)
                                 
-                                if is_blink:
+                                if detection_result:
+                                    # Determine event name
+                                    if sensor_type == "EOG":
+                                        event_name = "BLINK"
+                                    elif sensor_type == "EMG":
+                                        event_name = detection_result # e.g. "ROCK", "PAPER", "SCISSORS"
+                                    else:
+                                        event_name = "UNKNOWN_EVENT"
+
                                     # emit event
                                     event_data = {
-                                        "event": "BLINK",
+                                        "event": event_name,
                                         "channel": f"ch{ch_idx}",
                                         "timestamp": ts,
                                         "features": features

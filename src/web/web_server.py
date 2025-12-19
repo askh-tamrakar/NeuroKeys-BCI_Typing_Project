@@ -1,9 +1,18 @@
+import sys
+import os
+
+# UTF-8 encoding for standard output to avoid UnicodeEncodeError in some terminals
+try:
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
+except Exception:
+    pass
+
 import json
 import threading
 import time
 from pathlib import Path
 from typing import Dict, Optional
-#from src.utils.config import config
 
 try:
     import pylsl

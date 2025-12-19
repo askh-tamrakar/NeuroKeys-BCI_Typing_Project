@@ -9,43 +9,65 @@ class RPSDetector:
         self._load_config()
         
     def _load_config(self):
-        emg_cfg = self.config.get("features", {}).get("EMG", {})
-        
-        # Thresholds (Default values based on heuristic estimation)
-        # These need to be tuned based on actual signal levels
-        self.rms_threshold_high = emg_cfg.get("rms_threshold_high", 1500.0) # Rock/Scissors vs Paper/Rest
-        self.rms_threshold_low = emg_cfg.get("rms_threshold_low", 500.0)    # Paper vs Rest
-        self.zcr_threshold = emg_cfg.get("zcr_threshold", 0.15)             # Scissors vs Rock
+        self.profiles = self.config.get("features", {}).get("EMG", {})
         
     def detect(self, features: dict) -> str | None:
         """
-        Classify gesture based on features.
-        Returns: "ROCK", "PAPER", "SCISSORS", or None (Rest/Unknown)
+        Classify gesture based on multi-feature profiles and log values.
         """
-        if not features:
+        if not features or not self.profiles:
             return None
             
-        rms = features.get("rms", 0.0)
-        zcr = features.get("zcr", 0.0)
+        # 1. Print all extracted values for the user
+        print(f"\n[RPSDetector] --- Features Extracted ---")
+        for feat, val in features.items():
+            if feat != "timestamp":
+                print(f"  > {feat:8}: {val:.4f}")
         
-        # 1. Check for Activity (vs Rest)
-        if rms < self.rms_threshold_low:
-            return None # Rest
-            
-        # 2. Check for High Intensity (Rock or Scissors)
-        if rms > self.rms_threshold_high:
-            # Distinguish Rock (Muscle tension) vs Scissors (Co-contraction/Dynamic)
-            # Heuristic: Scissors often has higher frequency components (ZCR) or specific shape
-            # NOTE: detailed separation usually requires ML. 
-            # Simple heuristic: Scissors = High ZCR, Rock = Low ZCR
-            if zcr > self.zcr_threshold:
-                return "SCISSORS"
-            else:
-                return "ROCK"
+        scores = {}
+        match_details = {}
+        
+        for gesture, profile in self.profiles.items():
+            if gesture == "Rest":
+                continue
                 
-        # 3. Medium Intensity -> Paper
-        # (Opening hand requires some muscle, but less than fist)
-        return "PAPER"
+            match_count = 0
+            total_features = 0
+            matches = []
+            
+            for feat_name, range_val in profile.items():
+                if feat_name in features and isinstance(range_val, list) and len(range_val) == 2:
+                    total_features += 1
+                    val = features[feat_name]
+                    is_match = range_val[0] <= val <= range_val[1]
+                    if is_match:
+                        match_count += 1
+                        matches.append(feat_name)
+            
+            if total_features > 0:
+                score = match_count / total_features
+                scores[gesture] = score
+                match_details[gesture] = f"{match_count}/{total_features} matches: {matches}"
+
+        # Print match report
+        print(f"[RPSDetector] --- Match Report ---")
+        for gesture, detail in match_details.items():
+            print(f"  {gesture:10}: {detail} (Score: {scores[gesture]:.2f})")
+
+        # Threshold for detection (consensus)
+        CONSENSUS_THRESHOLD = 0.6
+        
+        if not scores:
+            return None
+            
+        best_gesture = max(scores, key=scores.get)
+        
+        if scores[best_gesture] >= CONSENSUS_THRESHOLD:
+            print(f"[RPSDetector] [OK] Detected: {best_gesture.upper()}")
+            return best_gesture.upper()
+                
+        print(f"[RPSDetector] [SKIP] No consensus (Best: {best_gesture} @ {scores[best_gesture]:.2f})")
+        return None
 
     def update_config(self, config: dict):
         self.config = config
