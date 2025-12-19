@@ -619,7 +619,8 @@ def api_save_window():
         samples = payload.get('samples')
         timestamps = payload.get('timestamps', None)
 
-        if not sensor or not action or not samples:
+        # samples may be an empty list (allowed). Ensure required keys exist.
+        if sensor is None or action is None or samples is None:
             return jsonify({"error": "Missing required fields: sensor, action, samples"}), 400
 
         # Create output directories

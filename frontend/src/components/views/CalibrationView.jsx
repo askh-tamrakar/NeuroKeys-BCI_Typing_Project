@@ -48,6 +48,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     const [windowDuration, setWindowDuration] = useState(1500); // ms
     const GAP_DURATION = 500; // ms
     const [timeWindow, setTimeWindow] = useState(5000); // visible sweep window length for calibration plot
+    const MAX_WINDOWS = 50;
 
     // Handlers
     const handleSensorChange = (sensor) => {
@@ -94,10 +95,10 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
             // Mock prediction after window ends
             setTimeout(() => {
-                setMarkedWindows(prev => [
-                    ...prev,
-                    { ...newWindow, predictedLabel: Math.random() > 0.3 ? targetLabel : 'Rest', status: 'correct' }
-                ]);
+                setMarkedWindows(prev => {
+                    const next = [...prev, { ...newWindow, predictedLabel: Math.random() > 0.3 ? targetLabel : 'Rest', status: 'correct' }];
+                    return next.slice(-MAX_WINDOWS);
+                });
                 setActiveWindow(null);
             }, windowDuration);
         };
@@ -116,7 +117,10 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             label: targetLabel,
             status: 'correct' // Assume user marking is ground truth
         };
-        setMarkedWindows(prev => [...prev, newWindow]);
+        setMarkedWindows(prev => {
+            const next = [...prev, newWindow];
+            return next.slice(-MAX_WINDOWS);
+        });
     };
 
     const deleteWindow = (id) => {
@@ -167,7 +171,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             }
         }
 
-        setMarkedWindows(updated);
+        setMarkedWindows(updated.slice(-MAX_WINDOWS));
 
         // Refresh config from server (server may have updated thresholds)
         try {
