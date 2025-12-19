@@ -13,6 +13,8 @@ import threading
 import time
 from pathlib import Path
 from typing import Dict, Optional
+import math
+import statistics
 
 try:
     import pylsl
@@ -520,6 +522,194 @@ def api_get_recording(filename):
         return jsonify(data)
     except Exception as e:
         print(f"[WebServer] ❌ Error getting recording: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ========== WINDOW SAVING & FEATURE EXTRACTION ==========
+
+
+def compute_features(samples):
+    """Compute a basic set of time-domain features for a 1-D signal window.
+
+    Returns a dict of feature_name -> value.
+    """
+    if not samples:
+        return {}
+
+    # ensure floats
+    xs = [float(x) for x in samples]
+    n = len(xs)
+
+    energy = sum(x * x for x in xs)
+    iemg = sum(abs(x) for x in xs)
+    mav = iemg / n if n else 0.0
+    peak = max(abs(x) for x in xs)
+    rng = max(xs) - min(xs)
+    mean_sq = sum(x * x for x in xs) / n if n else 0.0
+    rms = math.sqrt(mean_sq)
+    var = statistics.pvariance(xs) if n > 1 else 0.0
+    wl = sum(abs(xs[i] - xs[i - 1]) for i in range(1, n)) if n > 1 else 0.0
+
+    # zero-crossing rate (relative)
+    zc_count = 0
+    for i in range(1, n):
+        if xs[i - 1] == 0 or xs[i] == 0:
+            continue
+        if (xs[i - 1] > 0) != (xs[i] > 0):
+            zc_count += 1
+    zcr = zc_count / (n - 1) if n > 1 else 0.0
+
+    # approximate entropy using amplitude histogram
+    try:
+        bins = 20
+        lo = min(xs)
+        hi = max(xs)
+        if hi == lo:
+            entropy = 0.0
+        else:
+            width = (hi - lo) / bins
+            counts = [0] * bins
+            for v in xs:
+                idx = int((v - lo) / width)
+                if idx >= bins:
+                    idx = bins - 1
+                counts[idx] += 1
+            probs = [c / n for c in counts if c > 0]
+            entropy = -sum(p * math.log2(p) for p in probs)
+    except Exception:
+        entropy = 0.0
+
+    features = {
+        "energy": energy,
+        "entropy": entropy,
+        "iemg": iemg,
+        "mav": mav,
+        "peak": peak,
+        "range": rng,
+        "rms": rms,
+        "var": var,
+        "wl": wl,
+        "zcr": zcr
+    }
+
+    return features
+
+
+@app.route('/api/window', methods=['POST'])
+def api_save_window():
+    """Accept a recorded window, save as CSV, compute features and update config thresholds.
+
+    Expected JSON:
+    {
+      "sensor": "EMG",
+      "channel": 0,
+      "action": "Rock",
+      "samples": [ ... ],
+      "timestamps": [ ... ] (optional)
+    }
+    """
+    try:
+        payload = request.get_json()
+        if not payload:
+            return jsonify({"error": "No payload provided"}), 400
+
+        sensor = payload.get('sensor')
+        action = payload.get('action')
+        channel = payload.get('channel', None)
+        samples = payload.get('samples')
+        timestamps = payload.get('timestamps', None)
+
+        if not sensor or not action or not samples:
+            return jsonify({"error": "Missing required fields: sensor, action, samples"}), 400
+
+        # Create output directories
+        windows_dir = PROJECT_ROOT / 'data' / 'processed' / 'windows' / sensor / action
+        windows_dir.mkdir(parents=True, exist_ok=True)
+
+        ts = time.time()
+        safe_name = f"window__{action}__{int(ts)}__ch{channel if channel is not None else 'na'}.csv"
+        csv_path = windows_dir / safe_name
+
+        # Save CSV: timestamp,value
+        with open(csv_path, 'w') as f:
+            f.write('timestamp,value\n')
+            if timestamps and len(timestamps) == len(samples):
+                for t, v in zip(timestamps, samples):
+                    f.write(f"{t},{v}\n")
+            else:
+                # write sample index as time
+                for i, v in enumerate(samples):
+                    f.write(f"{i},{v}\n")
+
+        # Compute features
+        features = compute_features(samples)
+
+        # Save features JSON alongside CSV
+        feat_path = csv_path.with_suffix('.features.json')
+        with open(feat_path, 'w') as f:
+            json.dump({"features": features, "sensor": sensor, "action": action, "channel": channel, "saved_at": ts}, f, indent=2)
+
+        # Load config and update thresholds for sensor/action
+        cfg = state.config or load_config()
+        cfg_features = cfg.setdefault('features', {})
+        sensor_features = cfg_features.setdefault(sensor, {})
+
+        # Ensure action entry exists
+        action_entry = sensor_features.setdefault(action, {})
+
+        updated = {}
+        matches = 0
+        total = 0
+
+        for k, val in features.items():
+            total += 1
+            old_range = action_entry.get(k)
+            # if existing range, check match
+            if isinstance(old_range, list) and len(old_range) == 2:
+                lo, hi = float(old_range[0]), float(old_range[1])
+                if lo <= val <= hi:
+                    matches += 1
+                # expand range to include observed value
+                new_lo = min(lo, val)
+                new_hi = max(hi, val)
+                action_entry[k] = [new_lo, new_hi]
+                updated[k] = [new_lo, new_hi]
+            else:
+                # create initial range +/-10%
+                if val == 0:
+                    new_lo, new_hi = 0.0, 0.0
+                else:
+                    new_lo = val * 0.9
+                    new_hi = val * 1.1
+                action_entry[k] = [new_lo, new_hi]
+                updated[k] = [new_lo, new_hi]
+
+        # Save updated config to disk
+        save_success = save_config(cfg)
+
+        # Simple detection: majority of features fall within the target action ranges
+        detected = (matches / total) >= 0.6 if total > 0 else False
+
+        result = {
+            "status": "saved",
+            "csv_path": str(csv_path),
+            "features": features,
+            "detected": detected,
+            "updated_thresholds": updated,
+            "config_saved": save_success
+        }
+
+        # Broadcast via socket for live UI updates
+        try:
+            socketio.emit('window_saved', {"sensor": sensor, "action": action, "features": features, "detected": detected})
+        except Exception:
+            pass
+
+        print(f"[WebServer] 💾 Window saved: {csv_path} (detected={detected})")
+        return jsonify(result)
+
+    except Exception as e:
+        print(f"[WebServer] ❌ Error saving window: {e}")
         return jsonify({"error": str(e)}), 500
 
 

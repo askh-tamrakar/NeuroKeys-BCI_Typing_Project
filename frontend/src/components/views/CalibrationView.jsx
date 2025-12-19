@@ -252,7 +252,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                             <div className="flex items-center gap-3">
                                 <div className="text-xs font-bold text-muted uppercase">Zoom:</div>
                                 <div className="flex gap-1">
-                                    {[1, 2, 5, 10, 20].map(z => (
+                                    {[1, 2, 5, 10, 25].map(z => (
                                         <button
                                             key={z}
                                             onClick={() => { setZoom(z); setManualYRange(""); }}
@@ -298,39 +298,6 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                             </div>
 
                             <div className="flex items-center gap-3">
-                                <label className="text-xs font-bold text-muted uppercase">Window (ms):</label>
-                                <select
-                                    value={windowDuration}
-                                    onChange={(e) => setWindowDuration(Number(e.target.value))}
-                                    className="bg-bg border border-border rounded-lg px-2 py-1 text-sm font-bold focus:border-primary outline-none"
-                                >
-                                    {[500, 1000, 1500, 2000, 3000].map(v => (
-                                        <option key={v} value={v}>{v} ms</option>
-                                    ))}
-                                </select>
-
-                                <label className="text-xs font-bold text-muted uppercase">Target Class:</label>
-                                <select
-                                    value={targetLabel}
-                                    onChange={(e) => setTargetLabel(e.target.value)}
-                                    className="bg-bg border border-border rounded-lg px-3 py-1.5 text-sm font-bold focus:border-primary outline-none"
-                                >
-                                    {activeSensor === 'EMG' && ['Rock', 'Paper', 'Scissors', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
-                                    {activeSensor === 'EOG' && ['blink', 'doubleBlink', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
-                                    {activeSensor === 'EEG' && ['target_10Hz', 'target_12Hz', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
-                                </select>
-                            </div>
-
-                            <div className="flex items-center gap-3">
-                                <button
-                                    onClick={isCalibrating ? handleStopCalibration : handleStartCalibration}
-                                    className={`px-6 py-2 rounded-xl font-bold transition-all shadow-glow ${isCalibrating
-                                        ? 'bg-red-500 text-white hover:opacity-90'
-                                        : 'bg-primary text-primary-contrast hover:opacity-90 hover:translate-y-[-2px]'
-                                        }`}
-                                >
-                                    {isCalibrating ? 'Stop Calibration' : 'Start Calibration'}
-                                </button>
 
                                 {/* Controls aligned to the right of the Start button: Time window, Window duration, Target */}
                                 <div className="flex items-center gap-2 ml-2">
@@ -340,7 +307,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                                         onChange={(e) => setTimeWindow(Number(e.target.value))}
                                         className="bg-bg border border-border rounded px-2 py-1 text-sm font-bold outline-none"
                                     >
-                                        {[3000, 5000, 8000, 10000].map(v => (
+                                        {[3000, 5000, 8000, 10000, 15000, 20000].map(v => (
                                             <option key={v} value={v}>{v / 1000}s</option>
                                         ))}
                                     </select>
@@ -366,6 +333,16 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                                         {activeSensor === 'EOG' && ['blink', 'doubleBlink', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
                                         {activeSensor === 'EEG' && ['target_10Hz', 'target_12Hz', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
                                     </select>
+
+                                    <button
+                                    onClick={isCalibrating ? handleStopCalibration : handleStartCalibration}
+                                    className={`px-6 py-2 rounded-xl font-bold transition-all shadow-glow ${isCalibrating
+                                        ? 'bg-red-500 text-white hover:opacity-90'
+                                        : 'bg-primary text-primary-contrast hover:opacity-90 hover:translate-y-[-2px]'
+                                        }`}
+                                    >
+                                        {isCalibrating ? 'Stop Calibration' : 'Start Calibration'}
+                                    </button>
                                 </div>
 
                             </div>
