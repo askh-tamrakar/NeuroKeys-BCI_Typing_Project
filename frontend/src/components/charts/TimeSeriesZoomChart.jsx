@@ -83,6 +83,17 @@ export default function TimeSeriesZoomChart({
         setBottom('auto');
     };
 
+    // If a sweep-like fixed time window is provided, lock X domain to 0..timeWindowMs
+    useEffect(() => {
+        if (timeWindowMs && Number.isFinite(Number(timeWindowMs))) {
+            setLeft(0);
+            setRight(Number(timeWindowMs));
+        } else {
+            setLeft('dataMin');
+            setRight('dataMax');
+        }
+    }, [timeWindowMs]);
+
     // Helper to get color for window status
     const getWindowColor = (status, isMissed) => {
         if (isMissed) return 'rgba(239, 68, 68, 0.2)'; // Red
@@ -195,8 +206,7 @@ export default function TimeSeriesZoomChart({
                             />
                         )}
 
-                        {/* Mark zero (center of Y domain) on left side */}
-                        <ReferenceLine y={0} stroke="var(--muted)" strokeDasharray="3 3" label={{ position: 'left', value: '0', fill: 'var(--muted)' }} />
+                        {/* Removed static y=0 dotted line per calibration UX request */}
 
                         {/* Interactive Selection Area */}
                         {refAreaLeft && refAreaRight && (
