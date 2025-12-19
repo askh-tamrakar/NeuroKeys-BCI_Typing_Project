@@ -120,9 +120,8 @@ export default function TimeSeriesZoomChart({
                         <XAxis
                             dataKey="time"
                             type="number"
-                            domain={mode === 'recording' ? [left, right] : ['auto', 'auto']}
+                            domain={[left, right]}
                             tickFormatter={(t) => {
-                                if (!t || isNaN(t)) return '';
                                 const date = new Date(t);
                                 return `${date.getMinutes()}:${date.getSeconds().toString().padStart(2, '0')}.${date.getMilliseconds().toString().padStart(3, '0').slice(0, 1)}`;
                             }}
@@ -132,7 +131,7 @@ export default function TimeSeriesZoomChart({
                             axisLine={false}
                         />
                         <YAxis
-                            domain={['auto', 'auto']}
+                            domain={[bottom, top]}
                             stroke="var(--muted)"
                             fontSize={10}
                             tickLine={false}
