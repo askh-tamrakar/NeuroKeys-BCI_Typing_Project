@@ -1,13 +1,10 @@
 import React, { useState, useEffect } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
-import { ConfigService } from '../../Services/ConfigService'
 import LiveDashboard from '../views/LiveDashboard'
-import CommandVisualizer from '../views/CommandVisualizer'
-import RecordingsView from '../views/RecordingsView'
-import DevicesView from '../views/DevicesView'
 import DinoView from '../views/DinoView'
 import SSVEPView from '../views/SSVEPView'
+import TestView from '../views/TestView'
 import RPSGame from '../views/RPSGame'
 
 import '../../styles/App.css';
@@ -90,15 +87,10 @@ export default function Dashboard() {
 
   const navItems = React.useMemo(() => [
     { label: 'Live', onClick: () => setCurrentPage('live'), href: '#live' },
-    { label: 'Commands', onClick: () => setCurrentPage('commands'), href: '#commands' },
-    { label: 'Recordings', onClick: () => setCurrentPage('recordings'), href: '#recordings' },
-    { label: 'Devices', onClick: () => setCurrentPage('devices'), href: '#devices' },
-    //{ label: 'Chat', onClick: () => setCurrentPage('chat'), href: '#chat' },
-    //{ label: 'Settings', onClick: () => setCurrentPage('settings'), href: '#settings' },
-    //{ label: 'Test', onClick: () => setCurrentPage('test'), href: '#test' },
     { label: 'Dino', onClick: () => setCurrentPage('dino'), href: '#dino' },
     { label: 'SSVEP', onClick: () => setCurrentPage('ssvep'), href: '#ssvep' },
     { label: 'RPS', onClick: () => setCurrentPage('rps'), href: '#rps' },
+    { label: 'Test', onClick: () => setCurrentPage('test'), href: '#test' },
     {
       label: 'Theme',
       type: 'pill',
@@ -174,11 +166,9 @@ export default function Dashboard() {
       {/* Main Content Area */}
       <div className="container" style={{ flex: 1, padding: '24px 0', overflowY: 'auto' }}>
         {currentPage === 'live' && <LiveDashboard wsData={lastMessage} wsConfig={lastConfig} wsEvent={lastEvent} sendMessage={sendMessage} />}
-        {currentPage === 'commands' && <CommandVisualizer wsData={lastMessage} />}
-        {currentPage === 'recordings' && <RecordingsView />}
-        {currentPage === 'devices' && <DevicesView sendMessage={sendMessage} />}
         {currentPage === 'dino' && <DinoView wsData={lastMessage} wsEvent={lastEvent} isPaused={false} />}
         {currentPage === 'ssvep' && <SSVEPView />}
+        {currentPage === 'test' && <TestView wsData={lastMessage} wsEvent={lastEvent} config={lastConfig} />}
         {currentPage === 'rps' && <RPSGame wsEvent={lastEvent} />}
       </div>
 

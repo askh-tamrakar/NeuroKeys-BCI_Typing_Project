@@ -1,6 +1,7 @@
 // LiveView.jsx (updated)
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import SignalChart from '../charts/SignalChart'
+import { DataService } from '../../services/DataService'
 
 export default function LiveView({ wsData, wsEvent, config, isPaused }) {
   const timeWindowMs = config?.display?.timeWindowMs || 10000
@@ -16,11 +17,32 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
   const [scannerX, setScannerX] = useState(null)
   const [scannerPercent, setScannerPercent] = useState(0)
 
+  // Recording State
+  const [isRecording, setIsRecording] = useState(false)
+  const [recordingStartTime, setRecordingStartTime] = useState(null)
+  const [recordingTime, setRecordingTime] = useState(0)
+  const [recordedData, setRecordedData] = useState([]) // Array of { timestamp, channels: { ch0: val, ch1: val, ... } }
+  const [recordingChannels, setRecordingChannels] = useState([0, 1]) // Default to first two channels
+  const [isSaving, setIsSaving] = useState(false)
+
   const addDataPoint = (dataArray, newPoint, maxAge) => {
     const now = newPoint.time
     const filtered = dataArray.filter(p => (now - p.time) < maxAge)
     return [...filtered, newPoint]
   }
+
+  // Update recording timer
+  useEffect(() => {
+    let interval = null
+    if (isRecording) {
+      interval = setInterval(() => {
+        setRecordingTime(Math.floor((Date.now() - recordingStartTime) / 1000))
+      }, 1000)
+    } else {
+      setRecordingTime(0)
+    }
+    return () => clearInterval(interval)
+  }, [isRecording, recordingStartTime])
 
   useEffect(() => {
     if (!wsData || isPaused) return
@@ -54,6 +76,28 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
       incomingTs = window.__lastTs + sampleIntervalMs
     }
     window.__lastTs = incomingTs
+
+    // If recording, accumulate data
+    if (isRecording) {
+      const recordPoint = {
+        timestamp: incomingTs,
+        channels: {}
+      }
+
+      Object.entries(payload.channels).forEach(([chIdx, chData]) => {
+        const chNum = parseInt(chIdx)
+        if (recordingChannels.includes(chNum)) {
+          let value = 0
+          if (typeof chData === 'number') value = chData
+          else if (typeof chData === 'object') value = chData.value ?? chData.val ?? 0
+          recordPoint.channels[`ch${chNum}`] = value
+        }
+      })
+
+      if (Object.keys(recordPoint.channels).length > 0) {
+        setRecordedData(prev => [...prev, recordPoint])
+      }
+    }
 
     Object.entries(payload.channels).forEach(([chIdx, chData]) => {
       const chNum = parseInt(chIdx)
@@ -103,7 +147,7 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
           console.warn(`[LiveView] Ch${chNum}: Unknown channel index`)
       }
     })
-  }, [wsData, isPaused, timeWindowMs, channelMapping, samplingRate])
+  }, [wsData, isPaused, timeWindowMs, channelMapping, samplingRate, isRecording, recordingChannels])
 
   useEffect(() => {
     const allData = [ch0Data, ch1Data, ch2Data, ch3Data].filter(d => d && d.length)
@@ -205,21 +249,7 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
     const active = []  // Newest data (0 -> Scanner)
     const history = [] // Oldest data (Scanner -> Window)
 
-    // Split based on scanner position
-    // We map 0..Window.
-    // Logic: If (originalTime > latestTs - scannerPos), it belongs to Active (New) segment? 
-    // Yes.
-    // Example: Window 10, LastTS 25. Scanner 5.
-    // Active range: 20..25. (Maps to 0..5).
-    // History range: 15..20. (Maps to 5..10).
-
-    // Actually, simpler: just map everything to modulo, then bucket by X position relative to Scanner?
-    // No, overlapping X is possible if we have > Window data.
-    // Robust way: Filter by Absolute Time.
-
     const cycleStartTs = latestTs - scannerPos // The time corresponding to X=0 in the current sweep
-    // Any point >= cycleStartTs is ACTIVE (0..Scanner).
-    // Any point < cycleStartTs is HISTORY (Scanner..Window).
 
     data.forEach(d => {
       const mappedTime = d.time % windowMs
@@ -257,6 +287,62 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
     x: a.x % windowMs
   }))
 
+  const toggleRecording = async () => {
+    if (!isRecording) {
+      // Start
+      setRecordedData([])
+      setRecordingStartTime(Date.now())
+      setIsRecording(true)
+    } else {
+      // Stop & Save
+      setIsRecording(false)
+      setIsSaving(true)
+
+      try {
+        const now = new Date()
+        const day = String(now.getDate()).padStart(2, '0')
+        const month = String(now.getMonth() + 1).padStart(2, '0')
+        const year = now.getFullYear()
+        const hours = String(now.getHours()).padStart(2, '0')
+        const mins = String(now.getMinutes()).padStart(2, '0')
+        const secs = String(now.getSeconds()).padStart(2, '0')
+
+        // Use first sensor type in recording channels for filename
+        const firstCh = recordingChannels[0]
+        const sensorType = channelMapping[`ch${firstCh}`]?.sensor || 'DATA'
+
+        const filename = `${sensorType}__${day}-${month}-${year}__${hours}-${mins}-${secs}.json`
+
+        const payload = {
+          metadata: {
+            sensorType,
+            channels: recordingChannels,
+            samplingRate,
+            startTime: recordingStartTime,
+            endTime: Date.now(),
+            duration: recordingTime
+          },
+          data: recordedData
+        }
+
+        await DataService.saveSession(filename, payload)
+        alert(`Session saved successfully as ${filename}`)
+      } catch (err) {
+        console.error('Failed to save session:', err)
+        alert('Failed to save session. Check console for details.')
+      } finally {
+        setIsSaving(false)
+        setRecordedData([])
+      }
+    }
+  }
+
+  const toggleChannelSelection = (chIdx) => {
+    setRecordingChannels(prev =>
+      prev.includes(chIdx) ? prev.filter(c => c !== chIdx) : [...prev, chIdx]
+    )
+  }
+
   return (
     <div className="w-full h-full flex flex-col gap-4 p-4 bg-bg rounded-lg overflow-auto">
       {/* Controls */}
@@ -290,6 +376,44 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
             onChange={(e) => setManualYRange(e.target.value)}
             className="w-20 bg-bg border border-border rounded px-2 py-1 text-xs text-text focus:outline-none focus:border-primary"
           />
+        </div>
+
+        <div className="h-4 w-[1px] bg-border mx-2"></div>
+
+        {/* Recording Controls */}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <div className="text-xs font-bold text-muted uppercase tracking-wider">Record Ch:</div>
+            <div className="flex gap-1">
+              {activeChannels.map(chIdx => (
+                <button
+                  key={chIdx}
+                  disabled={isRecording}
+                  onClick={() => toggleChannelSelection(chIdx)}
+                  className={`w-6 h-6 flex items-center justify-center rounded text-[10px] font-bold border transition-all ${recordingChannels.includes(chIdx)
+                    ? 'bg-primary/20 border-primary text-primary'
+                    : 'bg-surface/50 border-border text-muted hover:text-text opacity-50'
+                    }`}
+                >
+                  {chIdx}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <button
+            onClick={toggleRecording}
+            disabled={isSaving || (activeChannels.length === 0 && !isRecording)}
+            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg font-bold text-xs transition-all shadow-lg ${isRecording
+              ? 'bg-red-500 text-white animate-pulse'
+              : 'bg-emerald-500 text-emerald-contrast hover:translate-y-[-1px]'
+              }`}
+          >
+            <div className={`w-2 h-2 rounded-full ${isRecording ? 'bg-white' : 'bg-white/50'}`}></div>
+            {isRecording ? `STOP (${recordingTime}s)` : 'REC'}
+          </button>
+
+          {isSaving && <div className="text-[10px] text-primary animate-pulse font-bold">SAVING...</div>}
         </div>
 
         <div className="text-[10px] text-muted ml-auto font-mono bg-bg/50 px-2 py-1 rounded border border-border">
@@ -337,7 +461,10 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
 
       <div className="bg-surface/50 border border-border rounded p-3 text-xs text-muted font-mono space-y-1">
         {/* Footer Info */}
-        <div><span className="text-primary">Zoom</span>: {zoom}x <span className="ml-4 text-orange-400">Range</span>: +/-{(BASE_AMPLITUDE / zoom).toFixed(0)} uV</div>
+        <div className="flex justify-between">
+          <div><span className="text-primary">Zoom</span>: {zoom}x <span className="ml-4 text-orange-400">Range</span>: +/-{(BASE_AMPLITUDE / zoom).toFixed(0)} uV</div>
+          {isRecording && <div className="text-red-400 animate-pulse font-bold">● RECORDING IN PROGRESS</div>}
+        </div>
         <div><span className="text-purple-400">Stream</span>: {wsData?.raw?.stream_name || 'Disconnected'}</div>
       </div>
     </div>

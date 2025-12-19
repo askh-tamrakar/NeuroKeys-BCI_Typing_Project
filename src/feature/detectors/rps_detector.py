@@ -19,10 +19,10 @@ class RPSDetector:
             return None
             
         # 1. Print all extracted values for the user
-        print(f"\n[RPSDetector] --- Features Extracted ---")
-        for feat, val in features.items():
-            if feat != "timestamp":
-                print(f"  > {feat:8}: {val:.4f}")
+        # print(f"\n[RPSDetector] --- Features Extracted ---")
+        # for feat, val in features.items():
+        #     if feat != "timestamp":
+        #         print(f"  > {feat:8}: {val:.4f}")
         
         scores = {}
         match_details = {}
@@ -50,9 +50,9 @@ class RPSDetector:
                 match_details[gesture] = f"{match_count}/{total_features} matches: {matches}"
 
         # Print match report
-        print(f"[RPSDetector] --- Match Report ---")
-        for gesture, detail in match_details.items():
-            print(f"  {gesture:10}: {detail} (Score: {scores[gesture]:.2f})")
+        # print(f"[RPSDetector] --- Match Report ---")
+        # for gesture, detail in match_details.items():
+        #     print(f"  {gesture:10}: {detail} (Score: {scores[gesture]:.2f})")
 
         # Threshold for detection (consensus)
         CONSENSUS_THRESHOLD = 0.6
