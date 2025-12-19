@@ -8,6 +8,7 @@ import RecordingsView from '../views/RecordingsView'
 import DevicesView from '../views/DevicesView'
 import DinoView from '../views/DinoView'
 import SSVEPView from '../views/SSVEPView'
+import RPSGame from '../views/RPSGame'
 
 import '../../styles/App.css';
 import themePresets from '../themes/presets';
@@ -97,6 +98,7 @@ export default function Dashboard() {
     //{ label: 'Test', onClick: () => setCurrentPage('test'), href: '#test' },
     { label: 'Dino', onClick: () => setCurrentPage('dino'), href: '#dino' },
     { label: 'SSVEP', onClick: () => setCurrentPage('ssvep'), href: '#ssvep' },
+    { label: 'RPS', onClick: () => setCurrentPage('rps'), href: '#rps' },
     {
       label: 'Theme',
       type: 'pill',
@@ -177,6 +179,7 @@ export default function Dashboard() {
         {currentPage === 'devices' && <DevicesView sendMessage={sendMessage} />}
         {currentPage === 'dino' && <DinoView wsData={lastMessage} wsEvent={lastEvent} isPaused={false} />}
         {currentPage === 'ssvep' && <SSVEPView />}
+        {currentPage === 'rps' && <RPSGame wsEvent={lastEvent} />}
       </div>
 
       {/* Footer */}
