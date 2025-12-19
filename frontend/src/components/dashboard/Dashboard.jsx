@@ -4,7 +4,6 @@ import { useWebSocket } from '../../hooks/useWebSocket'
 import LiveDashboard from '../views/LiveDashboard'
 import DinoView from '../views/DinoView'
 import SSVEPView from '../views/SSVEPView'
-import CalibrationView from '../views/CalibrationView'
 import TestView from '../views/TestView'
 
 import '../../styles/App.css';
@@ -89,7 +88,6 @@ export default function Dashboard() {
     { label: 'Live', onClick: () => setCurrentPage('live'), href: '#live' },
     { label: 'Dino', onClick: () => setCurrentPage('dino'), href: '#dino' },
     { label: 'SSVEP', onClick: () => setCurrentPage('ssvep'), href: '#ssvep' },
-    { label: 'Calibration', onClick: () => setCurrentPage('calibration'), href: '#calibration' },
     { label: 'Test', onClick: () => setCurrentPage('test'), href: '#test' },
     {
       label: 'Theme',
@@ -168,8 +166,7 @@ export default function Dashboard() {
         {currentPage === 'live' && <LiveDashboard wsData={lastMessage} wsConfig={lastConfig} wsEvent={lastEvent} sendMessage={sendMessage} />}
         {currentPage === 'dino' && <DinoView wsData={lastMessage} wsEvent={lastEvent} isPaused={false} />}
         {currentPage === 'ssvep' && <SSVEPView />}
-        {currentPage === 'calibration' && <CalibrationView wsData={lastMessage} wsEvent={lastEvent} config={lastConfig} />}
-        {currentPage === 'test' && <TestView />}
+        {currentPage === 'test' && <TestView wsData={lastMessage} wsEvent={lastEvent} config={lastConfig} />}
       </div>
 
       {/* Footer */}
