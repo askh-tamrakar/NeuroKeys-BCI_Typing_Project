@@ -2,3 +2,13 @@ node_modules/
 dist/
 .DS_Store
 .env
+.venv/
+coverage/
+npm-debug.log
+yarn-error.log
+.vscode/
+.idea/
+/build/
+*.log
+*.tsbuildinfo
+.cache/
