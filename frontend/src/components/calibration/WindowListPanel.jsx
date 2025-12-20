@@ -9,7 +9,10 @@ export default function WindowListPanel({
     onDelete,
     onMarkMissed,
     onHighlight,
-    activeSensor
+    activeSensor,
+    onRun,
+    running = false,
+    windowProgress = {}
 }) {
     const stats = {
         total: windows.length,
@@ -83,7 +86,26 @@ export default function WindowListPanel({
                                         </span>
                                     </span>
                                 </div>
+
+                                <div className="text-[11px] font-mono">
+                                    {(() => {
+                                        const wp = windowProgress?.[win.id];
+                                        if (!wp) return null;
+                                        if (wp.status === 'saving') return <span className="text-yellow-400">Saving…</span>;
+                                        if (wp.status === 'saved') return <span className="text-emerald-400">Saved ✓</span>;
+                                        if (wp.status === 'error') return <span className="text-red-400">Error: {wp.message?.slice(0,40)}</span>;
+                                        return null;
+                                    })()}
+                                </div>
                             </div>
+
+                            {win.features && (
+                                <div className="mt-2 text-[11px] text-muted font-mono">
+                                    {Object.entries(win.features).slice(0,4).map(([k,v]) => (
+                                        <span key={k} className="inline-block mr-3">{k}: <span className="text-text font-semibold">{typeof v==='number'? v.toFixed(2) : JSON.stringify(v)}</span></span>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     ))
                 )}
@@ -91,10 +113,11 @@ export default function WindowListPanel({
 
             <div className="p-4 border-t border-border bg-bg/30">
                 <button
+                    onClick={() => onRun?.()}
                     className="w-full py-2 bg-primary text-primary-contrast rounded-lg font-bold text-xs hover:opacity-90 transition-all shadow-glow uppercase tracking-wider"
-                    disabled={windows.length === 0}
+                    disabled={windows.length === 0 || running}
                 >
-                    Run Calibration Logic
+                    {running ? 'Running…' : 'Run Calibration Logic'}
                 </button>
             </div>
         </div>

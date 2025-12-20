@@ -21,15 +21,20 @@ export function useWebSocket(url = 'http://localhost:5000') {
   const pingTimer = useRef(null)
   const lastPingTime = useRef(0)
 
-  const connect = () => {
-    // Don't reconnect if already connected
-    if (socketRef.current?.connected) {
+  const [currentUrl, setCurrentUrl] = useState(url)
+
+  const connect = (connectUrl) => {
+    const endpoint = connectUrl || currentUrl || url
+
+    // Don't reconnect if already connected to same endpoint
+    if (socketRef.current?.connected && endpoint === currentUrl) {
       console.log('⚠️ Already connected')
       return
     }
 
-    console.log(`🔌 Connecting to WebSocket: ${url}`)
+    console.log(`🔌 Connecting to WebSocket: ${endpoint}`)
     setStatus('connecting')
+    setCurrentUrl(endpoint)
 
     const script = document.createElement('script')
     script.src = 'https://cdn.socket.io/4.5.4/socket.io.min.js'
@@ -42,7 +47,7 @@ export function useWebSocket(url = 'http://localhost:5000') {
         return
       }
 
-      socketRef.current = io(url, {
+      socketRef.current = io(endpoint, {
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
@@ -221,6 +226,7 @@ export function useWebSocket(url = 'http://localhost:5000') {
 
     setStatus('disconnected')
     setLatency(0)
+    setCurrentUrl(null)
     console.log('✅ Disconnected')
   }
 
@@ -271,6 +277,7 @@ export function useWebSocket(url = 'http://localhost:5000') {
     latency,
     connect,
     disconnect,
+    currentUrl,
     sendMessage,
     requestStatus
   }

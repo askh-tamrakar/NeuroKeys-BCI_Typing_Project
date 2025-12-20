@@ -122,6 +122,39 @@ export const CalibrationApi = {
     },
 
     /**
+     * Send a single window (samples) to the backend for saving and feature extraction.
+     * @param {string} sensorType
+     * @param {{action: string, channel?: number, samples: number[], timestamps?: number[]}} windowPayload
+     */
+    async sendWindow(sensorType, windowPayload) {
+        try {
+            const body = {
+                sensor: sensorType,
+                action: windowPayload.action,
+                channel: windowPayload.channel,
+                samples: windowPayload.samples,
+                timestamps: windowPayload.timestamps
+            };
+
+            const resp = await fetch('/api/window', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+
+            if (!resp.ok) {
+                const txt = await resp.text();
+                throw new Error(`Server error: ${resp.status} ${txt}`);
+            }
+
+            return resp.json();
+        } catch (err) {
+            console.error('[CalibrationApi] sendWindow error', err);
+            throw err;
+        }
+    },
+
+    /**
      * Lists all available recordings from the server.
      * @returns {Promise<Array<{name: string, size: number, created: number}>>}
      */

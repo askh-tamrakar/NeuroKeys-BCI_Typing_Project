@@ -15,6 +15,7 @@ const PillNav = ({
   hoveredPillTextColor = '#060010',
   pillTextColor,
   onMobileMenuClick,
+  onLogoClick,
   initialLoadAnimation = true
 }) => {
   const resolvedPillTextColor = pillTextColor ?? baseColor;
@@ -263,6 +264,12 @@ const PillNav = ({
             ref={el => {
               logoRef.current = el;
             }}
+            onClick={e => {
+              if (onLogoClick) {
+                e.preventDefault();
+                onLogoClick();
+              }
+            }}
           >
             <img src={logo} alt={logoAlt} ref={logoImgRef} />
           </Link>
@@ -274,6 +281,12 @@ const PillNav = ({
             onMouseEnter={handleLogoEnter}
             ref={el => {
               logoRef.current = el;
+            }}
+            onClick={e => {
+              if (onLogoClick) {
+                e.preventDefault();
+                onLogoClick();
+              }
             }}
           >
             <img src={logo} alt={logoAlt} ref={logoImgRef} />
