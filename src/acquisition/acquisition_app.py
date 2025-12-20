@@ -8,7 +8,7 @@ from datetime import datetime
 import numpy as np
 import sys
 import os
-import queue
+from queue import Queue, Empty
 
 # Ensure we can import sibling packages
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -96,6 +96,10 @@ class AcquisitionApp:
         # Session data
         self.session_data = []
         self.latest_packet = {}
+
+        self.data_queue = Queue(maxsize=1000)  # Bounded queue
+        self.acquisition_thread = None
+        self.thread_running = False
         
         # Build UI
         self._build_ui()
@@ -503,6 +507,14 @@ class AcquisitionApp:
         self.ch0_buffer.fill(0)
         self.ch1_buffer.fill(0)
         self.buffer_ptr = 0
+
+        # Start acquisition in separate thread
+        self.thread_running = True
+        self.acquisition_thread = threading.Thread(
+            target=self._acquisition_worker,
+            daemon=True
+        )
+        self.acquisition_thread.start()
         
         # Update UI
         self.start_btn.config(state="disabled")
@@ -512,8 +524,38 @@ class AcquisitionApp:
         self.save_btn.config(state="normal")
         self.recording_label.config(text="✅ Yes", foreground="green")
 
+    def _acquisition_worker(self):
+        """Separate thread for heavy data processing"""
+        print("[Worker] 🧵 Acquisition worker started")
+        
+        while self.thread_running and self.is_acquiring:
+            try:
+                # Collect a SMALL batch (not ALL packets!)
+                batch_raw = []
+                batch_size = 10
+                
+                for _ in range(batch_size):
+                    pkt_bytes = self.serial_reader.get_packet(timeout=0.01)
+                    if pkt_bytes is None:
+                        break
+                    batch_raw.append(pkt_bytes)
+                
+                if not batch_raw:
+                    continue  # No data yet, try again
+                
+                # Put data in queue for GUI thread to process
+                self.data_queue.put(batch_raw)
+                
+            except Exception as e:
+                print(f"[Worker] Error: {e}")
+                break
+        
+        print("[Worker] 🧵 Acquisition worker stopped")
+
     def stop_acquisition(self):
         """Stop acquiring data"""
+        self.thread_running = False 
+
         try:
             if self.serial_reader:
                 self.serial_reader.send_command("STOP")
@@ -523,6 +565,10 @@ class AcquisitionApp:
         self.is_acquiring = False
         self.is_paused = False
         self.is_recording = False
+
+        # Wait for worker thread to finish
+        if self.acquisition_thread and self.acquisition_thread.is_alive():
+            self.acquisition_thread.join(timeout=1)
         
         self.start_btn.config(state="normal")
         self.stop_btn.config(state="disabled")
@@ -600,67 +646,119 @@ class AcquisitionApp:
         
         messagebox.showinfo("Saved", f"Saved {len(self.session_data)} packets to {filepath}")
 
-    def main_loop(self):
-        """Main acquisition and update loop (Optimized)"""
-        try:
-            if self.is_acquiring and not self.is_paused and self.serial_reader:
-                # 1. Collect all packets currently in queue
-                batch_raw = []
-                while True:
-                    pkt_bytes = self.serial_reader.get_packet(timeout=0)
-                    if pkt_bytes is None:
-                        break
-                    batch_raw.append(pkt_bytes)
+    # def main_loop(self):
+    #     """Main acquisition and update loop (Optimized)"""
+    #     try:
+    #         if self.is_acquiring and not self.is_paused and self.serial_reader:
+    #             # 1. Collect all packets currently in queue
+    #             batch_raw = []
+    #             while True:
+    #                 pkt_bytes = self.serial_reader.get_packet(timeout=0)
+    #                 if pkt_bytes is None:
+    #                     break
+    #                 batch_raw.append(pkt_bytes)
                 
-                if batch_raw:
-                    # 2. Batch parse
-                    ctrs, r0, r1 = self.packet_parser.parse_batch(batch_raw)
+    #             if batch_raw:
+    #                 # 2. Batch parse
+    #                 ctrs, r0, r1 = self.packet_parser.parse_batch(batch_raw)
                     
-                    # 3. Convert to uV
-                    u0 = adc_to_uv(r0)
-                    u1 = adc_to_uv(r1)
+    #                 # 3. Convert to uV
+    #                 u0 = adc_to_uv(r0)
+    #                 u1 = adc_to_uv(r1)
                     
-                    # 4. Push to LSL in chunk
-                    if LSL_AVAILABLE and self.lsl_raw_uV:
-                        chunk = np.column_stack((u0, u1)).tolist()
-                        self.lsl_raw_uV.push_chunk(chunk)
+    #                 # 4. Push to LSL in chunk
+    #                 if LSL_AVAILABLE and self.lsl_raw_uV:
+    #                     chunk = np.column_stack((u0, u1)).tolist()
+    #                     self.lsl_raw_uV.push_chunk(chunk)
                     
-                    # 5. Update buffers efficiently
-                    n = len(u0)
-                    for i in range(n):
-                        # Simple duplicate check (last counter)
-                        if self.last_packet_counter == ctrs[i]:
-                            continue
-                        self.last_packet_counter = ctrs[i]
+    #                 # 5. Update buffers efficiently
+    #                 n = len(u0)
+    #                 for i in range(n):
+    #                     # Simple duplicate check (last counter)
+    #                     if self.last_packet_counter == ctrs[i]:
+    #                         continue
+    #                     self.last_packet_counter = ctrs[i]
                         
-                        self.ch0_buffer[self.buffer_ptr] = u0[i]
-                        self.ch1_buffer[self.buffer_ptr] = u1[i]
-                        self.buffer_ptr = (self.buffer_ptr + 1) % self.buffer_size
+    #                     self.ch0_buffer[self.buffer_ptr] = u0[i]
+    #                     self.ch1_buffer[self.buffer_ptr] = u1[i]
+    #                     self.buffer_ptr = (self.buffer_ptr + 1) % self.buffer_size
                         
-                        if self.is_recording:
-                            # Still using dict for now, but batching parser already saved time
-                            self.session_data.append({
-                                "packet_seq": int(ctrs[i]),
-                                "ch0_raw_adc": int(r0[i]),
-                                "ch1_raw_adc": int(r1[i]),
-                                "ch0_uv": float(u0[i]),
-                                "ch1_uv": float(u1[i])
-                            })
+    #                     if self.is_recording:
+    #                         # Still using dict for now, but batching parser already saved time
+    #                         self.session_data.append({
+    #                             "packet_seq": int(ctrs[i]),
+    #                             "ch0_raw_adc": int(r0[i]),
+    #                             "ch1_raw_adc": int(r1[i]),
+    #                             "ch0_uv": float(u0[i]),
+    #                             "ch1_uv": float(u1[i])
+    #                         })
                         
-                        self.packet_count += 1
+    #                     self.packet_count += 1
 
-            # Update UI labels
-            self.packet_label.config(text=str(self.packet_count))
+    #         # Update UI labels
+    #         self.packet_label.config(text=str(self.packet_count))
             
-            # Update plots (every 30ms call, but update_plots itself is faster now)
-            self.update_plots()
+    #         # Update plots (every 30ms call, but update_plots itself is faster now)
+    #         self.update_plots()
+        
+    #     except Exception as e:
+    #         print(f"Main loop error: {e}")
+        
+    #     # Schedule next update
+    #     if self.root.winfo_exists():
+    #         self.root.after(30, self.main_loop)
+
+    def main_loop(self):
+        """GUI thread - stays responsive"""
+        try:
+            # Process queued data in small batches
+            try:
+                batch_raw = self.data_queue.get_nowait()  # Non-blocking!
+            except:
+                batch_raw = None
+            
+            if batch_raw and self.is_acquiring and not self.is_paused:
+                # Parse, convert, update UI
+                ctrs, r0, r1 = self.packet_parser.parse_batch(batch_raw)
+                u0 = adc_to_uv(r0)
+                u1 = adc_to_uv(r1)
+                
+                if LSL_AVAILABLE and self.lsl_raw_uV:
+                    chunk = np.column_stack((u0, u1)).tolist()
+                    self.lsl_raw_uV.push_chunk(chunk)
+                
+                # Update buffers
+                n = len(u0)
+                for i in range(n):
+                    if self.last_packet_counter == ctrs[i]:
+                        continue
+                    
+                    self.last_packet_counter = ctrs[i]
+                    self.ch0_buffer[self.buffer_ptr] = u0[i]
+                    self.ch1_buffer[self.buffer_ptr] = u1[i]
+                    self.buffer_ptr = (self.buffer_ptr + 1) % self.buffer_size
+                    
+                    if self.is_recording:
+                        self.session_data.append({
+                            "packet_seq": int(ctrs[i]),
+                            "ch0_raw_adc": int(r0[i]),
+                            "ch1_raw_adc": int(r1[i]),
+                            "ch0_uv": float(u0[i]),
+                            "ch1_uv": float(u1[i])
+                        })
+                    
+                    self.packet_count += 1
+                
+                # Update labels
+                self.packet_label.config(text=str(self.packet_count))
+                self.update_plots()
         
         except Exception as e:
             print(f"Main loop error: {e}")
         
         # Schedule next update
         if self.root.winfo_exists():
-            self.root.after(30, self.main_loop)
+            self.root.after(30, self.main_loop)  # 30ms updates
 
     def update_plots(self):
         """Update the plot lines (Optimized)"""
