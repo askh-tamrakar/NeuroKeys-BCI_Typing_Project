@@ -144,24 +144,19 @@ export default function Dashboard() {
             {wsModalOpen && (
               <div className="fixed inset-0 z-60 flex items-start justify-center bg-black/40" style={{ paddingTop: '96px' }}>
                 <div className="bg-surface rounded-lg p-6 w-96">
-                  <h3 className="mb-3">WebSocket Connection</h3>
+                  <h3 className="text-sm font-bold text-muted uppercase tracking-wider mb-4">WebSocket Connection</h3>
                   <div className="mb-2">
-                    <label className="block text-sm">Local WS URL</label>
-                    <input className="w-full p-2 rounded border" value={localWs} onChange={e => setLocalWs(e.target.value)} />
+                    <label className="text-xs font-medium text-text block mb-1">Local WS URL</label>
+                    <input className="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm outline-none focus:border-primary/50" value={localWs} onChange={e => setLocalWs(e.target.value)} />
                   </div>
                   <div className="mb-2">
-                    <label className="block text-sm">Ngrok WS URL</label>
-                    <input className="w-full p-2 rounded border" value={ngrokWs} onChange={e => setNgrokWs(e.target.value)} />
+                    <label className="text-xs font-medium text-text block mb-1">Ngrok WS URL</label>
+                    <input className="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm outline-none focus:border-primary/50" value={ngrokWs} onChange={e => setNgrokWs(e.target.value)} />
                   </div>
                   <div className="flex gap-2 mt-4">
-                    <button className="btn" onClick={() => { connect(localWs); setWsModalOpen(false) }}>Connect Local</button>
-                    <button className="btn" onClick={() => { connect(ngrokWs); setWsModalOpen(false) }}>Connect Ngrok</button>
-                    <button className="btn muted" onClick={() => setWsModalOpen(false)}>Close</button>
-                  </div>
-                  <div className="mt-3 text-sm">
-                    <div>Status: {status}</div>
-                    <div>Current: {currentUrl || '—'}</div>
-                    <div>Latency: {latency}ms</div>
+                    <button className="w-full py-2 bg-primary text-primary-contrast rounded-lg font-bold text-sm shadow-glow hover:opacity-90 active:scale-95 transition-all" onClick={() => { connect(localWs); setWsModalOpen(false) }}>Connect Local</button>
+                    <button className="w-full py-2 bg-primary text-primary-contrast rounded-lg font-bold text-sm shadow-glow hover:opacity-90 active:scale-95 transition-all" onClick={() => { connect(ngrokWs); setWsModalOpen(false) }}>Connect Ngrok</button>
+                    <button className="w-full py-2 bg-muted text-muted-contrast rounded-lg font-bold text-sm shadow-glow hover:opacity-90 active:scale-95 transition-all" onClick={() => setWsModalOpen(false)}>Close</button>
                   </div>
                 </div>
               </div>

@@ -83,7 +83,7 @@ export default function Sidebar({
 
                     {/* Channel 0 */}
                     <div className="mb-3">
-                        <label className="text-xs font-medium text-text block mb-1">Graph 1 (Channel 0)</label>
+                        <label className="text-xs font-medium text-text block mb-1">Graph 1</label>
                         <select
                             value={config.channel_mapping?.ch0?.sensor || 'EMG'}
                             onChange={(e) => handleChannelMapping('ch0', e.target.value)}
@@ -97,7 +97,7 @@ export default function Sidebar({
 
                     {/* Channel 1 */}
                     <div className="mb-4">
-                        <label className="text-xs font-medium text-text block mb-1">Graph 2 (Channel 1)</label>
+                        <label className="text-xs font-medium text-text block mb-1">Graph 2</label>
                         <select
                             value={config.channel_mapping?.ch1?.sensor || 'EOG'}
                             onChange={(e) => handleChannelMapping('ch1', e.target.value)}
