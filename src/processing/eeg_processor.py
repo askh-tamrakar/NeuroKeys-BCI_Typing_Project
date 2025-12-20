@@ -9,9 +9,10 @@ import numpy as np
 from scipy.signal import iirnotch, butter, lfilter, lfilter_zi
 
 class EEGFilterProcessor:
-    def __init__(self, config: dict, sr: int = 512):
+    def __init__(self, config: dict, sr: int = 512, channel_key: str = None):
         self.config = config
         self.sr = int(sr)
+        self.channel_key = channel_key
         
         # Load params
         self._load_params()
@@ -24,7 +25,18 @@ class EEGFilterProcessor:
         self.zi_band = lfilter_zi(self.b_band, self.a_band) * 0.0
 
     def _load_params(self):
-        eeg_filters = self.config.get("filters", {}).get("EEG", {}).get("filters", [])
+        # 1. Global EEG Config
+        eeg_base = self.config.get("filters", {}).get("EEG", {})
+        eeg_filters = eeg_base.get("filters", [])
+        
+        # 2. Channel Override?
+        # Note: EEG config is complex (list of filters), so deep merging is harder.
+        # Simple strategy: If `filters.<channel_key>.filters` exists, use that instead.
+        if self.channel_key:
+            ch_cfg = self.config.get("filters", {}).get(self.channel_key, {})
+            if "filters" in ch_cfg:
+                eeg_filters = ch_cfg["filters"]
+
         notch_cfg = next((f for f in eeg_filters if f.get("type") == "notch"), {"freq": 50.0, "Q": 30})
         band_cfg = next((f for f in eeg_filters if f.get("type") == "bandpass"),
                         {"low": 0.5, "high": 45.0, "order": 4})
@@ -46,18 +58,15 @@ class EEGFilterProcessor:
 
     def update_config(self, config: dict, sr: int):
         """Update filter parameters if config changed."""
-        old_notch = (self.notch_freq, self.notch_q)
-        old_band = (self.bp_low, self.bp_high, self.bp_order)
-        old_sr = self.sr
+        old_params = (self.notch_freq, self.notch_q, self.bp_low, self.bp_high, self.bp_order, self.sr)
         
         self.config = config
         self.sr = int(sr)
         self._load_params()
         
-        new_notch = (self.notch_freq, self.notch_q)
-        new_band = (self.bp_low, self.bp_high, self.bp_order)
+        new_params = (self.notch_freq, self.notch_q, self.bp_low, self.bp_high, self.bp_order, self.sr)
         
-        if (old_notch != new_notch or old_band != new_band or old_sr != self.sr):
+        if old_params != new_params:
             print(f"[EEG] Config changed -> redesigning filters")
             self._design_filters()
             # Reset state
