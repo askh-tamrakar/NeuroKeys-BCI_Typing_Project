@@ -156,29 +156,29 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
     }
 
     // Keyboard controls (hidden from UI but still functional for testing)
-    useEffect(() => {
-        const handleKeyDown = (e) => {
-            // Debug log to verify if events are reaching the component
-            // console.log('Detected Key:', e.code, e.key)
+    // useEffect(() => {
+    //     const handleKeyDown = (e) => {
+    //         // Debug log to verify if events are reaching the component
+    //         // console.log('Detected Key:', e.code, e.key)
 
-            if (e.code === 'Space' || e.key === ' ') {
-                e.preventDefault()
-                const now = Date.now()
-                const timeSinceLastPress = now - blinkPressTimeRef.current
+    //         if (e.code === 'Space' || e.key === ' ') {
+    //             e.preventDefault()
+    //             const now = Date.now()
+    //             const timeSinceLastPress = now - blinkPressTimeRef.current
 
-                if (timeSinceLastPress < 500) {
-                    handleDoublePress()
-                } else {
-                    handleSinglePress()
-                }
+    //             if (timeSinceLastPress < 500) {
+    //                 handleDoublePress()
+    //             } else {
+    //                 handleSinglePress()
+    //             }
 
-                blinkPressTimeRef.current = now
-            }
-        }
+    //             blinkPressTimeRef.current = now
+    //         }
+    //     }
 
-        window.addEventListener('keydown', handleKeyDown)
-        return () => window.removeEventListener('keydown', handleKeyDown)
-    }, [])
+    //     window.addEventListener('keydown', handleKeyDown)
+    //     return () => window.removeEventListener('keydown', handleKeyDown)
+    // }, [])
 
     // Single press - Jump
     const handleSinglePress = () => {
