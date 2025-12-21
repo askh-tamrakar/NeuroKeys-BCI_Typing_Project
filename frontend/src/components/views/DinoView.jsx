@@ -141,26 +141,21 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
     // Handle EOG blink detection
     const handleEOGBlink = () => {
         const now = Date.now()
-        //const timeSinceLastBlink = now - blinkPressTimeRef.current
+        const timeSinceLastPress = now - blinkPressTimeRef.current
 
-        // if (timeSinceLastBlink < 500) {
-        //     // Double blink detected
-        //     handleDoublePress()
-        // } else {
-        //     // Single blink
-        //     handleSinglePress()
-        // }
+        if ( 75 < timeSinceLastPress && timeSinceLastPress < 400) {
+            handleDoublePress()
+        } else {
+            handleSinglePress()
+        }
 
-        handleSinglePress()
+        console.log(" timeSinceLastPress ", timeSinceLastPress);
         blinkPressTimeRef.current = now
     }
 
     // Keyboard controls (hidden from UI but still functional for testing)
     useEffect(() => {
         const handleKeyDown = (e) => {
-            // Debug log to verify if events are reaching the component
-            // console.log('Detected Key:', e.code, e.key)
-
             if (e.code === 'Space' || e.key === ' ') {
                 e.preventDefault()
                 const now = Date.now()
@@ -171,7 +166,6 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                 } else {
                     handleSinglePress()
                 }
-
                 blinkPressTimeRef.current = now
             }
         }
@@ -232,7 +226,8 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         }
     }
 
-    // Eye blink animations
+    // Eye blink animations 
+    // Single blink
     const triggerSingleBlink = () => {
         setEyeState('blink')
         if (leftEyeRef.current && rightEyeRef.current) {
@@ -251,6 +246,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         }, 300)
     }
 
+    // Double blink
     const triggerDoubleBlink = () => {
         setEyeState('double-blink')
         if (leftEyeRef.current && rightEyeRef.current) {

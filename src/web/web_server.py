@@ -797,32 +797,6 @@ def main():
     # Load config from disk first
     state.config = load_config()
 
-    # ===== MONITOR CONFIG CHANGES & BROADCAST TO WEBSOCKET =====
-    def monitor_config_changes():
-        """Monitor config via ConfigWatcher and broadcast changes."""
-        last_config = config.get_all()
-        
-        while state.running:
-            try:
-                current_config = config.get_all()
-                
-                # If config changed, broadcast to all WebSocket clients
-                if current_config != last_config:
-                    print("[WebServer] 🔔 Config changed - broadcasting to clients...")
-                    socketio.emit('config_updated', {
-                        'status': 'config_changed',
-                        'config': current_config,
-                        'source': 'acquisition_app'
-                    }, broadcast=True)
-                    last_config = current_config
-                
-                time.sleep(0.5)  # Check every 500ms
-                
-            except Exception as e:
-                print(f"[WebServer] ⚠️ Config monitor error: {e}")
-                time.sleep(1)
-
-
     # Resolve LSL stream
     if not resolve_lsl_stream():
         print("[WebServer] ❌ Failed to connect to LSL stream")
