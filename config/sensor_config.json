@@ -230,9 +230,9 @@
       ]
     },
     "EMG": {
+      "type": "high_pass",
       "cutoff": 70,
-      "order": 4,
-      "type": "high_pass"
+      "order": 4
     },
     "EOG": {
       "high": 10,

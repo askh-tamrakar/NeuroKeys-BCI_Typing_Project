@@ -800,11 +800,11 @@ def main():
     # ===== MONITOR CONFIG CHANGES & BROADCAST TO WEBSOCKET =====
     def monitor_config_changes():
         """Monitor config via ConfigWatcher and broadcast changes."""
-        last_config = config.get_all()
+        last_config = state.config.copy() if state.config else {}
         
         while state.running:
             try:
-                current_config = config.get_all()
+                current_config = state.config.copy() if state.config else {}
                 
                 # If config changed, broadcast to all WebSocket clients
                 if current_config != last_config:

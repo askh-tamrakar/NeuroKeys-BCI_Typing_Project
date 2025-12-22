@@ -1339,7 +1339,7 @@ class AcquisitionApp:
                 "channel_0_type": self.ch0_type,
                 "channel_1_type": self.ch1_type
             },
-            "sensor_config": self.config.get("sensor_mapping", {}),
+            "sensor_config": self.config.get("channel_mapping", {}),
             "filters": self.config.get("filters", {}),
             "data": self.session_data
         }
