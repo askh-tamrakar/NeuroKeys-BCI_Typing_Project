@@ -1,12 +1,10 @@
 {
   "channel_mapping": {
     "ch0": {
-      "enabled": true,
-      "sensor": "EMG"
+      "sensor": "EOG"
     },
     "ch1": {
-      "enabled": true,
-      "sensor": "EOG"
+      "sensor": "EMG"
     }
   },
   "display": {
@@ -15,7 +13,7 @@
     "timeWindowMs": 12000
   },
   "features": {
-    "EEG": {
+    "EMG": {
       "amp_threshold": 15,
       "freq_bands": {
         "alpha": [
@@ -250,5 +248,8 @@
     }
   },
   "num_channels": 2,
-  "sampling_rate": 512
+  "sampling_rate": 512.0,
+  "baud": 230400,
+  "serial_port": "",
+  "binary": true
 }
