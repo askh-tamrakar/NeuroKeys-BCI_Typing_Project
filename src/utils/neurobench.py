@@ -156,6 +156,12 @@ class ChannelGenerator:
         out = clamp(val * scale)
         return out
 
+class CustomAxisItem(pg.AxisItem):
+    """Custom axis to limit decimal places on Y-axis."""
+    def tickStrings(self, values, scale, spacing):
+        # Return values formatted to 2 decimal places
+        return [f"{v:.2f}" for v in values]
+
 # -------------------------
 # Serial writer thread
 # -------------------------
@@ -193,7 +199,7 @@ class SerialWriter(threading.Thread):
         interval = 1.0 / float(self.sample_rate)
         while not self._stop.is_set():
             try:
-                adc0, adc1, ts = self.data_queue.get(timeout=0.5)
+                adc0, adc1, ts = self.data_queue.get(timeout=0.1) # Reduced timeout for faster stop check
             except queue.Empty:
                 continue
             # Build packet according to the expected layout
@@ -422,8 +428,11 @@ class MainWindow(QtWidgets.QMainWindow):
         right_layout.setContentsMargins(6, 6, 6, 6)
         right_layout.setSpacing(8)
         # plots
-        self.plot0 = pg.PlotWidget(title="Channel 0")
-        self.plot1 = pg.PlotWidget(title="Channel 1")
+        # Use simple custom axis for Y to avoid long floats
+        ax0 = CustomAxisItem(orientation='left')
+        ax1 = CustomAxisItem(orientation='left')
+        self.plot0 = pg.PlotWidget(title="Channel 0", axisItems={'left': ax0})
+        self.plot1 = pg.PlotWidget(title="Channel 1", axisItems={'left': ax1})
         self.plot0.showGrid(x=True, y=True)
         self.plot1.showGrid(x=True, y=True)
         self.curve0 = self.plot0.plot(pen=pg.mkPen('c', width=1.4))
@@ -596,10 +605,18 @@ class MainWindow(QtWidgets.QMainWindow):
     def stop_stream(self):
         if not self.streaming:
             return
+        
+        # 1. Clear queue to prevent "hangover" data
+        with self.sample_queue.mutex:
+            self.sample_queue.queue.clear()
+            
+        # 2. Stop writer
         if self.serial_writer:
             self.serial_writer.stop()
-            self.serial_writer.join(timeout=1.0)
+            # Join with timeout to avoid freezing UI if writer is stuck
+            self.serial_writer.join(timeout=0.5)
             self.serial_writer = None
+            
         self.streaming = False
         self.btn_start.setEnabled(True)
         self.btn_stop.setEnabled(False)
