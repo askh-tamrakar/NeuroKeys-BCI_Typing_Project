@@ -13,7 +13,7 @@
     "timeWindowMs": 12000
   },
   "features": {
-    "EMG": {
+    "EEG": {
       "amp_threshold": 15,
       "freq_bands": {
         "alpha": [
