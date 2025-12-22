@@ -191,7 +191,7 @@ export default function Sidebar({
 
                         {/* High Pass Cutoff */}
                         <div className="space-y-1 pt-2 border-t border-border/30">
-                            <label className="text-[10px] text-muted block flex justify-between">
+                            <label className="text-[10px] text-muted flex justify-between">
                                 <span>High Pass Cutoff</span>
                                 <span>{config.filters?.ch0?.cutoff || 70} Hz</span>
                             </label>
@@ -268,7 +268,7 @@ export default function Sidebar({
 
                         {/* High Pass Cutoff */}
                         <div className="space-y-1 pt-2 border-t border-border/30">
-                            <label className="text-[10px] text-muted block flex justify-between">
+                            <label className="text-[10px] text-muted flex justify-between">
                                 <span>High Pass Cutoff</span>
                                 <span>{config.filters?.ch1?.cutoff || 10} Hz</span>
                             </label>

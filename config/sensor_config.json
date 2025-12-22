@@ -2,11 +2,11 @@
   "sampling_rate": 512,
   "channel_mapping": {
     "ch0": {
-      "sensor": "EMG",
+      "sensor": "EOG",
       "enabled": true
     },
     "ch1": {
-      "sensor": "EOG",
+      "sensor": "EEG",
       "enabled": true
     }
   },
@@ -42,5 +42,15 @@
     "showGrid": true,
     "scannerX": 0
   },
-  "num_channels": 2
+  "num_channels": 2,
+  "features": {
+    "EOG": {
+      "blink": {},
+      "Rest": {}
+    },
+    "EMG": {
+      "Rock": {},
+      "Rest": {}
+    }
+  }
 }
