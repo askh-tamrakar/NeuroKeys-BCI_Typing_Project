@@ -4,7 +4,7 @@ import './PillNav.css';
 
 const Pill = ({
   label,
-  href = '#',
+  href,
   onClick,
   isActive = false,
   baseColor = '#fff',
@@ -14,7 +14,7 @@ const Pill = ({
   ease = 'power3.easeOut',
   as = 'a',
   pillWidth,
-  pillHeight,  
+  pillHeight,
   ...props
 }) => {
   const circleRef = useRef(null);

@@ -299,7 +299,7 @@ const PillNav = ({
               <li key={item.href || item.key || `item-${i}`} role="none" style={{ position: 'relative' }}>
                 {item.type === 'pill' ? (
                   <div className="dropdown" onMouseLeave={closeDropdown} style={{ position: 'relative' }}>
-                    <a href="#top"
+                    <a href={item.href}
                       className={
                         `pill${activeHref === item.href ? ' is-active' : ''}`
                       }

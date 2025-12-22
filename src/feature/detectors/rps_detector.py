@@ -66,7 +66,7 @@ class RPSDetector:
             print(f"[RPSDetector] [OK] Detected: {best_gesture.upper()}")
             return best_gesture.upper()
                 
-        print(f"[RPSDetector] [SKIP] No consensus (Best: {best_gesture} @ {scores[best_gesture]:.2f})")
+        # print(f"[RPSDetector] [SKIP] No consensus (Best: {best_gesture} @ {scores[best_gesture]:.2f})")
         return None
 
     def update_config(self, config: dict):

@@ -24,11 +24,59 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     const [targetLabel, setTargetLabel] = useState('Rock'); // e.g., 'Rock', 'Paper', etc.
 
     // Recording mode states
-    const [availableRecordings, setAvailableRecordings] = useState([
-        { id: '1', name: 'EMG-19-12-2025__12-00-00.json', type: 'EMG' },
-        { id: '2', name: 'EOG-18-12-2025__10-30-00.json', type: 'EOG' },
-    ]);
+    const [availableRecordings, setAvailableRecordings] = useState([]);
     const [selectedRecording, setSelectedRecording] = useState(null);
+    const [isRecording, setIsRecording] = useState(false);
+    const [isLoadingRecording, setIsLoadingRecording] = useState(false);
+
+    // Fetch recordings list
+    const refreshRecordings = useCallback(async () => {
+        const list = await CalibrationApi.listRecordings();
+        setAvailableRecordings(list);
+    }, []);
+
+    useEffect(() => {
+        refreshRecordings();
+    }, [refreshRecordings]);
+
+    // Handle recording selection and data loading
+    useEffect(() => {
+        const loadSelectedRecording = async () => {
+            if (!selectedRecording || mode !== 'recording') return;
+
+            setIsLoadingRecording(true);
+            try {
+                const recording = await CalibrationApi.getRecording(selectedRecording);
+
+                // recording.data is Array of { timestamp, channels: { ch0, ch1... } }
+                if (recording && recording.data) {
+                    // Map to chartData format { time, value }
+                    // We need to pick the correct channel for activeSensor
+                    const mapping = config.channel_mapping || {};
+                    const targetChIdx = Object.keys(recording.data[0]?.channels || {}).find(idx => {
+                        const chKey = `ch${idx}`;
+                        return mapping[chKey]?.sensor === activeSensor || mapping[chKey]?.type === activeSensor;
+                    }) || "0";
+
+                    const formattedData = recording.data.map(point => ({
+                        time: point.timestamp,
+                        value: point.channels[`ch${targetChIdx}`] || point.channels[targetChIdx] || 0
+                    }));
+
+                    setChartData(formattedData);
+                    console.log(`[CalibrationView] Loaded ${formattedData.length} samples for ${activeSensor}`);
+                }
+            } catch (error) {
+                console.error('[CalibrationView] Failed to load recording:', error);
+                alert('Failed to load recording data.');
+            } finally {
+                setIsLoadingRecording(false);
+            }
+        };
+
+        loadSelectedRecording();
+    }, [selectedRecording, mode, activeSensor, config.channel_mapping]);
+
 
     // Zoom state (Y-axis) similar to LiveView
     const [zoom, setZoom] = useState(1);
@@ -93,12 +141,66 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
             setActiveWindow(newWindow);
 
-            // Mock prediction after window ends
-            setTimeout(() => {
-                setMarkedWindows(prev => {
-                    const next = [...prev, { ...newWindow, predictedLabel: Math.random() > 0.3 ? targetLabel : 'Rest', status: 'correct' }];
-                    return next.slice(-MAX_WINDOWS);
-                });
+            // Auto-save window after it ends
+            setTimeout(async () => {
+                // Mark as saving
+                setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'saving' } }));
+                setRunInProgress(true);
+
+                try {
+                    // Extract samples from chartData that fall within the window range
+                    const samplesPoints = chartData.filter(p => p.time >= start && p.time <= end);
+                    const samples = samplesPoints.map(p => p.value);
+                    const timestamps = samplesPoints.map(p => p.time);
+
+                    // Send to backend for feature extraction and detection
+                    const resp = await CalibrationApi.sendWindow(activeSensor, {
+                        action: targetLabel,
+                        channel: 0,
+                        samples,
+                        timestamps
+                    });
+
+                    // Update progress
+                    setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'saved' } }));
+
+                    // Determine prediction result
+                    // detected = true means the action matches the detector profile
+                    const detected = resp.detected === true;
+                    const predicted = detected ? targetLabel : 'Rest';
+
+                    // Compare prediction with labeled action for correct/missed status
+                    const isCorrect = predicted === targetLabel;
+
+                    // Add to windows list with prediction
+                    setMarkedWindows(prev => {
+                        const completedWindow = {
+                            ...newWindow,
+                            predictedLabel: predicted,
+                            status: isCorrect ? 'correct' : 'incorrect',
+                            features: resp.features
+                        };
+                        const next = [...prev, completedWindow];
+                        return next.slice(-MAX_WINDOWS);
+                    });
+                } catch (err) {
+                    console.error('Auto-save window error:', err);
+                    setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'error', message: err?.message || String(err) } }));
+
+                    // Still add window but mark as error
+                    setMarkedWindows(prev => {
+                        const errorWindow = {
+                            ...newWindow,
+                            predictedLabel: 'Error',
+                            status: 'incorrect'
+                        };
+                        const next = [...prev, errorWindow];
+                        return next.slice(-MAX_WINDOWS);
+                    });
+                } finally {
+                    setRunInProgress(false);
+                }
+
                 setActiveWindow(null);
             }, windowDuration);
         };
@@ -107,7 +209,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
         windowIntervalRef.current = setInterval(createNextWindow, windowDuration + GAP_DURATION);
     };
 
-    const handleManualWindowSelect = (start, end) => {
+    const handleManualWindowSelect = async (start, end) => {
         const newWindow = {
             id: Math.random().toString(36).substr(2, 9),
             sensor: activeSensor,
@@ -115,12 +217,58 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             startTime: start,
             endTime: end,
             label: targetLabel,
-            status: 'correct' // Assume user marking is ground truth
+            status: 'pending'
         };
-        setMarkedWindows(prev => {
-            const next = [...prev, newWindow];
-            return next.slice(-MAX_WINDOWS);
-        });
+
+        // Mark as saving
+        setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'saving' } }));
+        setRunInProgress(true);
+
+        try {
+            // Extract samples from chartData
+            const samplesPoints = chartData.filter(p => p.time >= start && p.time <= end);
+            const samples = samplesPoints.map(p => p.value);
+            const timestamps = samplesPoints.map(p => p.time);
+
+            // Send to backend
+            const resp = await CalibrationApi.sendWindow(activeSensor, {
+                action: targetLabel,
+                channel: 0,
+                samples,
+                timestamps
+            });
+
+            setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'saved' } }));
+
+            // Determine prediction result
+            const detected = resp.detected === true;
+            const predicted = detected ? targetLabel : 'Rest';
+
+            // Compare prediction with labeled action for correct/missed status
+            const isCorrect = predicted === targetLabel;
+
+            setMarkedWindows(prev => {
+                const completedWindow = {
+                    ...newWindow,
+                    predictedLabel: predicted,
+                    status: isCorrect ? 'correct' : 'incorrect',
+                    features: resp.features
+                };
+                const next = [...prev, completedWindow];
+                return next.slice(-MAX_WINDOWS);
+            });
+        } catch (err) {
+            console.error('Manual window save error:', err);
+            setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'error', message: err?.message || String(err) } }));
+
+            setMarkedWindows(prev => {
+                const errorWindow = { ...newWindow, predictedLabel: 'Error', status: 'incorrect' };
+                const next = [...prev, errorWindow];
+                return next.slice(-MAX_WINDOWS);
+            });
+        } finally {
+            setRunInProgress(false);
+        }
     };
 
     const deleteWindow = (id) => {
@@ -349,7 +497,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                                         >
                                             <option value="">Choose a recording...</option>
                                             {availableRecordings.filter(r => r.type === activeSensor).map(r => (
-                                                <option key={r.id} value={r.name}>{r.name}</option>
+                                                <option value={r.name}>{r.name}</option>
                                             ))}
                                         </select>
                                     </div>
@@ -394,11 +542,11 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                                     </select>
 
                                     <button
-                                    onClick={isCalibrating ? handleStopCalibration : handleStartCalibration}
-                                    className={`px-6 py-2 rounded-xl font-bold transition-all shadow-glow ${isCalibrating
-                                        ? 'bg-red-500 text-white hover:opacity-90'
-                                        : 'bg-primary text-primary-contrast hover:opacity-90 hover:translate-y-[-2px]'
-                                        }`}
+                                        onClick={isCalibrating ? handleStopCalibration : handleStartCalibration}
+                                        className={`px-6 py-2 rounded-xl font-bold transition-all shadow-glow ${isCalibrating
+                                            ? 'bg-red-500 text-white hover:opacity-90'
+                                            : 'bg-primary text-primary-contrast hover:opacity-90 hover:translate-y-[-2px]'
+                                            }`}
                                     >
                                         {isCalibrating ? 'Stop Calibration' : 'Start Calibration'}
                                     </button>

@@ -102,12 +102,14 @@ export default function Dashboard() {
       label: 'Theme',
       type: 'pill',
       key: 'theme-dropdown',
+      href: '#',
       menu: ({ close }) => (
         <ScrollStack>
           {themePresets.map((p) => (
             <ScrollStackItem key={p.value}>
               <Pill
                 label={p.label}
+                activeHref={`#${currentPage}`}
                 pillHeight={42}
                 pillWidth={pillSize.width}
                 active={theme === p.value}
@@ -162,7 +164,7 @@ export default function Dashboard() {
               </div>
             )}
             <div className="headline flex flex-col">
-              <div className="headline-line main">NeuroKeys
+              <div className="headline-line main">NeuroTECH
                 <br />
                 <div className="headline-line sub">BCI Dashboard</div>
               </div>
