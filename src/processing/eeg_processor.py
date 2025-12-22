@@ -50,11 +50,37 @@ class EEGFilterProcessor:
     def _design_filters(self):
         # Notch
         self.b_notch, self.a_notch = iirnotch(self.notch_freq, self.notch_q, fs=self.sr)
-        # Bandpass
+        
+        # Bandpass - with validation
         nyq = self.sr / 2.0
-        low = self.bp_low / nyq
-        high = self.bp_high / nyq
-        self.b_band, self.a_band = butter(self.bp_order, [low, high], btype="band")
+        low_norm = self.bp_low / nyq
+        high_norm = self.bp_high / nyq
+        
+        # Validate normalized frequencies
+        if low_norm <= 0 or low_norm >= 1.0:
+            print(f"[EEG] WARNING: Invalid low frequency {self.bp_low} Hz. Clamping to valid range.")
+            low_norm = max(0.001, min(low_norm, 0.9))
+        
+        if high_norm <= 0 or high_norm >= 1.0:
+            print(f"[EEG] WARNING: Invalid high frequency {self.bp_high} Hz. Clamping to valid range.")
+            high_norm = max(0.01, min(high_norm, 0.99))
+        
+        if low_norm >= high_norm:
+            print(f"[EEG] ERROR: Low freq ({self.bp_low} Hz) must be < High freq ({self.bp_high} Hz)")
+            print(f"[EEG] Using safe defaults: 0.5 - 45 Hz")
+            low_norm = 0.5 / nyq
+            high_norm = 45.0 / nyq
+        
+        try:
+            self.b_band, self.a_band = butter(self.bp_order, [low_norm, high_norm], btype="band")
+        except Exception as e:
+            print(f"[EEG] ERROR: Filter design failed: {e}")
+            print(f"[EEG] Using safe defaults: 0.5 - 45 Hz")
+            self.bp_low = 0.5
+            self.bp_high = 45.0
+            low_norm = 0.5 / nyq
+            high_norm = 45.0 / nyq
+            self.b_band, self.a_band = butter(self.bp_order, [low_norm, high_norm], btype="band")
 
     def update_config(self, config: dict, sr: int):
         """Update filter parameters if config changed."""

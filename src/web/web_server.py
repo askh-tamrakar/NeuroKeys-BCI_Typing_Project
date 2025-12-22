@@ -83,7 +83,7 @@ state = WebServerState()
 
 
 def load_config() -> dict:
-#     """Load channel mapping from disk or return defaults."""
+    """Load channel mapping from disk or return defaults."""
     defaults = {
         "sampling_rate": DEFAULT_SR,
         "channel_mapping": {
@@ -132,13 +132,38 @@ def load_config() -> dict:
     }
 
     if not CONFIG_PATH.exists():
-        print(f"[WebServer] ℹ️  Config file not found at {CONFIG_PATH}")
+        print(f"[WebServer] Config file not found at {CONFIG_PATH}")
         return defaults
 
     try:
         with open(CONFIG_PATH) as f:
             cfg = json.load(f)
-        print(f"[WebServer] ✅ Loaded config from {CONFIG_PATH}")
+        print(f"[WebServer] Loaded config from {CONFIG_PATH}")
+        
+        # Convert new sensor-based format to legacy format for compatibility
+        if "sensors" in cfg:
+            # New format: sensors.EEG.filters, sensors.EMG.filters, etc.
+            filters = {}
+            features = {}
+            
+            for sensor_name, sensor_cfg in cfg.get("sensors", {}).items():
+                # Extract filters
+                if "filters" in sensor_cfg:
+                    sensor_filters = sensor_cfg["filters"]
+                    if len(sensor_filters) == 1:
+                        # Single filter - flatten it
+                        filters[sensor_name] = sensor_filters[0]
+                    else:
+                        # Multiple filters - keep as list
+                        filters[sensor_name] = {"filters": sensor_filters}
+                
+                # Extract features
+                if "features" in sensor_cfg:
+                    features[sensor_name] = sensor_cfg["features"]
+            
+            cfg["filters"] = filters
+            cfg["features"] = features
+        
         # Merge with defaults to ensure all keys present
         merged = {**defaults, **cfg}
         # Deep merge for nested objects
@@ -146,7 +171,7 @@ def load_config() -> dict:
             merged['channel_mapping'] = {**defaults.get('channel_mapping', {}), **cfg['channel_mapping']}
         return merged
     except Exception as e:
-        print(f"[WebServer] ⚠️  Error loading config: {e}")
+        print(f"[WebServer] Error loading config: {e}")
         return defaults
 
 

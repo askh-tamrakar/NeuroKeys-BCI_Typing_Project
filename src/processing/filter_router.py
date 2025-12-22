@@ -81,6 +81,31 @@ def load_config() -> dict:
         with open(CONFIG_PATH, "r") as f:
             cfg = json.load(f)
         
+        # Convert new sensor-based format to legacy format for compatibility
+        if "sensors" in cfg:
+            # New format: sensors.EEG.filters, sensors.EMG.filters, etc.
+            filters = {}
+            features = {}
+            
+            for sensor_name, sensor_cfg in cfg.get("sensors", {}).items():
+                # Extract filters
+                if "filters" in sensor_cfg:
+                    sensor_filters = sensor_cfg["filters"]
+                    if len(sensor_filters) == 1:
+                        # Single filter - flatten it
+                        filters[sensor_name] = sensor_filters[0]
+                    else:
+                        # Multiple filters - keep as list
+                        filters[sensor_name] = {"filters": sensor_filters}
+                
+                # Extract features
+                if "features" in sensor_cfg:
+                    features[sensor_name] = sensor_cfg["features"]
+            
+            cfg["filters"] = filters
+            cfg["features"] = features
+        
+        # Ensure required keys
         if "sampling_rate" not in cfg:
             cfg["sampling_rate"] = defaults["sampling_rate"]
         if "filters" not in cfg:
@@ -165,8 +190,14 @@ class FilterRouter:
     
     def _config_watcher(self):
         """Background thread: Monitor config file for changes."""
-        last_cfg_hash = ""
-        last_map_hash = ""
+        # Initialize with current config to avoid triggering on startup
+        try:
+            initial_cfg = load_config()
+            last_cfg_hash = get_config_hash(initial_cfg.get("filters", {}))
+            last_map_hash = get_config_hash(initial_cfg.get("channel_mapping", {}))
+        except:
+            last_cfg_hash = ""
+            last_map_hash = ""
         
         while True:
             try:
@@ -179,24 +210,31 @@ class FilterRouter:
                     self.sr = int(self.config.get("sampling_rate", self.sr))
                     
                     # 1. Channel mapping changed? Reconfigure pipeline
-                    if map_hash != last_map_hash:
+                    if map_hash and map_hash != last_map_hash and last_map_hash != "":
                         print("[Router] [CONFIG] Channel mapping changed - reconfiguring pipeline...")
                         self._configure_pipeline()
                         last_map_hash = map_hash
                         last_cfg_hash = cfg_hash
+                    elif last_map_hash == "":
+                        # First run - just initialize
+                        last_map_hash = map_hash
+                        last_cfg_hash = cfg_hash
                     
                     # 2. Only filter params changed? Update processors
-                    elif cfg_hash != last_cfg_hash:
+                    elif cfg_hash and cfg_hash != last_cfg_hash and last_cfg_hash != "":
                         print("[Router] [CONFIG] Filter parameters updated - updating processors...")
                         for p in self.channel_processors.values():
                             if p and hasattr(p, 'update_config'):
-                                p.update_config(self.config, self.sr)
+                                try:
+                                    p.update_config(self.config, self.sr)
+                                except Exception as pe:
+                                    print(f"[Router] ERROR updating processor: {pe}")
                         last_cfg_hash = cfg_hash
                 
                 time.sleep(RELOAD_INTERVAL)
             
             except Exception as e:
-                print(f"[Router] ⚠️ Config watcher error: {e}")
+                print(f"[Router] Config watcher error: {e}")
                 time.sleep(RELOAD_INTERVAL)
     
     def resolve_raw_stream(self, timeout: float = 3.0) -> bool:
