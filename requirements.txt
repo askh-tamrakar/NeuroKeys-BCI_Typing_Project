@@ -1,50 +1,34 @@
-# requirements.txt - BCI Project
-# python>=3.9,<3.12
+let theme = "day";
+document.body.classList.add("day");
 
-# Core numeric / data
-numpy>=1.24
-pandas>=2.0
-scipy>=1.10
+const BLINK_THRESHOLD = 0.6;
+const DOUBLE_BLINK_TIME = 650;
 
-# EEG/Signal processing
-mne>=1.2
-neurokit2>=0.2
+let lastBlinkTime = 0;
+let blinkCount = 0;
+let lock = false;
 
-# Streaming & hardware
-pylsl>=1.17.0
-pyserial>=3.5
-brainflow>=4.8.0
+function toggleDayNight() {
+  theme = theme === "day" ? "night" : "day";
+  document.body.classList.remove("day", "night");
+  document.body.classList.add(theme);
 
-# ML
-scikit-learn>=1.2
-torch>=2.0
-torchvision>=0.15
+  lock = true;
+  setTimeout(() => lock = false, 800);
+}
 
-# Utilities
-matplotlib>=3.6
-h5py>=3.8
-joblib>=1.3
+function handleEOG(eogValue) {
+  if (lock) return;
 
-# Web & backend
-flask>=2.0.0
-fastapi>=0.95
-uvicorn>=0.22
-websockets>=11.0
-flask-cors>=4.0.0
-flask-socketio>=5.0.0
-python-socketio>=5.0.0
-python-engineio>=4.0.0
+  if (Math.abs(eogValue) > BLINK_THRESHOLD) {
+    const now = Date.now();
 
-# Excel & Office
-openpyxl>=3.0.0
+    blinkCount = (now - lastBlinkTime < DOUBLE_BLINK_TIME) ? blinkCount + 1 : 1;
+    lastBlinkTime = now;
 
-# GUI
-PySide6>=6.4.0
-pyqtgraph>=0.13.0
-PyQt5>=5.15.0
-
-# Dev / lint / packaging
-black
-pytest
-python-dotenv
-
+    if (blinkCount === 2) {
+      toggleDayNight();
+      blinkCount = 0;
+    }
+  }
+}
