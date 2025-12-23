@@ -32,15 +32,15 @@ export default function Sidebar({
     return (
         <aside className={`w-80 bg-surface border-r border-border h-full flex flex-col overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] ${className}`}>
             <div className="p-6 border-b border-border">
-                <h2 className="text-xl font-bold text-text mb-1">Controls</h2>
-                <p className="text-xs text-muted">LSL Stream Configuration</p>
+                <h2 className="text-2xl font-bold text-text mb-1">Controls</h2>
+                <p className="text-sm text-muted">LSL Stream Configuration</p>
             </div>
 
             <div className="p-6 space-y-8">
 
                 {/* Stream Control */}
                 <section>
-                    <h3 className="text-sm font-bold text-muted uppercase tracking-wider mb-4">Stream Status</h3>
+                    <h3 className="text-base font-bold text-muted uppercase tracking-wider mb-4">Stream Status</h3>
                     <button
                         onClick={() => setIsPaused(!isPaused)}
                         className={`w-full py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${isPaused
@@ -56,8 +56,8 @@ export default function Sidebar({
                 {/* Time Window */}
                 <section>
                     <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-sm font-bold text-muted uppercase tracking-wider">Time Window</h3>
-                        <span className="text-xs font-mono text-primary bg-primary/10 px-2 py-0.5 rounded">{config.display?.timeWindowMs / 1000}s</span>
+                        <h3 className="text-base font-bold text-muted uppercase tracking-wider">Time Window</h3>
+                        <span className="text-sm font-mono text-primary bg-primary/10 px-2 py-0.5 rounded">{config.display?.timeWindowMs / 1000}s</span>
                     </div>
                     <input
                         type="range"
@@ -79,11 +79,11 @@ export default function Sidebar({
 
                 {/* Channel Mapping */}
                 <section>
-                    <h3 className="text-sm font-bold text-muted uppercase tracking-wider mb-4">Channel Mapping</h3>
+                    <h3 className="text-base font-bold text-muted uppercase tracking-wider mb-4">Channel Mapping</h3>
 
                     {/* Channel 0 */}
                     <div className="mb-3">
-                        <label className="text-xs font-medium text-text block mb-1">Graph 1</label>
+                        <label className="text-sm font-medium text-text block mb-1">Graph 1</label>
                         <select
                             value={config.channel_mapping?.ch0?.sensor || 'EMG'}
                             onChange={(e) => handleChannelMapping('ch0', e.target.value)}
@@ -97,7 +97,7 @@ export default function Sidebar({
 
                     {/* Channel 1 */}
                     <div className="mb-4">
-                        <label className="text-xs font-medium text-text block mb-1">Graph 2</label>
+                        <label className="text-sm font-medium text-text block mb-1">Graph 2</label>
                         <select
                             value={config.channel_mapping?.ch1?.sensor || 'EOG'}
                             onChange={(e) => handleChannelMapping('ch1', e.target.value)}
@@ -125,18 +125,17 @@ export default function Sidebar({
 
                 {/* Filters */}
                 <section className="space-y-6">
-                    <h3 className="text-sm font-bold text-muted uppercase tracking-wider">Signal Filters</h3>
+                    <h3 className="text-base font-bold text-muted uppercase tracking-wider">Signal Filters</h3>
 
                     {/* Channel 0 Filters */}
                     <div className="space-y-3 p-3 rounded-lg border border-border bg-surface/50">
                         <div className="flex items-center justify-between border-b border-border/50 pb-2 mb-2">
-                            <h4 className="text-xs font-bold text-primary">Channel 0 ({(config.channel_mapping?.ch0?.sensor || 'EMG')})</h4>
-                            <button onClick={() => onSave?.()} className="px-2 py-0.5 text-[10px] bg-primary text-primary-contrast rounded font-bold hover:opacity-90">APPLY</button>
+                            <h4 className="text-sm font-bold text-primary">Channel 0 ({(config.channel_mapping?.ch0?.sensor || 'EMG')})</h4>
+                            <button onClick={() => onSave?.()} className="px-2 py-0.5 text-xs bg-primary text-primary-contrast rounded font-bold hover:opacity-90">APPLY</button>
                         </div>
 
-                        {/* Noise Filter (Notch) */}
                         <div className="flex items-center justify-between">
-                            <label className="text-xs text-text flex items-center gap-2">
+                            <label className="text-sm text-text flex items-center gap-2">
                                 <input
                                     type="checkbox"
                                     checked={config.filters?.ch0?.notch_enabled || false}
@@ -160,7 +159,7 @@ export default function Sidebar({
 
                         {/* Bandpass */}
                         <div className="space-y-1">
-                            <label className="text-xs text-text flex items-center gap-2">
+                            <label className="text-sm text-text flex items-center gap-2">
                                 <input
                                     type="checkbox"
                                     checked={config.filters?.ch0?.bandpass_enabled || false}
@@ -191,7 +190,7 @@ export default function Sidebar({
 
                         {/* High Pass Cutoff */}
                         <div className="space-y-1 pt-2 border-t border-border/30">
-                            <label className="text-[10px] text-muted flex justify-between">
+                            <label className="text-xs text-muted flex justify-between">
                                 <span>High Pass Cutoff</span>
                                 <span>{config.filters?.ch0?.cutoff || 70} Hz</span>
                             </label>
@@ -207,13 +206,13 @@ export default function Sidebar({
                     {/* Channel 1 Filters */}
                     <div className="space-y-3 p-3 rounded-lg border border-border bg-surface/50">
                         <div className="flex items-center justify-between border-b border-border/50 pb-2 mb-2">
-                            <h4 className="text-xs font-bold text-emerald-500">Channel 1 ({(config.channel_mapping?.ch1?.sensor || 'EOG')})</h4>
-                            <button onClick={() => onSave?.()} className="px-2 py-0.5 text-[10px] bg-emerald-500 text-white rounded font-bold hover:opacity-90">APPLY</button>
+                            <h4 className="text-sm font-bold text-emerald-500">Channel 1 ({(config.channel_mapping?.ch1?.sensor || 'EOG')})</h4>
+                            <button onClick={() => onSave?.()} className="px-2 py-0.5 text-xs bg-emerald-500 text-white rounded font-bold hover:opacity-90">APPLY</button>
                         </div>
 
                         {/* Noise Filter (Notch) */}
                         <div className="flex items-center justify-between">
-                            <label className="text-xs text-text flex items-center gap-2">
+                            <label className="text-sm text-text flex items-center gap-2">
                                 <input
                                     type="checkbox"
                                     checked={config.filters?.ch1?.notch_enabled || false}
@@ -237,7 +236,7 @@ export default function Sidebar({
 
                         {/* Bandpass */}
                         <div className="space-y-1">
-                            <label className="text-xs text-text flex items-center gap-2">
+                            <label className="text-sm text-text flex items-center gap-2">
                                 <input
                                     type="checkbox"
                                     checked={config.filters?.ch1?.bandpass_enabled || false}
@@ -268,7 +267,7 @@ export default function Sidebar({
 
                         {/* High Pass Cutoff */}
                         <div className="space-y-1 pt-2 border-t border-border/30">
-                            <label className="text-[10px] text-muted flex justify-between">
+                            <label className="text-xs text-muted flex justify-between">
                                 <span>High Pass Cutoff</span>
                                 <span>{config.filters?.ch1?.cutoff || 10} Hz</span>
                             </label>

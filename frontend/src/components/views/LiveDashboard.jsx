@@ -68,7 +68,7 @@ export default function LiveDashboard({ wsData, wsConfig, wsEvent, sendMessage }
                 {/* Header / Top Bar if needed, currently sidebar handles controls */}
 
                 {/* LiveView Visualization */}
-                <div className="flex-grow p-4 md:p-6 overflow-hidden relative">
+                <div className="flex-grow p-4 md:p-6 overflow-y-auto relative">
                     <LiveView
                         wsData={wsData}
                         wsEvent={wsEvent}

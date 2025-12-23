@@ -422,12 +422,8 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
       </div>
 
       <div className="flex-1 min-h-0">
-        <div className="mb-2 text-sm font-semibold text-muted flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-          Channel {displayCh0} - {sensorName1}
-        </div>
         <SignalChart
-          title={`${sensorName1}`}
+          title={`Channel ${displayCh0} - ${sensorName1}`}
           byChannel={{ active: sweep1.active, history: sweep1.history }}
           channelColors={{ active: 'rgb(59, 130, 246)', history: 'rgba(59, 130, 246, 0.3)' }}
           timeWindowMs={timeWindowMs}
@@ -441,12 +437,8 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
       </div>
 
       <div className="flex-1 min-h-0">
-        <div className="mb-2 text-sm font-semibold text-muted flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-          Channel {displayCh1} - {sensorName2}
-        </div>
         <SignalChart
-          title={`${sensorName2}`}
+          title={`Channel ${displayCh1} - ${sensorName2}`}
           byChannel={{ active: sweep2.active, history: sweep2.history }}
           channelColors={{ active: 'rgb(16, 185, 129)', history: 'rgba(16, 185, 129, 0.3)' }}
           timeWindowMs={timeWindowMs}
