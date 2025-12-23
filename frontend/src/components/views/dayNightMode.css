@@ -1,7 +1,25 @@
 body.day {
   background-color: #eef6ff;
+  --bg: #eef6ff;
+  --surface: #ffffff;
+  --text: #1a1a1a;
+  --muted: #64748b;
+  --primary: #3b82f6;
+  --primary-contrast: #ffffff;
+  --accent: #0ea5e9;
+  --border: #bfdbfe;
+  --shadow: rgba(0,0,0,0.1);
 }
 
 body.night {
   background-color: #050018;
+  --bg: #050018;
+  --surface: #0f172a;
+  --text: #f1f5f9;
+  --muted: #64748b;
+  --primary: #60a5fa;
+  --primary-contrast: #0f172a;
+  --accent: #38bdf8;
+  --border: #1e293b;
+  --shadow: rgba(0,0,0,0.35);
 }
