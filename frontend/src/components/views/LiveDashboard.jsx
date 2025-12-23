@@ -68,7 +68,7 @@ export default function LiveDashboard({ wsData, wsConfig, wsEvent, sendMessage }
                 {/* Header / Top Bar if needed, currently sidebar handles controls */}
 
                 {/* LiveView Visualization */}
-                <div className="flex-grow p-4 md:p-6 overflow-y-auto relative">
+                <div className="flex-grow p-4 md:p-6 overflow-y-auto relative [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-muted/50 transition-colors">
                     <LiveView
                         wsData={wsData}
                         wsEvent={wsEvent}

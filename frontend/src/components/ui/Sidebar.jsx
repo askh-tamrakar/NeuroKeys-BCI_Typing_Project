@@ -129,9 +129,11 @@ export default function Sidebar({
 
                     {/* Channel 0 Filters */}
                     <div className="space-y-3 p-3 rounded-lg border border-border bg-surface/50">
-                        <div className="flex items-center justify-between border-b border-border/50 pb-2 mb-2">
-                            <h4 className="text-sm font-bold text-primary">Channel 0 ({(config.channel_mapping?.ch0?.sensor || 'EMG')})</h4>
-                            <button onClick={() => onSave?.()} className="px-2 py-0.5 text-xs bg-primary text-primary-contrast rounded font-bold hover:opacity-90">APPLY</button>
+                        <div className="flex flex-wrap items-center justify-between border-b border-border/50 pb-2 mb-2 gap-2">
+                            <h4 className="text-sm font-bold text-primary truncate max-w-[150px]" title={`Channel 0 (${(config.channel_mapping?.ch0?.sensor || 'EMG')})`}>
+                                Channel 0 ({(config.channel_mapping?.ch0?.sensor || 'EMG')})
+                            </h4>
+                            <button onClick={() => onSave?.()} className="px-2 py-0.5 text-xs bg-primary text-primary-contrast rounded font-bold hover:opacity-90 shrink-0">APPLY</button>
                         </div>
 
                         <div className="flex items-center justify-between">
@@ -205,9 +207,11 @@ export default function Sidebar({
 
                     {/* Channel 1 Filters */}
                     <div className="space-y-3 p-3 rounded-lg border border-border bg-surface/50">
-                        <div className="flex items-center justify-between border-b border-border/50 pb-2 mb-2">
-                            <h4 className="text-sm font-bold text-emerald-500">Channel 1 ({(config.channel_mapping?.ch1?.sensor || 'EOG')})</h4>
-                            <button onClick={() => onSave?.()} className="px-2 py-0.5 text-xs bg-emerald-500 text-white rounded font-bold hover:opacity-90">APPLY</button>
+                        <div className="flex flex-wrap items-center justify-between border-b border-border/50 pb-2 mb-2 gap-2">
+                            <h4 className="text-sm font-bold text-emerald-500 truncate max-w-[150px]" title={`Channel 1 (${(config.channel_mapping?.ch1?.sensor || 'EOG')})`}>
+                                Channel 1 ({(config.channel_mapping?.ch1?.sensor || 'EOG')})
+                            </h4>
+                            <button onClick={() => onSave?.()} className="px-2 py-0.5 text-xs bg-emerald-500 text-white rounded font-bold hover:opacity-90 shrink-0">APPLY</button>
                         </div>
 
                         {/* Noise Filter (Notch) */}
