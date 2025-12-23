@@ -35,4 +35,3 @@ black
 pytest
 python-dotenv
 
-#

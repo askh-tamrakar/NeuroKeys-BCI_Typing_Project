@@ -1,7 +1,4 @@
 
-BCI Dashboard
-
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -32,7 +29,11 @@ BCI Dashboard
         .status-connecting { background: #f59e0b; animation: pulse 1s infinite; }
         .message-bubble { max-width: 80%; }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
-        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        .scrollbar-hide { 
+            -ms-overflow-style: none;
+            /* Ensure content can scroll if it overflows */
+            overflow: auto;
+        }
     </style>
 </head>
 <body>
