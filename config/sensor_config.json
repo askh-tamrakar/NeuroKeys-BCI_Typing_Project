@@ -52,7 +52,7 @@
       "Rock": {},
       "Rest": {}
     }
-  }
+  },
   "baud": 230400,
   "serial_port": "",
   "binary": true
