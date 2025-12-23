@@ -1,59 +1,59 @@
 {
-  "sampling_rate": 512,
+  "baud": 230400,
+  "binary": true,
   "channel_mapping": {
     "ch0": {
-      "sensor": "EOG",
-      "enabled": true
+      "enabled": true,
+      "sensor": "EOG"
     },
     "ch1": {
-      "sensor": "EEG",
-      "enabled": true
-    }
-  },
-  "filters": {
-    "EMG": {
-      "type": "high_pass",
-      "cutoff": 70,
-      "order": 4
-    },
-    "EOG": {
-      "type": "low_pass",
-      "cutoff": 10,
-      "order": 4
-    },
-    "EEG": {
-      "filters": [
-        {
-          "type": "notch",
-          "freq": 50,
-          "Q": 30
-        },
-        {
-          "type": "bandpass",
-          "low": 0.5,
-          "high": 45,
-          "order": 4
-        }
-      ]
+      "enabled": true,
+      "sensor": "EMG"
     }
   },
   "display": {
-    "timeWindowMs": 30000,
+    "scannerX": 0,
     "showGrid": true,
-    "scannerX": 0
+    "timeWindowMs": 30000
   },
-  "num_channels": 2,
   "features": {
-    "EOG": {
-      "blink": {},
-      "Rest": {}
-    },
     "EMG": {
-      "Rock": {},
-      "Rest": {}
+      "Rest": {},
+      "Rock": {}
+    },
+    "EOG": {
+      "Rest": {},
+      "blink": {}
     }
   },
-  "baud": 230400,
-  "serial_port": "",
-  "binary": true
+  "filters": {
+    "EEG": {
+      "filters": [
+        {
+          "Q": 30,
+          "freq": 50,
+          "type": "notch"
+        },
+        {
+          "high": 45,
+          "low": 0.5,
+          "order": 4,
+          "type": "bandpass"
+        }
+      ]
+    },
+    "EMG": {
+      "cutoff": 70,
+      "order": 4,
+      "type": "high_pass"
+    },
+    "EOG": {
+      "cutoff": 10,
+      "order": 4,
+      "type": "low_pass"
+    }
+  },
+  "num_channels": 2,
+  "sampling_rate": 512,
+  "serial_port": ""
 }
