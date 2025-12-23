@@ -16,7 +16,7 @@ export function ConnectionButton({ status, latency, connect, disconnect }) {
             connect()
             setTimeout(() => {
                 setIsSimulatedConnecting(false)
-            }, 5000)
+            }, 10000)
         }
     }
 
