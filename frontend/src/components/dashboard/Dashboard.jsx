@@ -66,7 +66,7 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    connect()
+
 
     // Handle initial hash
     const hash = window.location.hash.replace('#', '');

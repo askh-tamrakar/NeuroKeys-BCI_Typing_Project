@@ -1,9 +1,15 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Cable, Zap, Plug } from 'lucide-react'
 
 export function ConnectionButton({ status, latency, connect, disconnect }) {
     const [isConnectingClicked, setIsConnectingClicked] = useState(false)
     const [isSimulatedConnecting, setIsSimulatedConnecting] = useState(false)
+
+    // Keep track of latest status to access inside setTimeout closure
+    const statusRef = useRef(status)
+    useEffect(() => {
+        statusRef.current = status
+    }, [status])
 
     const handleConnectClick = () => {
         setIsConnectingClicked(true)
@@ -11,12 +17,19 @@ export function ConnectionButton({ status, latency, connect, disconnect }) {
 
         if (status === 'connected') {
             disconnect()
+            setIsSimulatedConnecting(false)
         } else {
             setIsSimulatedConnecting(true)
             connect()
+
+            // Wait 5 seconds, then check status
             setTimeout(() => {
                 setIsSimulatedConnecting(false)
-            }, 200)
+                // If not successfully connected after 5s, abort and revert to disconnected
+                if (statusRef.current !== 'connected') {
+                    disconnect()
+                }
+            }, 5000)
         }
     }
 
