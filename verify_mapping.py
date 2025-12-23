@@ -1,7 +1,7 @@
 """
-BCI Channel Mapping Verification Script
-========================================
-This script verifies that channel mapping is consistent across all components
+BCI Sensor Mapping Verification Script
+======================================
+This script verifies that sensor mapping is consistent across all components
 and tests the configuration loading without requiring LSL streams.
 
 Usage:
@@ -17,7 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 print("\n" + "=" * 70)
-print("BCI CHANNEL MAPPING VERIFICATION")
+print("BCI SENSOR MAPPING VERIFICATION")
 print("=" * 70)
 
 
@@ -66,11 +66,11 @@ def test_config_loading():
                     if sensor_type not in ['bandpass', 'notch']:
                         print(f"  - {sensor_type}")
         
-        # Check channel mapping
-        print("\nCHANNEL MAPPING:")
-        channel_mapping = config.get("channel_mapping", {})
-        for ch_key in sorted(channel_mapping.keys()):
-            ch_config = channel_mapping[ch_key]
+        # Check sensor mapping  
+        print("\nSENSOR MAPPING:")
+        sensor_mapping = config.get("channel_mapping", {})
+        for ch_key in sorted(sensor_mapping.keys()):
+            ch_config = sensor_mapping[ch_key]
             sensor = ch_config.get("sensor", "UNKNOWN")
             enabled = ch_config.get("enabled", True)
             status = "ENABLED" if enabled else "DISABLED"
@@ -104,15 +104,15 @@ def test_filter_router():
         print(f"  - Sampling Rate: {sr} Hz")
         print(f"  - Number of Channels: {num_ch}")
         
-        # Display channel mapping
+        # Display sensor mapping
         mapping = config.get("channel_mapping", {})
         if mapping:
-            print(f"\nChannel Mapping (from filter_router):")
+            print(f"\nSensor Mapping (from filter_router):")
             for ch_key in sorted(mapping.keys()):
                 sensor = mapping[ch_key].get('sensor', 'UNKNOWN')
                 print(f"  - {ch_key}: {sensor}")
         else:
-            print("\n[WARN] No channel mapping found")
+            print("\n[WARN] No sensor mapping found")
         
         return True, config
         
@@ -141,12 +141,12 @@ def test_consistency():
         from processing.filter_router import load_config as router_load
         router_config = router_load()
         
-        # Compare channel mappings
+        # Compare sensor mappings
         file_mapping = file_config.get("channel_mapping", {})
         router_mapping = router_config.get("channel_mapping", {})
         
-        print("\nComparing Channel Mappings:")
-        print(f"  {'Channel':<10} {'File Config':<15} {'Router Config':<15} {'Status'}")
+        print("\nComparing Sensor Mappings:")
+        print(f"  {'Physical':<10} {'File Config':<15} {'Router Config':<15} {'Status'}")
         print("  " + "-" * 55)
         
         all_channels = set(list(file_mapping.keys()) + list(router_mapping.keys()))
@@ -165,9 +165,9 @@ def test_consistency():
             print(f"  {ch_key:<10} {file_sensor:<15} {router_sensor:<15} {status}")
         
         if consistent:
-            print("\n[PASS] All channel mappings are consistent")
+            print("\n[PASS] All sensor mappings are consistent")
         else:
-            print("\n[FAIL] Channel mapping mismatch detected!")
+            print("\n[FAIL] Sensor mapping mismatch detected!")
         
         return consistent
         
@@ -257,7 +257,7 @@ def main():
     print("\n" + "=" * 70)
     if all_passed:
         print("SUCCESS: All verification tests passed!")
-        print("Channel mapping is configured correctly and consistently.")
+        print("Sensor mapping is configured correctly and consistently.")
     else:
         print("WARNING: Some tests failed - please review errors above")
     print("=" * 70)
