@@ -327,6 +327,19 @@ body {
   --shadow: rgba(10, 0, 30, 0.5);
 }
 
+/* Simple (Black & White) */
+.theme-simple {
+  --bg: #000000;
+  --surface: #111111;
+  --text: #ffffff;
+  --muted: #888888;
+  --primary: #ffffff;
+  --primary-contrast: #000000;
+  --accent: #dddddd;
+  --border: #333333;
+  --shadow: rgba(255, 255, 255, 0.1);
+}
+
 
 html, body, #root {
   height: 100%;
