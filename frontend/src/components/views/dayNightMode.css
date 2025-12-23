@@ -1,9 +1,3 @@
-body {
-  margin: 0;
-  padding: 0;
-  transition: background-color 0.8s ease;
-}
-
 body.day {
   background-color: #eef6ff;
 }
