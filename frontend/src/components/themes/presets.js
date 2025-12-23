@@ -26,6 +26,7 @@ const themePresets = [
 
   // 📓 Monochrome
   { value: 'theme-simple', label: 'Simple Black', accent: '#ffffff', text: '#ffffff' },
+  { value: 'theme-white', label: 'Simple White', accent: '#000000', text: '#000000' },
 
   // 🌅 Warm & Vibrant
   //{ value: 'theme-sunset',      label: 'Amber Dusk',      accent: '#ffb86b', text: '#fff4ee' },
