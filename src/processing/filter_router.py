@@ -53,45 +53,23 @@ PROCESSED_STREAM_NAME = "BioSignals-Processed"
 RELOAD_INTERVAL = 2.0
 DEFAULT_SR = 512
 
+def load_config_v2() -> dict:
+    """Load sensor_config.json and filter_config.json using ConfigManager."""
+    
+    from config import config_manager
+    
+    # Get sensor config
+    sensor_cfg = config_manager.sensor_config.get_all()
+    
+    # Get filter config  
+    filter_cfg = config_manager.filter_config.get_all()
+    
+    # Merge into single config
+    config = sensor_cfg.copy()
+    config["filters"] = filter_cfg
+    
+    return config
 
-def load_config() -> dict:
-    """Load sensor_config.json with safe fallback defaults."""
-    defaults = {
-        "sampling_rate": DEFAULT_SR,
-        "channel_mapping": {
-            "ch0": {"sensor": "EMG", "enabled": True},
-            "ch1": {"sensor": "EOG", "enabled": True}
-        },
-        "filters": {
-            "EMG": {"cutoff": 70.0, "order": 4},
-            "EOG": {"cutoff": 10.0, "order": 4},
-            "EEG": {
-                "filters": [
-                    {"type": "notch", "freq": 50.0, "Q": 30},
-                    {"type": "bandpass", "low": 0.5, "high": 45.0, "order": 4}
-                ]
-            }
-        }
-    }
-    
-    if not CONFIG_PATH.exists():
-        return defaults
-    
-    try:
-        with open(CONFIG_PATH, "r") as f:
-            cfg = json.load(f)
-        
-        if "sampling_rate" not in cfg:
-            cfg["sampling_rate"] = defaults["sampling_rate"]
-        if "filters" not in cfg:
-            cfg["filters"] = defaults["filters"]
-        if "channel_mapping" not in cfg:
-            cfg["channel_mapping"] = defaults["channel_mapping"]
-        
-        return cfg
-    except Exception as e:
-        print(f"[Router] Failed to load config ({CONFIG_PATH}): {e} — using defaults")
-        return defaults
 
 
 def get_config_hash(cfg: dict) -> str:

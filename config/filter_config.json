@@ -1,0 +1,35 @@
+{
+  "EMG": {
+    "enabled": true,
+    "type": "high_pass",
+    "cutoff": 70.0,
+    "order": 4,
+    "description": "High-pass filter for muscle activity signals"
+  },
+  "EOG": {
+    "enabled": true,
+    "type": "low_pass",
+    "cutoff": 10.0,
+    "order": 4,
+    "description": "Low-pass filter for eye movement signals"
+  },
+  "EEG": {
+    "enabled": true,
+    "description": "Multi-stage filter for brain activity signals",
+    "filters": [
+      {
+        "type": "notch",
+        "freq": 50.0,
+        "Q": 30,
+        "description": "Remove 50Hz mains interference"
+      },
+      {
+        "type": "bandpass",
+        "low": 0.5,
+        "high": 45.0,
+        "order": 4,
+        "description": "Pass EEG frequency band (0.5-45 Hz)"
+      }
+    ]
+  }
+}
