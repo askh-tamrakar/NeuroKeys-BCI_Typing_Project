@@ -422,48 +422,36 @@ export default function DinoView({ wsData, wsEvent, isPaused, theme }) {
             nightTheme = pairParams;
         }
 
-        // 3. Calculate Day/Night Factor based on Time [0..1]
-        // 0.25 (Dawn) -> 1.0 (Day) -> 0.75 (Dusk) -> 0.0 (Night) -> ..
-        // We want a smooth curve.
-        // Time 0.0 = Midnight. Factor 0.
-        // Time 0.5 = Noon. Factor 1.
-        // Sin wave: sin((time - 0.25) * 2 * PI) ... no.
-        // Simple sin: sin(time * PI) -> 0 at 0, 1 at 0.5, 0 at 1.0. 
-        // Logic: 0 -> 0 (Midnight), 0.5 -> 1 (Noon).
-        // Since input time 0..1 cycles 24h.
-        // factor = sin(time * PI) is only positive 0..1. But time goes 0 to 1.
-        // sin(0) = 0. sin(0.5 * PI) = 1... wait.
-        // time * 2 * PI is full circle.
-        // we want peak at 0.5.
-        // -cos(time * 2 * PI) ? 
-        // at 0: -1. at 0.5: -(-1) = 1.
-        // So factor = (-cos(time * 2 * PI) + 1) / 2
-        // 0 -> (-1+1)/2 = 0
-        // 0.5 -> (1+1)/2 = 1
-        // 0.25 -> (-0+1)/2 = 0.5
-        // Perfect.
+        // 3. Calculate Day/Night Factor with FAST INSTANT transition
+        // Use stepped transition instead of smooth - background only changes fast
+        // time 0-0.4 = night, 0.4-0.6 = day, 0.6-1.0 = night
         const angle = time * 2 * Math.PI;
         const rawFactor = (-Math.cos(angle) + 1) / 2;
 
-        // Optional: Sharpen the curve so day is longer or night is longer?
-        // Let's stick to smooth sine for now.
-        const t = rawFactor;
+        // MAKE BACKGROUND TRANSITION INSTANT/FAST
+        // Create sharp cutoff for background (less than 0.3s transition window)
+        const bgTransitionSpeed = 20; // Higher = sharper/faster transition
+        const bgFactor = 1 / (1 + Math.exp(-bgTransitionSpeed * (rawFactor - 0.5)));
+
+        // For objects (clouds, trees, ground, etc), keep them CONSTANT based on time of day
+        // Objects should be DAY colored during day (time 0.25-0.75) and NIGHT colored during night
+        const isDay = time > 0.25 && time < 0.75;
+        const objectFactor = isDay ? 1.0 : 0.0; // Binary: pure day or pure night colors
 
         // 4. Interpolate Colors
-        // If colors are missing, fallback to hex codes from presets
-        // but presets now have full 'colors' object.
-        // Fallback for missing colors object?
         const getC = (theme, key, fallback) => (theme.colors && theme.colors[key]) || theme[key] || fallback;
 
         return {
-            sceneBg: lerpColor(getC(nightTheme, 'bg', '#000000'), getC(dayTheme, 'bg', '#ffffff'), t),
-            sceneSurface: lerpColor(getC(nightTheme, 'surface', '#111111'), getC(dayTheme, 'surface', '#f5f5f5'), t),
-            sceneText: lerpColor(getC(nightTheme, 'text', '#ffffff'), getC(dayTheme, 'text', '#000000'), t),
-            sceneMuted: lerpColor(getC(nightTheme, 'muted', '#888888'), getC(dayTheme, 'muted', '#666666'), t),
-            scenePrimary: lerpColor(getC(nightTheme, 'primary', '#ffffff'), getC(dayTheme, 'primary', '#000000'), t),
-            sceneBorder: lerpColor(getC(nightTheme, 'border', '#333333'), getC(dayTheme, 'border', '#e0e0e0'), t),
-            // Accent same as primary usually
-            sceneAccent: lerpColor(getC(nightTheme, 'accent', '#ffffff'), getC(dayTheme, 'accent', '#000000'), t),
+            // Background uses FAST transition
+            sceneBg: lerpColor(getC(nightTheme, 'bg', '#000000'), getC(dayTheme, 'bg', '#ffffff'), bgFactor),
+
+            // All objects use CONSTANT colors (no gradual transition)
+            sceneSurface: lerpColor(getC(nightTheme, 'surface', '#111111'), getC(dayTheme, 'surface', '#f5f5f5'), objectFactor),
+            sceneText: lerpColor(getC(nightTheme, 'text', '#ffffff'), getC(dayTheme, 'text', '#000000'), objectFactor),
+            sceneMuted: lerpColor(getC(nightTheme, 'muted', '#888888'), getC(dayTheme, 'muted', '#666666'), objectFactor),
+            scenePrimary: lerpColor(getC(nightTheme, 'primary', '#ffffff'), getC(dayTheme, 'primary', '#000000'), objectFactor),
+            sceneBorder: lerpColor(getC(nightTheme, 'border', '#333333'), getC(dayTheme, 'border', '#e0e0e0'), objectFactor),
+            sceneAccent: lerpColor(getC(nightTheme, 'accent', '#ffffff'), getC(dayTheme, 'accent', '#000000'), objectFactor),
         };
     }
 
@@ -576,13 +564,11 @@ export default function DinoView({ wsData, wsEvent, isPaused, theme }) {
             ctx.globalAlpha = 1.0
         }
 
-        // Clouds (Always visible but tinted)
-        // Tint clouds based on time (Pink at sunset?)
-        let cloudTint = sceneMuted;
-        if (t > 0.2 && t < 0.3) cloudTint = '#FFB6C1'; // Morning Rose
-        if (t > 0.7 && t < 0.8) cloudTint = '#FFA07A'; // Sunset Salmon
+        // Clouds (Always visible with consistent color)
+        // Use sceneMuted for clouds - no special transition colors
+        const cloudColor = sceneMuted;
 
-        ctx.fillStyle = cloudTint
+        ctx.fillStyle = cloudColor
         ctx.globalAlpha = 0.4
 
         cloudsRef.current.forEach(cloud => {
