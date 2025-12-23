@@ -41,7 +41,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         return DEFAULT_SETTINGS
     })
     const [savedMessage, setSavedMessage] = useState('')
-    
+
     // --- Event Logging System ---
     const [eventLogs, setEventLogs] = useState([])
     const logEvent = (msg) => {
@@ -151,12 +151,12 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         const now = Date.now()
         const timeSinceLastPress = now - blinkPressTimeRef.current
 
-        if ( 75 < timeSinceLastPress && timeSinceLastPress < 400) {
+        if (75 < timeSinceLastPress && timeSinceLastPress < 400) {
             handleDoublePress()
         } else {
             handleSinglePress()
         }
-        
+
         // Log raw interval for debugging
         logEvent(`⏱️ Interval: ${timeSinceLastPress}ms`)
 
@@ -382,9 +382,83 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
 
     // --- Visual Helpers ---
 
-    // Simplified to just return theme background since we want strict theme colors now
-    const getSkyColor = (time, themeBg) => {
-        return themeBg
+    // --- Color Helpers ---
+
+    const hexToRgb = (hex) => {
+        if (!hex) return { r: 0, g: 0, b: 0 };
+        const shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
+        hex = hex.replace(shorthandRegex, (m, r, g, b) => r + r + g + g + b + b);
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        return result ? {
+            r: parseInt(result[1], 16),
+            g: parseInt(result[2], 16),
+            b: parseInt(result[3], 16)
+        } : { r: 0, g: 0, b: 0 };
+    }
+
+    const rgbToHex = (r, g, b) => {
+        return "#" + ((1 << 24) + (Math.round(r) << 16) + (Math.round(g) << 8) + Math.round(b)).toString(16).slice(1);
+    }
+
+    const lerpColor = (color1, color2, factor) => {
+        const c1 = hexToRgb(color1);
+        const c2 = hexToRgb(color2);
+        const r = c1.r + (c2.r - c1.r) * factor;
+        const g = c1.g + (c2.g - c1.g) * factor;
+        const b = c1.b + (c2.b - c1.b) * factor;
+        return rgbToHex(r, g, b);
+    }
+
+    const getThemeColors = (currentThemeId, time) => {
+        // 1. Identify Current and Paired Theme
+        const currentParams = themePresets.find(t => t.value === currentThemeId) || themePresets[0];
+        const pairId = currentParams.pair;
+        const pairParams = themePresets.find(t => t.value === pairId) || currentParams; // Fallback to self if no pair
+
+        // 2. Determine Day and Night Theme
+        let dayTheme = currentParams;
+        let nightTheme = pairParams;
+
+        if (currentParams.type === 'night') {
+            dayTheme = pairParams;
+            nightTheme = currentParams;
+        } else {
+            // If current is day, then day is current, night is pair
+            dayTheme = currentParams;
+            nightTheme = pairParams;
+        }
+
+        // 3. Calculate Day/Night Factor with FAST INSTANT transition
+        // Use stepped transition instead of smooth - background only changes fast
+        // time 0-0.4 = night, 0.4-0.6 = day, 0.6-1.0 = night
+        const angle = time * 2 * Math.PI;
+        const rawFactor = (-Math.cos(angle) + 1) / 2;
+
+        // MAKE BACKGROUND TRANSITION INSTANT/FAST
+        // Create sharp cutoff for background (less than 0.3s transition window)
+        const bgTransitionSpeed = 20; // Higher = sharper/faster transition
+        const bgFactor = 1 / (1 + Math.exp(-bgTransitionSpeed * (rawFactor - 0.5)));
+
+        // For objects (clouds, trees, ground, etc), keep them CONSTANT based on time of day
+        // Objects should be DAY colored during day (time 0.25-0.75) and NIGHT colored during night
+        const isDay = time > 0.25 && time < 0.75;
+        const objectFactor = isDay ? 1.0 : 0.0; // Binary: pure day or pure night colors
+
+        // 4. Interpolate Colors
+        const getC = (theme, key, fallback) => (theme.colors && theme.colors[key]) || theme[key] || fallback;
+
+        return {
+            // Background uses FAST transition
+            sceneBg: lerpColor(getC(nightTheme, 'bg', '#000000'), getC(dayTheme, 'bg', '#ffffff'), bgFactor),
+
+            // All objects use CONSTANT colors (no gradual transition)
+            sceneSurface: lerpColor(getC(nightTheme, 'surface', '#111111'), getC(dayTheme, 'surface', '#f5f5f5'), objectFactor),
+            sceneText: lerpColor(getC(nightTheme, 'text', '#ffffff'), getC(dayTheme, 'text', '#000000'), objectFactor),
+            sceneMuted: lerpColor(getC(nightTheme, 'muted', '#888888'), getC(dayTheme, 'muted', '#666666'), objectFactor),
+            scenePrimary: lerpColor(getC(nightTheme, 'primary', '#ffffff'), getC(dayTheme, 'primary', '#000000'), objectFactor),
+            sceneBorder: lerpColor(getC(nightTheme, 'border', '#333333'), getC(dayTheme, 'border', '#e0e0e0'), objectFactor),
+            sceneAccent: lerpColor(getC(nightTheme, 'accent', '#ffffff'), getC(dayTheme, 'accent', '#000000'), objectFactor),
+        };
     }
 
 
@@ -902,7 +976,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                                 <span className="font-bold text-primary">Pause / Resume</span>
                             </div>
                         </div>
-                        
+
                         <div className="mt-4 pt-3 border-t border-border">
                             <div className="flex justify-between items-center text-xs">
                                 <span className="text-muted font-medium uppercase tracking-wider">Input Status</span>
