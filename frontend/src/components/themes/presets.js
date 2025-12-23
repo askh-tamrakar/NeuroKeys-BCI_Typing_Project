@@ -24,6 +24,10 @@ const themePresets = [
   { value: 'theme-ocean', label: 'Deep Ocean', accent: '#1f6feb', text: '#e7f6ff' },
   { value: 'theme-slate', label: 'Midnight Slate', accent: '#a6adc8', text: '#f1f5f9' },
 
+  // 📓 Monochrome
+  { value: 'theme-simple', label: 'Simple Black', accent: '#ffffff', text: '#ffffff' },
+  { value: 'theme-white', label: 'Simple White', accent: '#000000', text: '#000000' },
+
   // 🌅 Warm & Vibrant
   //{ value: 'theme-sunset',      label: 'Amber Dusk',      accent: '#ffb86b', text: '#fff4ee' },
   //{ value: 'theme-vibrant',     label: 'Vibrant Warm',    accent: '#E17A47', text: '#061016' },

@@ -25,8 +25,10 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         SPAWN_INTERVAL: 1150,
         CANVAS_WIDTH: 800,
         CANVAS_HEIGHT: 376,
-        CYCLE_DURATION: 100,
+        CYCLE_DURATION: 60, // Faster default cycle for demo
         JUMP_DISTANCE: 150,
+        AUTO_CYCLE: true,
+        MANUAL_TIME: 0.25, // Dawn default
     }
 
     const [settings, setSettings] = useState(() => {
@@ -60,7 +62,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
     const settingsRef = useRef(DEFAULT_SETTINGS)
 
     // Visuals Refs
-    const gameTimeRef = useRef(0) // 0 to 1 (0=dawn, 0.25=noon, 0.5=dusk, 0.75=midnight)
+    const gameTimeRef = useRef(0.25) // Start at Dawn
     // cycleDuration is now in settings
     const cloudsRef = useRef([])
     const treesRef = useRef([]) // Background parallax trees
@@ -126,6 +128,10 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
 
     useEffect(() => {
         settingsRef.current = settings
+        // Sync time if manual
+        if (!settings.AUTO_CYCLE) {
+            gameTimeRef.current = settings.MANUAL_TIME
+        }
     }, [settings])
 
     // Listen for WebSocket Events (Blinks)
@@ -143,7 +149,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         const now = Date.now()
         const timeSinceLastPress = now - blinkPressTimeRef.current
 
-        if ( 75 < timeSinceLastPress && timeSinceLastPress < 400) {
+        if (75 < timeSinceLastPress && timeSinceLastPress < 400) {
             handleDoublePress()
         } else {
             handleSinglePress()
@@ -369,9 +375,101 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
 
     // --- Visual Helpers ---
 
-    // Simplified to just return theme background since we want strict theme colors now
+    function adjustColorBrightness(hex, percent) {
+        // Strip the hash if it exists
+        hex = hex.replace(/^#/, '');
+
+        // Parse r, g, b
+        let r, g, b;
+        if (hex.length === 3) {
+            r = parseInt(hex.substring(0, 1) + hex.substring(0, 1), 16);
+            g = parseInt(hex.substring(1, 2) + hex.substring(1, 2), 16);
+            b = parseInt(hex.substring(2, 3) + hex.substring(2, 3), 16);
+        } else {
+            r = parseInt(hex.substring(0, 2), 16);
+            g = parseInt(hex.substring(2, 4), 16);
+            b = parseInt(hex.substring(4, 6), 16);
+        }
+
+        // Adjust brightness
+        // percent > 0 means brighten, < 0 means darken
+        // We want to scale towards 255 (white) for positive, 0 (black) for negative
+        // But a simple multiplier might be better for preserving hue?
+        // Let's use linear interpolation with black/white.
+
+        // Actually simpler approach: just add/subtract value, or scale?
+        // Let's go with simple channel scaling which is usually "good enough" for themes
+        // or blending with black/white.
+
+        // Blending with Black (Darken) or White (Lighten)
+        // percent: -1.0 to 1.0
+        const amt = Math.round(255 * Math.abs(percent));
+
+        if (percent < 0) {
+            r = Math.max(0, r - amt);
+            g = Math.max(0, g - amt);
+            b = Math.max(0, b - amt);
+        } else {
+            r = Math.min(255, r + amt);
+            g = Math.min(255, g + amt);
+            b = Math.min(255, b + amt);
+        }
+
+        // clamp
+        const rr = ((r.toString(16).length === 1) ? "0" + r.toString(16) : r.toString(16));
+        const gg = ((g.toString(16).length === 1) ? "0" + g.toString(16) : g.toString(16));
+        const bb = ((b.toString(16).length === 1) ? "0" + b.toString(16) : b.toString(16));
+
+        return "#" + rr + gg + bb;
+    }
+
+    // Calculate global scene brightness multiplier based on time
+    const getBrightnessFactor = (time) => {
+        const angle = (time * 2 * Math.PI) - (Math.PI / 2); // -PI/2 to 1.5PI
+        return Math.sin(angle); // -1 to 1
+    }
+
+    // Dynamic Sky Color based on Time
     const getSkyColor = (time, themeBg) => {
-        return themeBg
+        // time is 0.0 to 1.0 (0=Dawn, 0.25=Noon, 0.5=Dusk, 0.75=Midnight) -> This mapping was in comment
+        // Let's standardize: 
+        // 0.0 = Midnight
+        // 0.25 = Dawn (Sunrise)
+        // 0.5 = Noon
+        // 0.75 = Dusk (Sunset)
+        // 1.0 = Midnight
+
+        // Let's re-map to user expectations:
+        // Day logic: 0.25 to 0.75 is roughly "Light"
+        // Night logic: 0.75 to 0.25 is "Dark"
+
+        // To make "Light Mode" from a dark theme color (themeBg), we lighten it.
+        // To make "Dark Mode" from a light theme color... wait, themes have their own nature.
+        // But the user requested: "if sun is rise background is bright like day... set is dark like night"
+        // So we enforce Brightness modulation on top of the Theme Color.
+
+        // Determine brightness offset
+        // Noon (0.5) -> Max Brightness (+30-50%)
+        // Midnight (0.0/1.0) -> Max Darkness (-80%)
+
+        let brightness = 0;
+
+        // Simple Sine Wave approximation
+        // -PI/2 at 0 (Midnight) -> sin(-PI/2) = -1
+        // PI/2 at 0.5 (Noon) -> sin(PI/2) = 1
+        // Angle = (time * 2 * PI) - PI/2
+        const angle = (time * 2 * Math.PI) - (Math.PI / 2);
+        const intensity = Math.sin(angle); // -1 to 1
+
+        if (intensity > 0) {
+            // Day: Brighten up to 60%
+            brightness = intensity * 0.6;
+        } else {
+            // Night: Darken up to 80%
+            brightness = intensity * 0.8;
+        }
+
+        return adjustColorBrightness(themeBg || '#000000', brightness);
     }
 
 
@@ -410,55 +508,84 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
     }
 
     const drawSky = (ctx, width, height, time, primaryColor, textColor, bgColor, surfaceColor, borderColor, mutedColor) => {
+        // Calculate Global Brightness Factor
+        const bParams = getBrightnessFactor(time); // -1 to 1
+
+        // Determine brightness adjustment
+        let brightness = 0;
+        if (bParams > 0) {
+            brightness = bParams * 0.6; // Day: up to 60% lighter
+        } else {
+            brightness = bParams * 0.8; // Night: up to 80% darker
+        }
+
+        // Apply to ALL colors for consistent scene lighting
+        const sceneBg = adjustColorBrightness(bgColor || '#000000', brightness);
+        const sceneSurface = adjustColorBrightness(surfaceColor || '#444444', brightness);
+        const sceneMuted = adjustColorBrightness(mutedColor || '#888888', brightness);
+        const scenePrimary = adjustColorBrightness(primaryColor || '#ff0000', brightness * 0.5); // Primary less affected
+
         // Background
-        ctx.fillStyle = getSkyColor(time, bgColor)
+        ctx.fillStyle = sceneBg;
+
         ctx.fillRect(0, 0, width, height)
 
         const centerX = width / 2
-        const centerY = height + 100
-        const radius = width * 0.6
+        // Move celestial path down a bit
+        const centerY = height + 50
+        const radius = width * 0.55
 
-        // Sun
-        if (time > 0.05 && time < 0.65) {
-            const sunAngle = ((time - 0.1) / 0.5) * Math.PI // 0 to PI
-            const sunX = centerX - Math.cos(sunAngle) * radius
-            const sunY = centerY - Math.sin(sunAngle) * radius * 0.9
+        // time: 0=Midnight, 0.25=Sunrise, 0.5=Noon, 0.75=Sunset
+
+        // Sun logic
+        // Visible roughly 0.2 to 0.8
+        if (time > 0.2 && time < 0.8) {
+            const sunProgress = (time - 0.25) * 2; // 0 at sunrise, 1 at sunset
+            const sunAngle = Math.PI + (sunProgress * Math.PI); // PI to 2PI
+
+            const sunX = centerX + Math.cos(sunAngle) * radius
+            const sunY = centerY + Math.sin(sunAngle) * radius
 
             // Draw Pixel Art Sun
-            // Core
-            drawBlockyCircle(ctx, sunX, sunY, 14, primaryColor, 4)
-            // Rays (simple blocks around)
-            ctx.fillStyle = primaryColor
-            // ctx.fillRect(sunX - 2, sunY - 40, 4, 10) // etc... simplify for now
+            const sunColor = '#FDB813'; // Standard Sun Yellow
+            drawBlockyCircle(ctx, sunX, sunY, 14, sunColor, 4)
         }
 
-        // Moon
-        if (time > 0.55 || time < 0.15) {
-            let moonTime = time - 0.6
-            if (moonTime < 0) moonTime += 1
-            const moonAngle = (moonTime / 0.5) * Math.PI
-            const moonX = centerX - Math.cos(moonAngle) * radius
-            const moonY = centerY - Math.sin(moonAngle) * radius * 0.9
+        // Moon logic
+        // Visible 0.7 .. 0.3 (wrapping)
+        if (time > 0.7 || time < 0.3) {
+            let moonTime = time;
+            if (moonTime < 0.3) moonTime += 1.0; // 0.0..0.3 becomes 1.0..1.3
 
-            // Draw Pixel Art Moon (Crescent-ish or just square-ish circle)
-            drawBlockyCircle(ctx, moonX, moonY, 12, textColor, 4)
+            const moonProgress = (moonTime - 0.75) * 2;
+            const moonAngle = Math.PI + (moonProgress * Math.PI);
+
+            const moonX = centerX + Math.cos(moonAngle) * radius
+            const moonY = centerY + Math.sin(moonAngle) * radius
+
+            // Draw Pixel Art Moon
+            drawBlockyCircle(ctx, moonX, moonY, 12, '#F4F6F0', 4)
 
             // Crater
-            ctx.fillStyle = bgColor
-            ctx.fillRect(moonX - 12, moonY - 8, 8, 8)
-            ctx.fillRect(moonX + 4, moonY + 8, 4, 4)
+            ctx.fillStyle = sceneBg // Use sky color for partial occlusion/crater
+            ctx.fillRect(moonX - 8, moonY - 4, 6, 6)
         }
 
         // Stars (Night only)
-        if (time > 0.6 || time < 0.1) {
-            const baseOpacity = (time > 0.7 || time < 0.05) ? 1 : 0.5
-            ctx.fillStyle = mutedColor // Stars are subtle now
+        // 0.8 .. 0.2
+        if (time > 0.75 || time < 0.25) {
+            const nightIntensity = (time > 0.85 || time < 0.15) ? 1.0 : 0.0;
+            const fadeIn = (time > 0.75 && time < 0.85) ? (time - 0.75) * 10 : 1;
+            const fadeOut = (time > 0.15 && time < 0.25) ? (0.25 - time) * 10 : 1;
+
+            const opacity = Math.min(fadeIn, fadeOut);
+
+            ctx.fillStyle = '#FFFFFF';
             starsRef.current.forEach(star => {
                 const flicker = Math.sin(Date.now() / 200 + star.blinkOffset) * 0.3 + 0.7
                 if (Math.random() > 0.1) { // Slight noise
-                    ctx.globalAlpha = baseOpacity * flicker
-                    const s = Math.ceil(star.size) // Make sure it's integer for crisp edges
-                    // Star shape: Cross or Dot
+                    ctx.globalAlpha = opacity * flicker
+                    const s = Math.ceil(star.size)
                     if (s > 2) {
                         ctx.fillRect(star.x - s, star.y, s * 3, s)
                         ctx.fillRect(star.x, star.y - s, s, s * 3)
@@ -471,9 +598,13 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         }
 
         // Clouds (Always visible but tinted)
-        // Use mutedColor for clouds so they are distinct but background
-        ctx.fillStyle = mutedColor
-        ctx.globalAlpha = 0.4 // Subtle
+        // Tint clouds based on time (Pink at sunset?)
+        let cloudTint = sceneMuted;
+        if (time > 0.2 && time < 0.3) cloudTint = '#FFB6C1'; // Morning Rose
+        if (time > 0.7 && time < 0.8) cloudTint = '#FFA07A'; // Sunset Salmon
+
+        ctx.fillStyle = cloudTint
+        ctx.globalAlpha = 0.4
 
         cloudsRef.current.forEach(cloud => {
             // Pixel Art Cloud: 3 overlapping rectangles
@@ -497,6 +628,8 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
             }
         })
         ctx.globalAlpha = 1.0
+
+        return { sceneBg, sceneSurface, sceneMuted, scenePrimary } // Return calculated colors for other drawers
     }
 
     const drawTrees = (ctx, width, groundY, mutedColor) => {
@@ -592,7 +725,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                 GRAVITY, JUMP_STRENGTH, JUMP_DISTANCE, SPAWN_INTERVAL,
                 OBSTACLE_WIDTH, OBSTACLE_MIN_HEIGHT, OBSTACLE_MAX_HEIGHT,
                 GROUND_OFFSET, CANVAS_WIDTH, CANVAS_HEIGHT,
-                DINO_WIDTH, DINO_HEIGHT
+                DINO_WIDTH, DINO_HEIGHT, AUTO_CYCLE, CYCLE_DURATION
             } = currentSettings
 
             // Derive GAME_SPEED to satisfy the Parabolic Path defined by Strength (Y) and Distance (X)
@@ -718,22 +851,25 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                 const accentColor = styles.getPropertyValue('--accent').trim() || primaryColor
 
                 // Background
-                // Update Time only if playing
-                if (currentState === 'playing') {
+                // Update Time
+                // If Auto Cycle is ON, increment time
+                if (currentSettings.AUTO_CYCLE && currentState === 'playing') {
                     const dt = deltaTime // ms
-                    const currentDuration = settingsRef.current.CYCLE_DURATION * 1000 // Convert to ms
+                    const currentDuration = currentSettings.CYCLE_DURATION * 1000 // Convert to ms
                     gameTimeRef.current = (gameTimeRef.current + dt / currentDuration) % 1.0
+                } else if (!currentSettings.AUTO_CYCLE) {
+                    gameTimeRef.current = currentSettings.MANUAL_TIME
                 }
 
                 // Background (Sky)
-                drawSky(ctx, width, height, gameTimeRef.current, primaryColor, textColor, bgColor, surfaceColor, borderColor, mutedColor)
+                const { sceneBg, sceneSurface, sceneMuted, scenePrimary } = drawSky(ctx, width, height, gameTimeRef.current, primaryColor, textColor, bgColor, surfaceColor, borderColor, mutedColor)
 
                 // Parallax Trees (Behind terrain)
                 const groundY = height - GROUND_OFFSET
-                drawTrees(ctx, width, groundY, mutedColor)
+                drawTrees(ctx, width, groundY, sceneMuted)
 
                 // Terrain
-                drawTerrain(ctx, width, height, groundY, surfaceColor, borderColor, mutedColor)
+                drawTerrain(ctx, width, height, groundY, sceneSurface, borderColor, sceneMuted)
 
                 // Ground line (Visual enhancement)
                 ctx.strokeStyle = borderColor
@@ -747,13 +883,13 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                 const dinoX = 75
                 const dinoDrawY = groundY - DINO_HEIGHT + dinoYRef.current
                 // Dino body = Primary, Eye = BgColor (contrast)
-                drawDino(ctx, dinoX, dinoDrawY, primaryColor, bgColor)
+                drawDino(ctx, dinoX, dinoDrawY, scenePrimary, sceneBg)
 
                 // Draw cacti
                 obstaclesRef.current.forEach((obs) => {
                     const obsDrawY = groundY - obs.height
-                    // Cacti = Accent Color (stand out against surface/sky)
-                    drawCactus(ctx, obs.x, obsDrawY, obs.width, obs.height, surfaceColor, borderColor)
+                    // Cacti = Surface Color (dynamic)
+                    drawCactus(ctx, obs.x, obsDrawY, obs.width, obs.height, sceneSurface, borderColor)
                 })
 
                 // Draw score
@@ -802,6 +938,14 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         setSettings(prev => ({
             ...prev,
             [key]: parseFloat(value)
+        }))
+    }
+
+    // Checkbox helper
+    const handleToggleChange = (key) => {
+        setSettings(prev => ({
+            ...prev,
+            [key]: !prev[key]
         }))
     }
 
@@ -943,6 +1087,27 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                                 </div>
                                 <div className="space-y-3">
                                     <h4 className="text-xs font-bold text-primary border-b border-border pb-1">Environment</h4>
+
+                                    {/* Day/Night Controls */}
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs text-muted">Auto Day/Night</span>
+                                        <button
+                                            onClick={() => handleToggleChange('AUTO_CYCLE')}
+                                            className={`w-10 h-5 rounded-full relative transition-colors ${settings.AUTO_CYCLE ? 'bg-primary' : 'bg-border'}`}
+                                        >
+                                            <span className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-transform ${settings.AUTO_CYCLE ? 'left-6' : 'left-1'}`} />
+                                        </button>
+                                    </div>
+
+                                    {!settings.AUTO_CYCLE && (
+                                        <SettingInput
+                                            label="Time of Day (0-1)"
+                                            value={settings.MANUAL_TIME}
+                                            onChange={(v) => handleSettingChange('MANUAL_TIME', v)}
+                                            min="0" max="1" step="0.05"
+                                        />
+                                    )}
+
                                     <SettingInput label="Day Cycle (s)" value={settings.CYCLE_DURATION} onChange={(v) => handleSettingChange('CYCLE_DURATION', v)} min="10" max="300" step="5" />
                                 </div>
                             </div>
