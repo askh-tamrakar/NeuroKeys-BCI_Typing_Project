@@ -200,6 +200,9 @@ class ConfigManager:
         self.calib_config = ConfigWatcher(
             self.config_dir / "calibration_config.json", name="CalibrationConfig"
         )
+        self.feature_config = ConfigWatcher(
+            self.config_dir / "feature_config.json", name="FeatureConfig"
+        )
 
         # Initialize writers
         self.sensor_writer = ConfigWriter(
@@ -210,6 +213,9 @@ class ConfigManager:
         )
         self.calib_writer = ConfigWriter(
             self.config_dir / "calibration_config.json", name="CalibrationConfig"
+        )
+        self.feature_writer = ConfigWriter(
+            self.config_dir / "feature_config.json", name="FeatureConfig"
         )
 
     # ============== SENSOR CONFIG ==============
@@ -267,6 +273,40 @@ class ConfigManager:
         """Save calibration configuration."""
         return self.calib_writer.save(config, validate=True, backup=True)
 
+    # ============== FEATURE CONFIG ==============
+
+    def get_feature_config(self) -> Dict[str, Any]:
+        """Get all feature configuration."""
+        return self.feature_config.get_all()
+
+    def get_features_for_sensor(self, sensor_type: str) -> Dict[str, Any]:
+        """Get feature config for a specific sensor type (EMG, EOG, etc)."""
+        return self.feature_config.get(sensor_type.upper(), {})
+
+    def save_feature_config(self, config: Dict[str, Any]) -> bool:
+        """Save feature configuration."""
+        return self.feature_writer.save(config, validate=True, backup=True)
+
+    # ============== FACADE (UNIFIED) ==============
+
+    def get_all_configs(self) -> Dict[str, Any]:
+        """
+        Return a merged dictionary containing ALL configurations.
+        Structure matches the legacy monolithic sensor_config.json for compatibility.
+        """
+        sensor = self.sensor_config.get_all()
+        filters = self.filter_config.get_all()
+        features = self.feature_config.get_all()
+
+        # Start with sensor config (hardware/mapping)
+        merged = sensor.copy()
+        
+        # Inject modular sections
+        merged["filters"] = filters
+        merged["features"] = features
+        
+        return merged
+
     # ============== UTILITY ==============
 
     def validate_json_file(self, filepath: Path) -> tuple[bool, str]:
@@ -302,6 +342,7 @@ config_manager = ConfigManager(CONFIG_DIR)
 sensor_config = config_manager.sensor_config
 filter_config = config_manager.filter_config
 calib_config = config_manager.calib_config
+feature_config = config_manager.feature_config
 
 
 # ============================================================

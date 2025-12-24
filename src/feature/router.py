@@ -39,14 +39,17 @@ CONFIG_PATH = PROJECT_ROOT / "config" / "sensor_config.json"
 INPUT_STREAM_NAME = "BioSignals-Processed"
 OUTPUT_STREAM_NAME = "BioSignals-Events"
 
+try:
+    from ..utils.config import config_manager
+except ImportError:
+    # Try relative path if running as script
+    sys.path.append(str(PROJECT_ROOT / "src"))
+    from utils.config import config_manager
+
 def load_config():
-    if not CONFIG_PATH.exists():
-        return {}
-    try:
-        with open(CONFIG_PATH, "r") as f:
-            return json.load(f)
-    except:
-        return {}
+    # Use the facade to get merged config (Sensor + Features)
+    # This ensures Detectors find their 'features' key
+    return config_manager.get_all_configs()
 
 class FeatureRouter:
     def __init__(self):

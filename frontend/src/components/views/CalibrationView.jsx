@@ -96,6 +96,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     const [windowDuration, setWindowDuration] = useState(1500); // ms
     const GAP_DURATION = 500; // ms
     const [timeWindow, setTimeWindow] = useState(5000); // visible sweep window length for calibration plot
+    const [batchSize, setBatchSize] = useState(5); // Auto-cal batch size
     const MAX_WINDOWS = 50;
 
     // Handlers
@@ -127,7 +128,11 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
     const startAutoWindowing = () => {
         const createNextWindow = () => {
-            const start = Date.now();
+            // Visual sync: Window spawns at visual edge (future) and travels to center (now)
+            // Center is 'now'. Right edge is 'now + timeWindow/2'
+            const delayToCenter = Math.round(timeWindow / 2);
+
+            const start = Date.now() + delayToCenter;
             const end = start + windowDuration;
             const newWindow = {
                 id: Math.random().toString(36).substr(2, 9),
@@ -141,7 +146,8 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
             setActiveWindow(newWindow);
 
-            // Auto-save window after it ends
+            // Wait for window to finish ("arrive" and complete)
+            // Total wait = delayToCenter + windowDuration
             setTimeout(async () => {
                 // Mark as saving
                 setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'saving' } }));
@@ -149,9 +155,14 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
                 try {
                     // Extract samples from chartData that fall within the window range
+                    // Note: chartData buffer must be large enough to hold this history
                     const samplesPoints = chartData.filter(p => p.time >= start && p.time <= end);
                     const samples = samplesPoints.map(p => p.value);
                     const timestamps = samplesPoints.map(p => p.time);
+
+                    if (samples.length === 0) {
+                        throw new Error("No samples collected in window");
+                    }
 
                     // Send to backend for feature extraction and detection
                     const resp = await CalibrationApi.sendWindow(activeSensor, {
@@ -165,14 +176,12 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                     setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'saved' } }));
 
                     // Determine prediction result
-                    // detected = true means the action matches the detector profile
                     const detected = resp.detected === true;
+                    // For batch calibration, we care about data collection, check prediction
                     const predicted = detected ? targetLabel : 'Rest';
-
-                    // Compare prediction with labeled action for correct/missed status
                     const isCorrect = predicted === targetLabel;
 
-                    // Add to windows list with prediction
+                    // Add to windows list
                     setMarkedWindows(prev => {
                         const completedWindow = {
                             ...newWindow,
@@ -186,7 +195,6 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                 } catch (err) {
                     console.error('Auto-save window error:', err);
                     setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'error', message: err?.message || String(err) } }));
-
                     // Still add window but mark as error
                     setMarkedWindows(prev => {
                         const errorWindow = {
@@ -199,14 +207,19 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                     });
                 } finally {
                     setRunInProgress(false);
+                    setActiveWindow(null);
                 }
-
-                setActiveWindow(null);
-            }, windowDuration);
+            }, delayToCenter + windowDuration);
         };
 
         createNextWindow();
-        windowIntervalRef.current = setInterval(createNextWindow, windowDuration + GAP_DURATION);
+        windowIntervalRef.current = setInterval(createNextWindow, windowDuration + GAP_DURATION + (timeWindow / 2));
+        // Need to ensure we don't overlap too aggressively or visuals get confusing. 
+        // Logic: Spawn -> Wait 1.5s -> Spawn.
+        // Actually, the interval should just be window + gap. The offset is constant.
+        // If we spawn at T+2.5s, completion is at T+4s.
+        // Next spawn at T+2s => T+4.5s.
+        // So interval is fine.
     };
 
     const handleManualWindowSelect = async (start, end) => {
@@ -279,69 +292,70 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
         setMarkedWindows(prev => prev.map(w => w.id === id ? { ...w, isMissedActual: !w.isMissedActual } : w));
     };
 
-    // Run calibration logic: send each window to backend for saving + feature extraction
-    const runCalibration = async () => {
-        if (!markedWindows || markedWindows.length === 0) return;
+    // Run calibration logic
+    const runCalibration = async (windowsToCalibrate = markedWindows) => {
+        if (!windowsToCalibrate || windowsToCalibrate.length === 0) return;
 
         setRunInProgress(true);
-        setWindowProgress({});
-
-        const updated = [];
-
-        for (const w of markedWindows) {
-            // mark saving
-            setWindowProgress(prev => ({ ...prev, [w.id]: { status: 'saving' } }));
-
-            try {
-                // extract samples from chartData that fall within the window range
-                const samplesPoints = chartData.filter(p => p.time >= w.startTime && p.time <= w.endTime);
-                const samples = samplesPoints.map(p => p.value);
-                const timestamps = samplesPoints.map(p => p.time);
-
-                const resp = await CalibrationApi.sendWindow(activeSensor, {
-                    action: w.label,
-                    channel: w.channel,
-                    samples,
-                    timestamps
-                });
-
-                // success
-                setWindowProgress(prev => ({ ...prev, [w.id]: { status: 'saved' } }));
-
-                const detected = resp.detected === true;
-                const predicted = detected ? w.label : 'Rest';
-
-                updated.push({ ...w, predictedLabel: predicted, status: detected ? 'correct' : 'incorrect', features: resp.features });
-            } catch (err) {
-                console.error('runCalibration: error sending window', err);
-                setWindowProgress(prev => ({ ...prev, [w.id]: { status: 'error', message: err?.message || String(err) } }));
-                updated.push({ ...w, predictedLabel: 'Error', status: 'incorrect' });
-            }
-        }
-
-        setMarkedWindows(updated.slice(-MAX_WINDOWS));
-
-        // Refresh config from server (server may have updated thresholds)
         try {
-            const refreshed = await CalibrationApi.fetchSensorConfig();
-            setConfig(refreshed);
-        } catch (e) {
-            console.warn('Could not refresh config after calibration run', e);
-        }
+            // 1. Call robust calibration endpoint
+            const result = await CalibrationApi.calibrateThresholds(activeSensor, windowsToCalibrate);
+            console.log('[CalibrationView] Calibration result:', result);
 
-        setRunInProgress(false);
+            // 2. Update config locally
+            const refreshedConfig = await CalibrationApi.fetchSensorConfig();
+            setConfig(refreshedConfig);
+
+            // 3. Update window statuses (if showing legacy list)
+            if (result.window_results) {
+                // ... logic to update list if needed, 
+                // but for batch mode we might clear them.
+            }
+
+            return result; // return for auto-cal consumer
+
+        } catch (err) {
+            console.error('Calibration error:', err);
+            // alert(`Calibration failed: ${err.message}`); // Suppress alert for auto-cal?
+        } finally {
+            setRunInProgress(false);
+        }
     };
+
+    // Auto-Calibration Trigger
+    useEffect(() => {
+        if (mode === 'realtime' && isCalibrating && markedWindows.length >= batchSize) {
+            // Ensure we only trigger once per batch
+            // We use a separate async function to handle the flow
+            const performAutoCal = async () => {
+                // Pause windowing? Not strictly necessary if async, but safer to avoid race conditions
+                if (windowIntervalRef.current) clearInterval(windowIntervalRef.current);
+
+                console.log('[CalibrationView] Batch target reached. Auto-Calibrating...');
+                await runCalibration(markedWindows);
+
+                // Clear windows to start fresh batch
+                setMarkedWindows([]);
+
+                // Resume windowing
+                if (isCalibrating) {
+                    startAutoWindowing();
+                }
+            };
+            performAutoCal();
+        }
+    }, [markedWindows, batchSize, mode, isCalibrating]);
 
     // Update chart data from WS or Mock
     useEffect(() => {
         if (mode === 'realtime' && wsData) {
             // Process incoming LSL/WS data for the active sensor
-            // This is a simplified version of LiveView logic
             const payload = wsData.raw || wsData;
             if (payload?.channels) {
-                const val = payload.channels[0] || 0; // Mock: take first channel
+                const val = payload.channels[0] || 0;
                 const point = { time: Date.now(), value: typeof val === 'number' ? val : (val.value || 0) };
-                setChartData(prev => [...prev.slice(-200), point]);
+                // Increased buffer size to ensure we have data when window completes (future-spawned windows)
+                setChartData(prev => [...prev.slice(-3000), point]);
             }
         }
     }, [wsData, mode, activeSensor]);
@@ -550,6 +564,19 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                                     >
                                         {isCalibrating ? 'Stop Calibration' : 'Start Calibration'}
                                     </button>
+                                </div>
+
+                                {/* Batch Size control */}
+                                <div className="flex items-center gap-2 ml-4 pl-4 border-l border-border">
+                                    <label className="text-xs font-bold text-muted uppercase">Batch:</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        max="50"
+                                        value={batchSize}
+                                        onChange={(e) => setBatchSize(Number(e.target.value))}
+                                        className="w-12 bg-bg border border-border rounded px-2 py-1 text-sm font-bold outline-none"
+                                    />
                                 </div>
 
                             </div>

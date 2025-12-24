@@ -1,179 +1,42 @@
-.eye-tracker {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: 0 10px 30px var(--shadow);
-    padding: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 15px;
-}
+/* DinoView.css */
 
-.eye-tracker h3 {
-    margin: 0;
-    font-size: 16px;
-    color: var(--text);
-    font-weight: bold;
-}
-
+/* Eyes Container (Now styled for top-border positioning) */
 .eyes-container {
     display: flex;
-    gap: 20px;
-    justify-content: center;
-    margin: 15px 0;
+    gap: 0.75rem; /* Reduced gap slightly for compact look */
+    pointer-events: none; /* Let clicks pass through if overlapping important things */
 }
 
+/* Eye Styles */
 .eye {
-    width: 80px;
-    height: 80px;
-    border-radius: 50%;
-    background: var(--bg);
-    border: 2px solid var(--primary);
-    position: relative;
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    /* Dimensions are now handled by Tailwind utility classes in JSX for flexibility, 
+       but we keep base styles here if needed or fallback */
+    transition: transform 0.1s ease-out;
 }
 
 .pupil {
-    width: 30px;
-    height: 30px;
-    background: var(--text);
-    border-radius: 50%;
-    position: absolute;
+    transition: transform 0.05s ease-out;
 }
 
-.eye.blink .pupil {
-    animation: eyeBlink 0.3s ease-in-out;
+/* Animations */
+.blink {
+    animation: blink-animation 0.15s forwards; /* Faster blink for responsiveness */
 }
 
-@keyframes eyeBlink {
-    0% {
-        height: 30px;
-        opacity: 1;
-    }
-
-    50% {
-        height: 2px;
-        opacity: 0.3;
-    }
-
-    100% {
-        height: 30px;
-        opacity: 1;
-    }
+.double-blink {
+    animation: double-blink-animation 0.3s forwards;
 }
 
-.eye.double-blink .pupil {
-    animation: doubleBlink 0.6s ease-in-out;
+@keyframes blink-animation {
+    0% { transform: scaleY(1); }
+    50% { transform: scaleY(0.1); }
+    100% { transform: scaleY(1); }
 }
 
-@keyframes doubleBlink {
-    0%,
-    100% {
-        height: 30px;
-        opacity: 1;
-    }
-
-    25% {
-        height: 2px;
-        opacity: 0.3;
-    }
-
-    50% {
-        height: 30px;
-        opacity: 1;
-    }
-
-    75% {
-        height: 2px;
-        opacity: 0.3;
-    }
-}
-
-.blink-info {
-    background: var(--bg);
-    border-radius: 8px;
-    padding: 12px;
-    font-size: 13px;
-    color: var(--muted);
-    line-height: 1.6;
-}
-
-.blink-info strong {
-    color: var(--primary);
-}
-
-.dino-pixel-root {
-  display:flex;
-  width:100%;
-  justify-content:center;
-  padding: 12px;
-  box-sizing: border-box;
-}
-
-.dino-pixel-card {
-  width: 100%;
-  max-width: 980px;
-  border-radius: 8px;
-  padding: 12px;
-  background: linear-gradient(180deg, rgba(0,0,0,0.35), rgba(0,0,0,0.5));
-  box-shadow: 0 12px 40px rgba(0,0,0,0.6);
-  position: relative;
-}
-
-.dino-pixel-canvas {
-  display:block;
-  width: 100%;
-  height: auto;
-  border-radius: 6px;
-  background: transparent;
-  box-shadow: inset 0 -8px 20px rgba(0,0,0,0.3);
-  border: 1px solid rgba(255,255,255,0.03);
-}
-
-/* Overlay controls */
-.dino-pixel-overlay {
-  position:absolute;
-  left: 14px;
-  top: 14px;
-  z-index: 40;
-  color: #e6eef8;
-  pointer-events: none;
-  font-family: Inter, system-ui, sans-serif;
-  font-size: 13px;
-  backdrop-filter: blur(4px);
-  background: rgba(8,12,18,0.18);
-  border-radius: 8px;
-  padding: 8px 10px;
-  border: 1px solid rgba(255,255,255,0.03);
-}
-
-.dino-pixel-overlay.paused {
-  box-shadow: 0 6px 18px rgba(0,0,0,0.6), 0 0 6px rgba(255,200,60,0.06) inset;
-}
-
-/* small muted text */
-.muted {
-  opacity: 0.7;
-  margin-top: 4px;
-  font-size: 12px;
-}
-
-/* responsive */
-@media (max-width:840px){
-  .dino-pixel-card { padding: 8px; }
-  .dino-pixel-overlay { left: 10px; top: 10px; font-size:12px; }
-}
-
-/* Hide scrollbar for Chrome, Safari and Opera */
-.no-scrollbar::-webkit-scrollbar {
-    display: none;
-}
-
-/* Hide scrollbar for IE, Edge and Firefox */
-.no-scrollbar {
-    -ms-overflow-style: none;  /* IE and Edge */
-    scrollbar-width: none;  /* Firefox */
+@keyframes double-blink-animation {
+    0% { transform: scaleY(1); }
+    25% { transform: scaleY(0.1); }
+    50% { transform: scaleY(1); }
+    75% { transform: scaleY(0.1); }
+    100% { transform: scaleY(1); }
 }

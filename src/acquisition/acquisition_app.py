@@ -9,13 +9,15 @@ import numpy as np
 import sys
 import os
 import queue
-from config import config_manager, ConfigWriter
+
 
 # Ensure we can import sibling packages
 current_dir = os.path.dirname(os.path.abspath(__file__))
 src_dir = os.path.abspath(os.path.join(current_dir, '..'))
 if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
+
+from utils.config import config_manager, ConfigWriter
 
 # Local imports
 from .serial_reader import SerialPacketReader
@@ -183,43 +185,59 @@ class AcquisitionApp:
         }
 
 
-    def _save_config_updated(self):
+    def _save_config(self):
         """
         Save configuration properly using config_manager.
         
         Updates BOTH sensor_config.json and calibration_config.json
         """
-        
-        channel_mapping = {
-            "ch0": {
+        try:
+            # 1. Update Sensor Config
+            # Fetch current state to avoid overwriting unrelated fields
+            sensor_config = config_manager.sensor_config.get_all()
+            
+            # Update specific fields controlled by this UI
+            sensor_config["sampling_rate"] = self.config.get("sampling_rate", 512)
+            
+            # Update Channel Mapping
+            channel_mapping = sensor_config.get("channel_mapping", {})
+            channel_mapping["ch0"] = {
                 "sensor": self.ch0_var.get(),
                 "enabled": True,
                 "label": f"{self.ch0_var.get()} Channel 0"
-            },
-            "ch1": {
+            }
+            channel_mapping["ch1"] = {
                 "sensor": self.ch1_var.get(),
                 "enabled": True,
                 "label": f"{self.ch1_var.get()} Channel 1"
             }
-        }
-        
-        sensor_config = {
-            "sampling_rate": self.config.get("sampling_rate", 512),
-            "channel_mapping": channel_mapping,
-            "adc_settings": self.config.get("adc_settings", {}),
-            "ui_settings": self.config.get("ui_settings", {})
-        }
-        
-        calibration_config = {
-            "ch0": {
+            sensor_config["channel_mapping"] = channel_mapping
+            
+            # Update other settings (merge if they exist)
+            if "adc_settings" in self.config:
+                sensor_config["adc_settings"] = self.config["adc_settings"]
+            if "ui_settings" in self.config:
+                sensor_config["ui_settings"] = self.config["ui_settings"]
+                
+             # Save
+            if config_manager.save_sensor_config(sensor_config):
+                print("[App] ✅ Sensor config saved")
+            else:
+                 raise Exception("Failed to save sensor config")
+
+            # 2. Update Calibration Config
+            calibration_config = config_manager.calib_config.get_all()
+            
+            # Update entries for ch0 and ch1
+            calibration_config["ch0"] = {
                 "sensor": self.ch0_var.get(),
                 "enabled": True,
                 "offset": 0.0,
                 "gain": 1.0,
                 "calibration_date": datetime.now().strftime("%Y-%m-%d"),
                 "calibrated": True
-            },
-            "ch1": {
+            }
+            calibration_config["ch1"] = {
                 "sensor": self.ch1_var.get(),
                 "enabled": True,
                 "offset": 0.0,
@@ -227,24 +245,13 @@ class AcquisitionApp:
                 "calibration_date": datetime.now().strftime("%Y-%m-%d"),
                 "calibrated": True
             }
-        }
-        
-        print("[App] 💾 Saving configurations...")
-        
-        try:
-            # Save to files using config_manager
-            if config_manager.save_sensor_config(sensor_config):
-                print("[App] ✅ Sensor config saved")
-            else:
-                print("[App] ❌ Failed to save sensor config")
-                messagebox.showerror("Error", "Failed to save sensor config")
-                return
-            
+
+            # Save
             if config_manager.save_calibration_config(calibration_config):
                 print("[App] ✅ Calibration config saved")
             else:
-                print("[App] ⚠️ Warning: Calibration config save failed")
-        
+                 print("[App] ⚠️ Warning: Calibration config save failed")
+
         except Exception as e:
             print(f"[App] ❌ Error saving configs: {e}")
             messagebox.showerror("Error", f"Failed to save config: {e}")
@@ -254,10 +261,19 @@ class AcquisitionApp:
             try:
                 import urllib.request
                 
+                # We need to push the FULL config (Facade) because the API expects it for hot-reload notifications
+                # The API will then split it again and save, but since we already saved to disk, 
+                # the file watchers on the backend might pick it up before this push arrives.
+                # Actually, API save_config does write to disk. This is double writing.
+                # However, the API serves as the event bus for the Frontend.
+                
+                # Let's construct the facade object to push
+                facade = config_manager.get_all_configs()
+                
                 url = "http://localhost:5000/api/config"
                 req = urllib.request.Request(
                     url,
-                    data=json.dumps(cfg).encode('utf-8'),
+                    data=json.dumps(facade).encode('utf-8'),
                     headers={'Content-Type': 'application/json'},
                     method='POST'
                 )
@@ -272,7 +288,7 @@ class AcquisitionApp:
         import threading
         threading.Thread(
             target=push_to_api,
-            args=(sensor_config,),
+            args=(sensor_config,), # Argument not used inside, but kept for signature compatibility if needed
             daemon=True
         ).start()
         

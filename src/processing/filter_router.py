@@ -38,6 +38,7 @@ try:
     from .emg_processor import EMGFilterProcessor
     from .eog_processor import EOGFilterProcessor
     from .eeg_processor import EEGFilterProcessor
+    from ..utils.config import config_manager
 except ImportError:
     print("[Router] Running from different context, using local imports")
     import sys
@@ -45,31 +46,17 @@ except ImportError:
     from src.processing.emg_processor import EMGFilterProcessor
     from src.processing.eog_processor import EOGFilterProcessor
     from src.processing.eeg_processor import EEGFilterProcessor
+    from src.utils.config import config_manager
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-CONFIG_PATH = PROJECT_ROOT / "config" / "sensor_config.json"
 RAW_STREAM_NAME = "BioSignals-Raw-uV"
 PROCESSED_STREAM_NAME = "BioSignals-Processed"
 RELOAD_INTERVAL = 2.0
 DEFAULT_SR = 512
 
-def load_config_v2() -> dict:
-    """Load sensor_config.json and filter_config.json using ConfigManager."""
-    
-    from config import config_manager
-    
-    # Get sensor config
-    sensor_cfg = config_manager.sensor_config.get_all()
-    
-    # Get filter config  
-    filter_cfg = config_manager.filter_config.get_all()
-    
-    # Merge into single config
-    config = sensor_cfg.copy()
-    config["filters"] = filter_cfg
-    
-    return config
-
+def load_config() -> dict:
+    """Load fully merged config using ConfigManager."""
+    return config_manager.get_all_configs()
 
 
 def get_config_hash(cfg: dict) -> str:
