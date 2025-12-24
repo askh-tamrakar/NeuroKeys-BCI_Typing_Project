@@ -31,7 +31,10 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     // Keep refs in sync
     useEffect(() => { chartDataRef.current = chartData; }, [chartData]);
     useEffect(() => { activeSensorRef.current = activeSensor; }, [activeSensor]);
+
     useEffect(() => { targetLabelRef.current = targetLabel; }, [targetLabel]);
+
+
 
     // Recording mode states
     const [availableRecordings, setAvailableRecordings] = useState([]);
@@ -106,8 +109,14 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     const [windowDuration, setWindowDuration] = useState(1500); // ms
     const GAP_DURATION = 500; // ms
     const [timeWindow, setTimeWindow] = useState(5000); // visible sweep window length for calibration plot
-    const [batchSize, setBatchSize] = useState(5); // Auto-cal batch size
     const MAX_WINDOWS = 50;
+
+    // Additional Refs for windowing logic (Defined here to avoid TDZ)
+    const timeWindowRef = useRef(timeWindow);
+    const windowDurationRef = useRef(windowDuration);
+
+    useEffect(() => { timeWindowRef.current = timeWindow; }, [timeWindow]);
+    useEffect(() => { windowDurationRef.current = windowDuration; }, [windowDuration]);
 
     // Handlers
     const handleSensorChange = (sensor) => {
@@ -138,14 +147,17 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
     const startAutoWindowing = () => {
         const createNextWindow = () => {
+            // Access latest config from refs
+            const currentTw = timeWindowRef.current;
+            const currentDur = windowDurationRef.current;
+
             // Visual sync: Window spawns at visual edge (future) and travels to center (now)
-            // Center is 'now'. Right edge is 'now + timeWindow/2'
-            const delayToCenter = Math.round(timeWindow / 2);
+            const delayToCenter = Math.round(currentTw / 2);
 
             const start = Date.now() + delayToCenter;
-            const end = start + windowDuration;
+            const end = start + currentDur;
 
-            // Capture current settings from refs to ensure we use latest (even if changed during wait)
+            // Capture current settings from refs
             const sensorForWindow = activeSensorRef.current;
             const labelForWindow = targetLabelRef.current;
 
@@ -161,8 +173,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
             setActiveWindow(newWindow);
 
-            // Wait for window to finish ("arrive" and complete)
-            // Total wait = delayToCenter + windowDuration
+            // Wait for window to finish
             setTimeout(async () => {
                 // Mark as saving
                 setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'saving' } }));
@@ -177,11 +188,12 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                     const timestamps = samplesPoints.map(p => p.time);
 
                     if (samples.length === 0) {
-                        console.warn(`[CalibrationView] No samples for window ${newWindow.id}. Range: ${start}-${end}. Buffer range: ${currentData[0]?.time}-${currentData[currentData.length - 1]?.time}`);
-                        throw new Error("No samples collected in window");
+                        console.warn(`[CalibrationView] No samples or empty range. Win: ${start}-${end}.`);
+                        // Don't throw logic error, just fail this window gracefully
+                        throw new Error("No data collected in window range");
                     }
 
-                    // Send to backend for feature extraction and detection
+                    // Send to backend
                     const resp = await CalibrationApi.sendWindow(sensorForWindow, {
                         action: labelForWindow,
                         channel: 0,
@@ -194,11 +206,10 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
                     // Determine prediction result
                     const detected = resp.detected === true;
-                    // For batch calibration, we care about data collection, check prediction
                     const predicted = detected ? labelForWindow : 'Rest';
                     const isCorrect = predicted === labelForWindow;
 
-                    // Add to windows list
+                    // Add to windows list - State Update Batch 1
                     setMarkedWindows(prev => {
                         const completedWindow = {
                             ...newWindow,
@@ -212,7 +223,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                 } catch (err) {
                     console.error('Auto-save window error:', err);
                     setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'error', message: err?.message || String(err) } }));
-                    // Still add window but mark as error
+
                     setMarkedWindows(prev => {
                         const errorWindow = {
                             ...newWindow,
@@ -224,19 +235,25 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                     });
                 } finally {
                     setRunInProgress(false);
-                    setActiveWindow(null);
+                    setActiveWindow(null); // Clear active only after added to list
                 }
-            }, delayToCenter + windowDuration);
+            }, delayToCenter + currentDur);
         };
 
         createNextWindow();
-        windowIntervalRef.current = setInterval(createNextWindow, windowDuration + GAP_DURATION + (timeWindow / 2));
-        // Need to ensure we don't overlap too aggressively or visuals get confusing. 
-        // Logic: Spawn -> Wait 1.5s -> Spawn.
-        // Actually, the interval should just be window + gap. The offset is constant.
-        // If we spawn at T+2.5s, completion is at T+4s.
-        // Next spawn at T+2s => T+4.5s.
-        // So interval is fine.
+
+        // Use a dynamic timeouts or interval? 
+        // Interval is simpler, but if duration changes, interval needs valid ref reading?
+        // setInterval captures the delay argument.
+        // If we want robust timing calculated from Ref each time, recursive setTimeout is better.
+        // But for now, let's just use the ref values inside the callback.
+        // The interval *period* typically doesn't need to change dynamically unless user changes Window Duration.
+        // If they do, they usually stop/start calibration. 
+        // So standard interval using the INITIAL execution time's duration is okay-ish, or better:
+        // Let's rely on the outer scoped `windowDuration` since we call startAutoWindowing() usually after setting configs.
+        // But to be safe, we'll use the value at start time.
+
+        windowIntervalRef.current = setInterval(createNextWindow, windowDuration + GAP_DURATION);
     };
 
     const handleManualWindowSelect = async (start, end) => {
@@ -310,13 +327,13 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     };
 
     // Run calibration logic
-    const runCalibration = async (windowsToCalibrate = markedWindows) => {
-        if (!windowsToCalibrate || windowsToCalibrate.length === 0) return;
+    const runCalibration = async () => {
+        if (!markedWindows || markedWindows.length === 0) return;
 
         setRunInProgress(true);
         try {
             // 1. Call robust calibration endpoint
-            const result = await CalibrationApi.calibrateThresholds(activeSensor, windowsToCalibrate);
+            const result = await CalibrationApi.calibrateThresholds(activeSensor, markedWindows);
             console.log('[CalibrationView] Calibration result:', result);
 
             // 2. Update config locally
@@ -325,43 +342,31 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
             // 3. Update window statuses (if showing legacy list)
             if (result.window_results) {
-                // ... logic to update list if needed, 
-                // but for batch mode we might clear them.
+                setMarkedWindows(prev => {
+                    return prev.map((w, i) => {
+                        const res = result.window_results[i];
+                        if (res && res.action === w.label) {
+                            return {
+                                ...w,
+                                status: res.status_after,
+                                predictedLabel: res.status_after === 'correct' ? w.label : 'Rest'
+                            };
+                        }
+                        return w;
+                    });
+                });
             }
-
-            return result; // return for auto-cal consumer
 
         } catch (err) {
             console.error('Calibration error:', err);
-            // alert(`Calibration failed: ${err.message}`); // Suppress alert for auto-cal?
+            alert(`Calibration failed: ${err.message}`);
         } finally {
             setRunInProgress(false);
         }
     };
 
     // Auto-Calibration Trigger
-    useEffect(() => {
-        if (mode === 'realtime' && isCalibrating && markedWindows.length >= batchSize) {
-            // Ensure we only trigger once per batch
-            // We use a separate async function to handle the flow
-            const performAutoCal = async () => {
-                // Pause windowing? Not strictly necessary if async, but safer to avoid race conditions
-                if (windowIntervalRef.current) clearInterval(windowIntervalRef.current);
-
-                console.log('[CalibrationView] Batch target reached. Auto-Calibrating...');
-                await runCalibration(markedWindows);
-
-                // Clear windows to start fresh batch
-                setMarkedWindows([]);
-
-                // Resume windowing
-                if (isCalibrating) {
-                    startAutoWindowing();
-                }
-            };
-            performAutoCal();
-        }
-    }, [markedWindows, batchSize, mode, isCalibrating]);
+    // Removed batchSize state, useEffect, and Input UI
 
     // Update chart data from WS or Mock
     useEffect(() => {
@@ -610,19 +615,6 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                                     >
                                         {isCalibrating ? 'Stop Calibration' : 'Start Calibration'}
                                     </button>
-                                </div>
-
-                                {/* Batch Size control */}
-                                <div className="flex items-center gap-2 ml-4 pl-4 border-l border-border">
-                                    <label className="text-xs font-bold text-muted uppercase">Batch:</label>
-                                    <input
-                                        type="number"
-                                        min="1"
-                                        max="50"
-                                        value={batchSize}
-                                        onChange={(e) => setBatchSize(Number(e.target.value))}
-                                        className="w-12 bg-bg border border-border rounded px-2 py-1 text-sm font-bold outline-none"
-                                    />
                                 </div>
 
                             </div>
