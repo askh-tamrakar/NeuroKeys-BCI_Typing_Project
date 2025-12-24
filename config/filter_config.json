@@ -20,11 +20,11 @@
     "type": "high_pass"
   },
   "EOG": {
+    "cutoff": 123.1,
     "high": 10,
     "low": 0.5,
     "order": 5,
-    "type": "bandpass",
-    "cutoff": 123.1
+    "type": "bandpass"
   },
   "bandpass": {
     "enabled": true

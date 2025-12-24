@@ -23,6 +23,16 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     const [activeWindow, setActiveWindow] = useState(null);
     const [targetLabel, setTargetLabel] = useState('Rock'); // e.g., 'Rock', 'Paper', etc.
 
+    // Refs for accessing latest state inside interval/timeouts
+    const chartDataRef = useRef(chartData);
+    const activeSensorRef = useRef(activeSensor);
+    const targetLabelRef = useRef(targetLabel);
+
+    // Keep refs in sync
+    useEffect(() => { chartDataRef.current = chartData; }, [chartData]);
+    useEffect(() => { activeSensorRef.current = activeSensor; }, [activeSensor]);
+    useEffect(() => { targetLabelRef.current = targetLabel; }, [targetLabel]);
+
     // Recording mode states
     const [availableRecordings, setAvailableRecordings] = useState([]);
     const [selectedRecording, setSelectedRecording] = useState(null);
@@ -134,13 +144,18 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
             const start = Date.now() + delayToCenter;
             const end = start + windowDuration;
+
+            // Capture current settings from refs to ensure we use latest (even if changed during wait)
+            const sensorForWindow = activeSensorRef.current;
+            const labelForWindow = targetLabelRef.current;
+
             const newWindow = {
                 id: Math.random().toString(36).substr(2, 9),
-                sensor: activeSensor,
+                sensor: sensorForWindow,
                 mode: 'realtime',
                 startTime: start,
                 endTime: end,
-                label: targetLabel,
+                label: labelForWindow,
                 status: 'pending'
             };
 
@@ -154,19 +169,21 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                 setRunInProgress(true);
 
                 try {
-                    // Extract samples from chartData that fall within the window range
-                    // Note: chartData buffer must be large enough to hold this history
-                    const samplesPoints = chartData.filter(p => p.time >= start && p.time <= end);
+                    // Extract samples from chartDataRef (latest data)
+                    const currentData = chartDataRef.current;
+
+                    const samplesPoints = currentData.filter(p => p.time >= start && p.time <= end);
                     const samples = samplesPoints.map(p => p.value);
                     const timestamps = samplesPoints.map(p => p.time);
 
                     if (samples.length === 0) {
+                        console.warn(`[CalibrationView] No samples for window ${newWindow.id}. Range: ${start}-${end}. Buffer range: ${currentData[0]?.time}-${currentData[currentData.length - 1]?.time}`);
                         throw new Error("No samples collected in window");
                     }
 
                     // Send to backend for feature extraction and detection
-                    const resp = await CalibrationApi.sendWindow(activeSensor, {
-                        action: targetLabel,
+                    const resp = await CalibrationApi.sendWindow(sensorForWindow, {
+                        action: labelForWindow,
                         channel: 0,
                         samples,
                         timestamps
@@ -178,8 +195,8 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                     // Determine prediction result
                     const detected = resp.detected === true;
                     // For batch calibration, we care about data collection, check prediction
-                    const predicted = detected ? targetLabel : 'Rest';
-                    const isCorrect = predicted === targetLabel;
+                    const predicted = detected ? labelForWindow : 'Rest';
+                    const isCorrect = predicted === labelForWindow;
 
                     // Add to windows list
                     setMarkedWindows(prev => {
@@ -355,7 +372,8 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                 const val = payload.channels[0] || 0;
                 const point = { time: Date.now(), value: typeof val === 'number' ? val : (val.value || 0) };
                 // Increased buffer size to ensure we have data when window completes (future-spawned windows)
-                setChartData(prev => [...prev.slice(-3000), point]);
+                // 10000 samples at 512Hz is ~20s, plenty for 5s window + delays
+                setChartData(prev => [...prev.slice(-10000), point]);
             }
         }
     }, [wsData, mode, activeSensor]);
@@ -385,25 +403,53 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
         return merged;
     })();
 
-    // Map action windows to sweep coordinates so they travel right->left and disappear at left edge
+    // Map action windows to sweep coordinates so they match the chart data (center-relative)
+    // chartData logic: x = center - (now - time)
     const mappedWindows = (() => {
         const now = Date.now();
         const w = timeWindow;
-        const entrancePad = Math.round(w * 0.08);
+        const center = Math.round(w / 2);
+        // We want to show windows that are in the view [0, w] or slightly approaching
+        // entrancePad allows seeing them just before they enter right edge?
+        // Actually, if we spawn at T+center, they are at x=w.
+
         return markedWindows.map(win => {
-            const x1 = Math.round(w + entrancePad - (now - win.endTime));
-            const x2 = Math.round(w + entrancePad - (now - win.startTime));
+            // win.startTime is logic time. 
+            // x = center - (now - win.startTime)
+            // If win.startTime > now (future), x > center.
+            // If win.startTime = now + center, x = center - (-center) = 2*center = w.
+
+            const x1 = Math.round(center - (now - win.endTime));
+            const x2 = Math.round(center - (now - win.startTime));
+
+            // Note: x1 (end) will be less than x2 (start) because older times have smaller x?
+            // Wait. Chart logic:
+            // Newer points (larger time) have smaller age, so x is larger (closer to center/right?).
+            // time = 1000. now = 2000. age = 1000. x = center - 1000.
+            // time = 1500. now = 2000. age = 500. x = center - 500. (Right of previous).
+            // So Start Time (smaller t) should be Left of End Time (larger t).
+            // But we said "Future" spawns at Right.
+            // Future t > now. age < 0. x > center.
+            // So future is to the Right.
+            // Start < End. So Start is Left of End? 
+            // Wait. A window is [Start, End]. Start occurs before End.
+            // So Start is "older" than End.
+            // So Start should be to the Left of End.
+            // x2 (Start) should be smaller than x1 (End).
+
             return { ...win, startTime: x2, endTime: x1 };
-        }).filter(win => win.endTime >= -entrancePad && win.startTime <= (w + entrancePad));
+        }).filter(win => win.endTime >= -200 && win.startTime <= (w + 200));
     })();
 
     const activeWindowMapped = (() => {
         if (!activeWindow) return null;
         const now = Date.now();
         const w = timeWindow;
-        const entrancePad = Math.round(w * 0.08);
-        const x1 = Math.round(w + entrancePad - (now - activeWindow.endTime));
-        const x2 = Math.round(w + entrancePad - (now - activeWindow.startTime));
+        const center = Math.round(w / 2);
+
+        const x1 = Math.round(center - (now - activeWindow.endTime));
+        const x2 = Math.round(center - (now - activeWindow.startTime));
+
         return { ...activeWindow, startTime: x2, endTime: x1 };
     })();
 
