@@ -1,32 +1,90 @@
 {
-  "sampling_rate": 512,
+  "baud": 230400,
+  "binary": true,
   "channel_mapping": {
     "ch0": {
       "enabled": true,
-      "label": "EOG Channel 0",
       "sensor": "EMG"
     },
     "ch1": {
       "enabled": true,
-      "label": "EEG Channel 1",
       "sensor": "EOG"
     }
   },
-  "num_channels": 2,
-  "features": {
-    "EOG": {
-      "amp_threshold": 1.5,
-      "min_duration_ms": 100.0,
-      "max_duration_ms": 600.0,
-      "min_asymmetry": 0.05,
-      "max_asymmetry": 2.5,
-      "min_kurtosis": -3.0
-    }
-  },
-  "serial_port": "",
   "display": {
     "scannerX": 0,
     "showGrid": true,
-    "timeWindowMs": 12000
-  }
+    "timeWindowMs": 30000
+  },
+  "features": {
+    "EMG": {
+      "Rest": {},
+      "Rock": {}
+    },
+    "EOG": {
+      "Rest": {},
+      "blink": {
+        "amplitude": [
+          0.24479645490646362,
+          3.27354736328125
+        ],
+        "duration_ms": [
+          35.15625,
+          62.30468750000001
+        ],
+        "rise_time_ms": [
+          0.0,
+          50.78125
+        ],
+        "fall_time_ms": [
+          1.953125,
+          58.59375
+        ],
+        "asymmetry": [
+          0.0,
+          25.999986688006818
+        ],
+        "kurtosis": [
+          -0.15498323692994243,
+          6.666737157208821
+        ],
+        "skewness": [
+          -2.4299939170983165,
+          2.7080903384966133
+        ]
+      }
+    }
+  },
+  "filters": {
+    "EEG": {
+      "filters": [
+        {
+          "Q": 30,
+          "freq": 50,
+          "type": "notch"
+        },
+        {
+          "high": 45,
+          "low": 0.5,
+          "order": 4,
+          "type": "bandpass"
+        }
+      ]
+    },
+    "EMG": {
+      "cutoff": 70,
+      "order": 4,
+      "type": "high_pass"
+    },
+    "EOG": {
+      "cutoff": 10,
+      "order": 4,
+      "type": "low_pass",
+      "bandpass_enabled": true,
+      "notch_enabled": true
+    }
+  },
+  "num_channels": 2,
+  "sampling_rate": 512,
+  "serial_port": ""
 }

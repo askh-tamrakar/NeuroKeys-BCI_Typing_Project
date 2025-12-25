@@ -27,6 +27,8 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         CANVAS_HEIGHT: 376,
         CYCLE_DURATION: 100,
         JUMP_DISTANCE: 150,
+        ENABLE_TREES: true,
+        ENABLE_MANUAL_CONTROLS: false,
     }
 
     const [settings, setSettings] = useState(() => {
@@ -164,9 +166,12 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         blinkPressTimeRef.current = now
     }
 
-    // Keyboard controls (hidden from UI but still functional for testing)
+    // Keyboard controls (hidden from UI but functional if enabled)
     useEffect(() => {
         const handleKeyDown = (e) => {
+            // Only if setting enabled
+            if (!settingsRef.current.ENABLE_MANUAL_CONTROLS) return
+
             if (e.code === 'Space' || e.key === ' ') {
                 e.preventDefault()
                 const now = Date.now()
@@ -687,23 +692,21 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                 distanceRef.current += GAME_SPEED
 
                 // Update trees (Parallax with depth)
-                treesRef.current.forEach(tree => {
-                    tree.x -= GAME_SPEED * tree.speedFactor
-                    if (tree.x + tree.width < -100) { // Wrap around
-                        tree.x = CANVAS_WIDTH + Math.random() * 100
-                        // Randomize properties again for variety on respawn
-                        const depth = 0.4 + Math.random() * 0.6
-                        tree.depth = depth
-                        tree.speedFactor = 0.5 * depth
-                        tree.height = (50 + Math.random() * 70) * depth
-                        tree.width = (25 + Math.random() * 25) * depth
-                        tree.type = Math.random() > 0.5 ? 'round' : 'pine'
-
-                        // We strictly need to re-sort if we want perfect Z-ordering but
-                        // re-sorting every frame is expensive and popping creates issues.
-                        // Just letting them wrap is fine for background noise.
-                    }
-                })
+                if (currentSettings.ENABLE_TREES) {
+                    treesRef.current.forEach(tree => {
+                        tree.x -= GAME_SPEED * tree.speedFactor
+                        if (tree.x + tree.width < -100) { // Wrap around
+                            tree.x = CANVAS_WIDTH + Math.random() * 100
+                            // Randomize properties again for variety on respawn
+                            const depth = 0.4 + Math.random() * 0.6
+                            tree.depth = depth
+                            tree.speedFactor = 0.5 * depth
+                            tree.height = (50 + Math.random() * 70) * depth
+                            tree.width = (25 + Math.random() * 25) * depth
+                            tree.type = Math.random() > 0.5 ? 'round' : 'pine'
+                        }
+                    })
+                }
             }
 
 
@@ -743,7 +746,9 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
 
                 // Parallax Trees (Behind terrain)
                 const groundY = height - GROUND_OFFSET
-                drawTrees(ctx, width, groundY, mutedColor)
+                if (settingsRef.current.ENABLE_TREES) {
+                    drawTrees(ctx, width, groundY, mutedColor)
+                }
 
                 // Terrain
                 drawTerrain(ctx, width, height, groundY, surfaceColor, borderColor, mutedColor)
@@ -814,7 +819,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
     const handleSettingChange = (key, value) => {
         setSettings(prev => ({
             ...prev,
-            [key]: parseFloat(value)
+            [key]: typeof value === 'boolean' ? value : parseFloat(value)
         }))
     }
 
@@ -985,6 +990,8 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                                 </div>
                                 <div className="space-y-3">
                                     <h4 className="text-xs font-bold text-primary border-b border-border pb-1">Environment</h4>
+                                    <SettingToggle label="Enable Trees" value={settings.ENABLE_TREES} onChange={(v) => handleSettingChange('ENABLE_TREES', v)} />
+                                    <SettingToggle label="Manual Controls (Space)" value={settings.ENABLE_MANUAL_CONTROLS} onChange={(v) => handleSettingChange('ENABLE_MANUAL_CONTROLS', v)} />
                                     <SettingInput label="Day Cycle (s)" value={settings.CYCLE_DURATION} onChange={(v) => handleSettingChange('CYCLE_DURATION', v)} min="10" max="300" step="5" />
                                 </div>
                             </div>
@@ -1035,5 +1042,17 @@ const SettingInput = ({ label, value, onChange, min, max, step }) => (
             onChange={(e) => onChange(parseFloat(e.target.value))}
             className="w-full accent-primary h-2 bg-surface border border-border rounded-lg appearance-none cursor-pointer"
         />
+    </div>
+)
+
+const SettingToggle = ({ label, value, onChange }) => (
+    <div className="flex justify-between items-center py-1">
+        <span className="text-xs text-muted">{label}</span>
+        <button
+            onClick={() => onChange(!value)}
+            className={`w-8 h-4 rounded-full relative transition-colors ${value ? 'bg-primary' : 'bg-border'}`}
+        >
+            <div className={`w-3 h-3 bg-white rounded-full absolute top-0.5 transition-transform ${value ? 'translate-x-4' : 'translate-x-1'}`} />
+        </button>
     </div>
 )
