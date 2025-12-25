@@ -20,3 +20,5 @@ htmlcov/
 *.sqlite3
 *.db
 *.bak
+
+data/processed/windows/
