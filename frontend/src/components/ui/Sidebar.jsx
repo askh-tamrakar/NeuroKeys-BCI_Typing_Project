@@ -22,9 +22,9 @@ export default function Sidebar({
             ...prev,
             filters: {
                 ...prev.filters,
-                [sensorType]: { 
-                    ...prev.filters?.[sensorType], 
-                    [field]: value 
+                [sensorType]: {
+                    ...prev.filters?.[sensorType],
+                    [field]: value
                 }
             }
         }))
@@ -35,9 +35,9 @@ export default function Sidebar({
             ...prev,
             channel_mapping: {
                 ...prev.channel_mapping,
-                [chKey]: { 
-                    ...prev.channel_mapping?.[chKey], 
-                    sensor: sensorType 
+                [chKey]: {
+                    ...prev.channel_mapping?.[chKey],
+                    sensor: sensorType
                 }
             }
         }))
@@ -135,7 +135,7 @@ export default function Sidebar({
                         >
                             <option value="EMG">EMG</option>
                             <option value="EOG">EOG</option>
-                            <option value="EEG">EEE</option>
+                            <option value="EEG">EEG</option>
                         </select>
                     </div>
 
@@ -166,7 +166,7 @@ export default function Sidebar({
                         accentColor="primary"
                         channelsUsingThis={
                             (getSensorTypeForChannel('ch0') === 'EMG' ? ['ch0'] : [])
-                            .concat(getSensorTypeForChannel('ch1') === 'EMG' ? ['ch1'] : [])
+                                .concat(getSensorTypeForChannel('ch1') === 'EMG' ? ['ch1'] : [])
                         }
                         onSave={onSave}
                     />
@@ -180,7 +180,7 @@ export default function Sidebar({
                         accentColor="emerald"
                         channelsUsingThis={
                             (getSensorTypeForChannel('ch0') === 'EOG' ? ['ch0'] : [])
-                            .concat(getSensorTypeForChannel('ch1') === 'EOG' ? ['ch1'] : [])
+                                .concat(getSensorTypeForChannel('ch1') === 'EOG' ? ['ch1'] : [])
                         }
                         onSave={onSave}
                     />
@@ -194,7 +194,7 @@ export default function Sidebar({
                         accentColor="orange"
                         channelsUsingThis={
                             (getSensorTypeForChannel('ch0') === 'EEG' ? ['ch0'] : [])
-                            .concat(getSensorTypeForChannel('ch1') === 'EEG' ? ['ch1'] : [])
+                                .concat(getSensorTypeForChannel('ch1') === 'EEG' ? ['ch1'] : [])
                         }
                         onSave={onSave}
                     />
@@ -250,8 +250,8 @@ function FilterSection({
                         Used by: {channelsUsingThis.map(ch => ch.toUpperCase()).join(', ')}
                     </p>
                 </div>
-                <button 
-                    onClick={() => onSave?.()} 
+                <button
+                    onClick={() => onSave?.()}
                     className={`px-2 py-0.5 text-[10px] bg-${accentColor}-500 text-white rounded font-bold hover:opacity-90`}
                 >
                     APPLY
@@ -327,7 +327,7 @@ function FilterSection({
             <div className="space-y-1 pt-2 border-t border-border/30">
                 <label className="text-[10px] text-muted flex justify-between">
                     <span>High-Pass Cutoff</span>
-                    <span className={colorClass} style={{fontWeight: 'bold'}}>
+                    <span className={colorClass} style={{ fontWeight: 'bold' }}>
                         {filterConfig.cutoff || 1} Hz
                     </span>
                 </label>
@@ -351,7 +351,7 @@ function FilterSection({
                 <div className="space-y-1 pt-2 border-t border-border/30">
                     <label className="text-[10px] text-muted flex justify-between">
                         <span>Filter Order</span>
-                        <span className={colorClass} style={{fontWeight: 'bold'}}>
+                        <span className={colorClass} style={{ fontWeight: 'bold' }}>
                             {filterConfig.order}
                         </span>
                     </label>

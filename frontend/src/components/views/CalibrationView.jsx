@@ -11,6 +11,7 @@ import { CalibrationApi } from '../../services/calibrationApi';
 export default function CalibrationView({ wsData, wsEvent, config: initialConfig }) {
     // Top-level states
     const [activeSensor, setActiveSensor] = useState('EMG'); // 'EMG' | 'EOG' | 'EEG'
+    const [activeChannelIndex, setActiveChannelIndex] = useState(0); // Explicitly selected channel index
     const [mode, setMode] = useState('realtime'); // 'realtime' | 'recording'
     const [config, setConfig] = useState(initialConfig || {});
     const [isCalibrating, setIsCalibrating] = useState(false);
@@ -27,12 +28,59 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     // Refs for accessing latest state inside interval/timeouts
     const chartDataRef = useRef(chartData);
     const activeSensorRef = useRef(activeSensor);
+    const activeChannelIndexRef = useRef(activeChannelIndex); // Ref for channel
     const targetLabelRef = useRef(targetLabel);
 
     // Keep refs in sync
     useEffect(() => { chartDataRef.current = chartData; }, [chartData]);
     useEffect(() => { activeSensorRef.current = activeSensor; }, [activeSensor]);
+    useEffect(() => { activeChannelIndexRef.current = activeChannelIndex; }, [activeChannelIndex]);
     useEffect(() => { targetLabelRef.current = targetLabel; }, [targetLabel]);
+
+    // Compute matching channels for the active sensor
+    const matchingChannels = React.useMemo(() => {
+        if (!config?.channel_mapping) return [];
+        return Object.entries(config.channel_mapping)
+            .filter(([key, val]) => val.sensor === activeSensor || val.type === activeSensor)
+            .map(([key, val]) => ({
+                id: key,
+                index: parseInt(key.replace('ch', ''), 10),
+                label: val.label || val.name || key
+            }))
+            .sort((a, b) => a.index - b.index);
+    }, [activeSensor, config]);
+
+    // Auto-select first matching channel when sensor changes
+    useEffect(() => {
+        console.log('[CalibrationView] matchingChannels:', matchingChannels);
+        if (matchingChannels.length > 0) {
+            // If current selection is not in the new list, reset to first match
+            const exists = matchingChannels.find(c => c.index === activeChannelIndex);
+            if (!exists) {
+                console.log(`[CalibrationView] Auto-switching channel from ${activeChannelIndex} to ${matchingChannels[0].index} for sensor ${activeSensor}`);
+                setActiveChannelIndex(matchingChannels[0].index);
+            }
+        } else {
+            // Fallback if no mapping found (shouldn't happen with valid config)
+            if (activeChannelIndex !== 0) setActiveChannelIndex(0);
+        }
+    }, [activeSensor, matchingChannels, activeChannelIndex]);
+
+    // Ensure config is loaded on mount
+    useEffect(() => {
+        const loadConfig = async () => {
+            try {
+                const cfg = await CalibrationApi.fetchSensorConfig();
+                console.log('[CalibrationView] Fetched config:', cfg);
+                setConfig(cfg);
+            } catch (err) {
+                console.error('[CalibrationView] Failed to load config:', err);
+            }
+        };
+        if (!initialConfig || Object.keys(initialConfig).length === 0) {
+            loadConfig();
+        }
+    }, [initialConfig]);
 
 
     // Recording mode states
@@ -63,12 +111,8 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                 // recording.data is Array of { timestamp, channels: { ch0, ch1... } }
                 if (recording && recording.data) {
                     // Map to chartData format { time, value }
-                    // We need to pick the correct channel for activeSensor
-                    const mapping = config.channel_mapping || {};
-                    const targetChIdx = Object.keys(recording.data[0]?.channels || {}).find(idx => {
-                        const chKey = `ch${idx}`;
-                        return mapping[chKey]?.sensor === activeSensor || mapping[chKey]?.type === activeSensor;
-                    }) || "0";
+                    // Use activeChannelIndex
+                    const targetChIdx = activeChannelIndex;
 
                     const formattedData = recording.data.map(point => ({
                         time: point.timestamp,
@@ -76,7 +120,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                     }));
 
                     setChartData(formattedData);
-                    console.log(`[CalibrationView] Loaded ${formattedData.length} samples for ${activeSensor}`);
+                    console.log(`[CalibrationView] Loaded ${formattedData.length} samples for ${activeSensor} Ch${targetChIdx}`);
                 }
             } catch (error) {
                 console.error('[CalibrationView] Failed to load recording:', error);
@@ -87,7 +131,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
         };
 
         loadSelectedRecording();
-    }, [selectedRecording, mode, activeSensor, config.channel_mapping]);
+    }, [selectedRecording, mode, activeSensor, activeChannelIndex]); // Depend on activeChannelIndex
 
 
     // Zoom state (Y-axis) similar to LiveView
@@ -159,6 +203,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             // Capture current settings from refs
             const sensorForWindow = activeSensorRef.current;
             const labelForWindow = targetLabelRef.current;
+            const channelForWindow = activeChannelIndexRef.current; // Use Ref
 
             const newWindow = {
                 id: Math.random().toString(36).substr(2, 9),
@@ -167,6 +212,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                 startTime: start,
                 endTime: end,
                 label: labelForWindow,
+                channel: channelForWindow, // Store channel in window metadata
                 status: 'pending' // Added immediately to list
             };
 
@@ -189,14 +235,14 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                     const timestamps = samplesPoints.map(p => p.time);
 
                     if (samples.length === 0) {
-                        console.warn(`[CalibrationView] No samples or empty range. Win: ${start}-${end}.`);
-                        throw new Error("No data collected in window range");
+                        console.warn(`[CalibrationView] No samples or empty. Win: ${start}-${end}.`);
+                        throw new Error("No data collected");
                     }
 
                     // Send to backend
                     const resp = await CalibrationApi.sendWindow(sensorForWindow, {
                         action: labelForWindow,
-                        channel: 0,
+                        channel: channelForWindow, // Use captured channel
                         samples,
                         timestamps
                     });
@@ -223,8 +269,8 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                     }));
 
                 } catch (err) {
-                    console.error('Auto-save window error:', err);
-                    setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'error', message: err?.message || String(err) } }));
+                    console.error('Auto-save error:', err);
+                    setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'error', message: String(err) } }));
 
                     setMarkedWindows(prev => prev.map(w => {
                         if (w.id === newWindow.id) {
@@ -252,6 +298,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             startTime: start,
             endTime: end,
             label: targetLabel,
+            channel: activeChannelIndex, // Store channel
             status: 'pending'
         };
 
@@ -271,7 +318,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             // Send to backend
             const resp = await CalibrationApi.sendWindow(activeSensor, {
                 action: targetLabel,
-                channel: 0,
+                channel: activeChannelIndex, // Use state
                 samples,
                 timestamps
             });
@@ -297,8 +344,8 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             }));
 
         } catch (err) {
-            console.error('Manual window save error:', err);
-            setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'error', message: err?.message || String(err) } }));
+            console.error('Manual save error:', err);
+            setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'error', message: String(err) } }));
 
             setMarkedWindows(prev => prev.map(w => {
                 if (w.id === newWindow.id) {
@@ -373,7 +420,13 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             // Process incoming LSL/WS data for the active sensor
             const payload = wsData.raw || wsData;
             if (payload?.channels) {
-                const val = payload.channels[0] || 0;
+                // Use explicitly selected channel
+                const channelIndex = activeChannelIndex;
+
+                // DEBUG LOGGING
+                if (Math.random() < 0.05) console.log(`[CalibrationView] Reading Ch:${channelIndex} for ${activeSensor}. Payload:`, payload.channels);
+
+                const val = payload.channels[channelIndex] !== undefined ? payload.channels[channelIndex] : 0;
                 const point = { time: Date.now(), value: typeof val === 'number' ? val : (val.value || 0) };
 
                 // Throttle upgrades if necessary, but 60Hz React renders are usually OK with simple array appends
@@ -386,7 +439,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                 });
             }
         }
-    }, [wsData, mode, activeSensor]);
+    }, [wsData, mode, activeSensor, activeChannelIndex]);
 
     // Unified Time Reference for this Render Frame
     // We update 'now' whenever chartData updates (frame tick) or periodically.
@@ -494,28 +547,28 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     }, []);
 
     return (
-        <div className="flex flex-col gap-4 h-[calc(100vh-3rem)] p-6 bg-bg text-text animate-in fade-in duration-500 overflow-hidden">
+        <div className="flex flex-col gap-2 h-[100dvh] p-2 bg-bg text-text animate-in fade-in duration-500 overflow-hidden">
             {/* Header / Tabs */}
-            <div className="flex-none flex flex-col lg:flex-row lg:items-center justify-between gap-6 card bg-surface border border-border p-6 rounded-2xl shadow-card">
-                <div className="flex items-center gap-4">
-                    <div className="p-3 bg-primary/10 rounded-xl border border-primary/20">
-                        <span className="text-2xl">🎯</span>
+            <div className="flex-none flex flex-col lg:flex-row lg:items-center justify-between gap-4 card bg-surface border border-border p-4 rounded-2xl shadow-card">
+                <div className="flex items-center gap-3">
+                    <div className="p-2 bg-primary/10 rounded-xl border border-primary/20">
+                        <span className="text-xl">🎯</span>
                     </div>
                     <div>
-                        <h2 className="text-2xl font-bold tracking-tight">Calibration Studio</h2>
-                        <p className="text-xs text-muted font-mono uppercase tracking-widest">
+                        <h2 className="text-xl font-bold tracking-tight">Calibration Studio</h2>
+                        <p className="text-[10px] text-muted font-mono uppercase tracking-widest">
                             Fine-tune sensor detection thresholds
                         </p>
                     </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-3">
+                <div className="flex flex-wrap items-center gap-2">
                     <div className="flex bg-bg/50 p-1 rounded-xl border border-border">
                         {['EMG', 'EOG', 'EEG'].map(s => (
                             <button
                                 key={s}
                                 onClick={() => handleSensorChange(s)}
-                                className={`px-6 py-2 rounded-lg font-bold text-sm transition-all ${activeSensor === s ? 'bg-primary text-primary-contrast shadow-lg' : 'text-muted hover:text-text'
+                                className={`px-4 py-1.5 rounded-lg font-bold text-xs transition-all ${activeSensor === s ? 'bg-primary text-primary-contrast shadow-lg' : 'text-muted hover:text-text'
                                     }`}
                             >
                                 {s}
@@ -523,14 +576,31 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                         ))}
                     </div>
 
-                    <div className="w-[1px] h-8 bg-border mx-2"></div>
+                    {matchingChannels.length > 1 && (
+                        <div className="flex bg-bg/50 p-1 rounded-xl border border-border animate-in slide-in-from-left-2 duration-300">
+                            {matchingChannels.map(ch => (
+                                <button
+                                    key={ch.id}
+                                    onClick={() => setActiveChannelIndex(ch.index)}
+                                    className={`px-3 py-1.5 rounded-lg font-bold text-[10px] transition-all uppercase tracking-wider ${activeChannelIndex === ch.index
+                                        ? 'bg-primary text-primary-contrast shadow-lg'
+                                        : 'text-muted hover:text-text'
+                                        }`}
+                                >
+                                    {ch.label}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+
+                    <div className="w-[1px] h-6 bg-border mx-1"></div>
 
                     <div className="flex bg-bg/50 p-1 rounded-xl border border-border">
                         {['realtime', 'recording'].map(m => (
                             <button
                                 key={m}
                                 onClick={() => setMode(m)}
-                                className={`px-4 py-2 rounded-lg font-bold text-xs transition-all uppercase tracking-wider ${mode === m ? 'bg-accent text-primary-contrast shadow-lg' : 'text-muted hover:text-text'
+                                className={`px-3 py-1.5 rounded-lg font-bold text-[10px] transition-all uppercase tracking-wider ${mode === m ? 'bg-accent text-primary-contrast shadow-lg' : 'text-muted hover:text-text'
                                     }`}
                             >
                                 {m}
@@ -541,14 +611,14 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             </div>
 
             {/* Main Workspace: Flex Column */}
-            <div className="flex flex-col gap-4 flex-grow min-h-0">
+            <div className="flex flex-col gap-2 flex-grow min-h-0">
 
-                {/* Graph Area: Fixed or Flexible height? Fixed for stability. */}
+                {/* Graph Area: Compact */}
                 <div className="flex-none flex flex-col">
-                    <div className="card bg-surface border border-border p-6 rounded-2xl shadow-card flex flex-col gap-4">
-                        <div className="flex-none flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
-                            <div className="flex items-center gap-3">
-                                <div className="text-xs font-bold text-muted uppercase">Zoom:</div>
+                    <div className="card bg-surface border border-border p-4 rounded-2xl shadow-card flex flex-col gap-2">
+                        <div className="flex-none flex flex-col lg:flex-row lg:justify-between lg:items-center gap-2">
+                            <div className="flex items-center gap-2">
+                                <div className="text-[10px] font-bold text-muted uppercase">Zoom:</div>
                                 <div className="flex gap-1">
                                     {[1, 2, 5, 10, 25].map(z => (
                                         <button
@@ -564,29 +634,29 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                                     ))}
                                 </div>
 
-                                <div className="h-4 w-[1px] bg-border mx-2"></div>
+                                <div className="h-3 w-[1px] bg-border mx-1"></div>
 
                                 <div className="flex items-center gap-2">
-                                    <div className="text-xs font-bold text-muted uppercase">Y-Range (uV):</div>
+                                    <div className="text-[10px] font-bold text-muted uppercase">Y (uV):</div>
                                     <input
                                         type="number"
-                                        placeholder="+/- uV"
+                                        placeholder="+/-"
                                         value={manualYRange}
                                         onChange={(e) => setManualYRange(e.target.value)}
-                                        className="w-20 bg-bg border border-border rounded px-2 py-1 text-xs text-text focus:outline-none focus:border-primary"
+                                        className="w-16 bg-bg border border-border rounded px-2 py-1 text-[10px] text-text focus:outline-none focus:border-primary"
                                     />
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2">
                                 {mode === 'recording' && (
-                                    <div className="flex items-center gap-3 p-3 bg-bg/50 border border-border rounded-xl">
-                                        <label className="text-xs font-bold text-muted uppercase">Load File:</label>
+                                    <div className="flex items-center gap-2 p-2 bg-bg/50 border border-border rounded-lg">
+                                        <label className="text-[10px] font-bold text-muted uppercase">File:</label>
                                         <select
                                             onChange={(e) => setSelectedRecording(e.target.value)}
-                                            className="flex-grow bg-transparent border-none text-sm font-mono text-primary outline-none"
+                                            className="flex-grow bg-transparent border-none text-[10px] font-mono text-primary outline-none"
                                         >
-                                            <option value="">Choose a recording...</option>
+                                            <option value="">Select...</option>
                                             {availableRecordings.filter(r => r.type === activeSensor).map(r => (
                                                 <option value={r.name}>{r.name}</option>
                                             ))}
@@ -595,36 +665,35 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                                 )}
                             </div>
 
-                            <div className="flex items-center gap-3">
-                                {/* Controls aligned to the right of the Start button: Time window, Window duration, Target */}
-                                <div className="flex items-center gap-2 ml-2">
-                                    <label className="text-xs font-bold text-muted uppercase">Time Win:</label>
+                            <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 ml-1">
+                                    <label className="text-[10px] font-bold text-muted uppercase">Win:</label>
                                     <select
                                         value={timeWindow}
                                         onChange={(e) => setTimeWindow(Number(e.target.value))}
-                                        className="bg-bg border border-border rounded px-2 py-1 text-sm font-bold outline-none"
+                                        className="bg-bg border border-border rounded px-2 py-1 text-[10px] font-bold outline-none"
                                     >
                                         {[3000, 5000, 8000, 10000, 15000, 20000].map(v => (
                                             <option key={v} value={v}>{v / 1000}s</option>
                                         ))}
                                     </select>
 
-                                    <label className="text-xs font-bold text-muted uppercase">Window:</label>
+                                    <label className="text-[10px] font-bold text-muted uppercase">Dur:</label>
                                     <select
                                         value={windowDuration}
                                         onChange={(e) => setWindowDuration(Number(e.target.value))}
-                                        className="bg-bg border border-border rounded px-2 py-1 text-sm font-bold outline-none"
+                                        className="bg-bg border border-border rounded px-2 py-1 text-[10px] font-bold outline-none"
                                     >
                                         {[500, 1000, 1500, 2000].map(v => (
                                             <option key={v} value={v}>{v}ms</option>
                                         ))}
                                     </select>
 
-                                    <label className="text-xs font-bold text-muted uppercase">Target:</label>
+                                    <label className="text-[10px] font-bold text-muted uppercase">Label:</label>
                                     <select
                                         value={targetLabel}
                                         onChange={(e) => setTargetLabel(e.target.value)}
-                                        className="bg-bg border border-border rounded px-2 py-1 text-sm font-bold outline-none"
+                                        className="bg-bg border border-border rounded px-2 py-1 text-[10px] font-bold outline-none"
                                     >
                                         {activeSensor === 'EMG' && ['Rock', 'Paper', 'Scissors', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
                                         {activeSensor === 'EOG' && ['blink', 'doubleBlink', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
@@ -633,27 +702,26 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
                                     <button
                                         onClick={isCalibrating ? handleStopCalibration : handleStartCalibration}
-                                        className={`px-6 py-2 rounded-xl font-bold transition-all shadow-glow ${isCalibrating
+                                        className={`px-4 py-1.5 rounded-lg font-bold text-[10px] transition-all shadow-glow ${isCalibrating
                                             ? 'bg-red-500 text-white hover:opacity-90'
-                                            : 'bg-primary text-primary-contrast hover:opacity-90 hover:translate-y-[-2px]'
+                                            : 'bg-primary text-primary-contrast hover:opacity-90 hover:translate-y-[-1px]'
                                             }`}
                                     >
-                                        {isCalibrating ? 'Stop Calibration' : 'Start Calibration'}
+                                        {isCalibrating ? 'Stop' : 'Start'}
                                     </button>
                                 </div>
-
                             </div>
                         </div>
 
-                        <div className="w-full h-[320px]">
+                        <div className="w-full h-[300px]">
                             {/* Chart Container fixed height for stability */}
                             <TimeSeriesZoomChart
                                 data={sweepChartData}
                                 title={`${activeSensor} Signal Stream`}
                                 mode={mode}
-                                height={320}
+                                height={300}
                                 markedWindows={mappedWindows}
-                                activeWindow={null} // activeWindow is now part of markedWindows with 'pending' status
+                                activeWindow={null}
                                 onWindowSelect={handleManualWindowSelect}
                                 yDomain={currentYDomain}
                                 scannerX={Math.round(timeWindow / 2)}
@@ -663,7 +731,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                             />
                         </div>
 
-                        <div className="flex-none flex justify-between items-center text-[10px] text-muted font-mono uppercase tracking-widest pt-2">
+                        <div className="flex-none flex justify-between items-center text-[9px] text-muted font-mono uppercase tracking-widest">
                             <span>Status: {isCalibrating ? 'Active Collection' : 'Idle'}</span>
                             <span>Windows: {markedWindows.length}</span>
                         </div>
@@ -671,36 +739,76 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                 </div>
 
                 {/* Bottom Row Area: Fills remaining space */}
-                <div className="flex-grow min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <div className="flex-grow min-h-0 grid grid-cols-1 lg:grid-cols-12 lg:grid-rows-[minmax(0,1fr)] gap-4">
                     {/* Config (left) */}
                     <div className="lg:col-span-4 h-full">
                         <ConfigPanel config={config} sensor={activeSensor} onSave={setConfig} />
                     </div>
 
                     {/* Stats (center) */}
-                    <div className="lg:col-span-4 h-full flex flex-col gap-6">
-                        <div className="card bg-surface/50 border border-border p-4 rounded-xl flex items-center justify-between flex-grow">
-                            <div>
-                                <div className="text-[10px] text-muted uppercase font-bold">Accuracy</div>
-                                <div className="text-lg font-bold text-emerald-400">
-                                    {markedWindows.length > 0 ? ((markedWindows.filter(w => w.status === 'correct').length / markedWindows.length) * 100).toFixed(0) : 0}%
+                    <div className="lg:col-span-4 h-full flex flex-col gap-4">
+                        <div className="flex gap-4 h-1/3 min-h-0">
+                            <div className="card bg-surface/50 border border-border p-4 rounded-xl flex items-center justify-between flex-grow">
+                                <div>
+                                    <div className="text-[10px] text-muted uppercase font-bold">Accuracy</div>
+                                    <div className="text-lg font-bold text-emerald-400">
+                                        {markedWindows.length > 0 ? ((markedWindows.filter(w => w.status === 'correct').length / markedWindows.length) * 100).toFixed(0) : 0}%
+                                    </div>
+                                </div>
+                                <div className="w-10 h-10 rounded-full border-2 border-emerald-500/20 flex items-center justify-center text-emerald-400 text-xs font-bold">
+                                    GC
                                 </div>
                             </div>
-                            <div className="w-10 h-10 rounded-full border-2 border-emerald-500/20 flex items-center justify-center text-emerald-400 text-xs font-bold">
-                                GC
+
+                            <div className="card bg-surface/50 border border-border p-4 rounded-xl flex items-center justify-between flex-grow">
+                                <div>
+                                    <div className="text-[10px] text-muted uppercase font-bold">Missed</div>
+                                    <div className="text-lg font-bold text-red-400">
+                                        {markedWindows.filter(w => w.isMissedActual).length}
+                                    </div>
+                                </div>
+                                <div className="w-10 h-10 rounded-full border-2 border-red-500/20 flex items-center justify-center text-red-400 text-xs font-bold">
+                                    ER
+                                </div>
                             </div>
                         </div>
 
-                        <div className="card bg-surface/50 border border-border p-4 rounded-xl flex items-center justify-between flex-grow">
-                            <div>
-                                <div className="text-[10px] text-muted uppercase font-bold">Missed Signals</div>
-                                <div className="text-lg font-bold text-red-400">
-                                    {markedWindows.filter(w => w.isMissedActual).length}
-                                </div>
-                            </div>
-                            <div className="w-10 h-10 rounded-full border-2 border-red-500/20 flex items-center justify-center text-red-400 text-xs font-bold">
-                                ER
-                            </div>
+                        {/* Calibration Control Card (Moved from WindowListPanel) */}
+                        <div className="card bg-surface border border-border p-4 rounded-xl flex flex-col justify-center gap-3 flex-grow h-2/3">
+                            {(() => {
+                                const recommendedSamples = { 'EOG': 20, 'EMG': 30, 'EEG': 25 }[activeSensor] || 20;
+                                const validCount = markedWindows.length;
+                                const progress = Math.min(100, (validCount / recommendedSamples) * 100);
+                                const readyToCalibrate = validCount >= 3 && markedWindows.some(w => w.features);
+
+                                return (
+                                    <>
+                                        <div className="flex justify-between items-center mb-1">
+                                            <h3 className="font-bold text-sm uppercase tracking-wide">Calibration</h3>
+                                            <span className="text-[10px] text-muted font-mono">{validCount}/{recommendedSamples} samples</span>
+                                        </div>
+
+                                        <div className="h-2 bg-bg rounded-full overflow-hidden mb-2">
+                                            <div className={`h-full transition-all duration-500 ease-out ${progress >= 100 ? 'bg-emerald-500' : 'bg-primary'}`} style={{ width: `${progress}%` }} />
+                                        </div>
+
+                                        <button
+                                            onClick={runCalibration}
+                                            disabled={!readyToCalibrate || runInProgress}
+                                            className={`w-full py-3 rounded-lg font-bold text-xs uppercase tracking-wider transition-all ${readyToCalibrate && !runInProgress
+                                                ? 'bg-primary text-primary-contrast hover:opacity-90 shadow-glow hover:scale-[1.02] active:scale-[0.98]'
+                                                : 'bg-muted/20 text-muted cursor-not-allowed'
+                                                }`}
+                                        >
+                                            {runInProgress ? 'Optimizing Parameters...' : 'Calibrate Thresholds'}
+                                        </button>
+
+                                        <div className="text-center text-[9px] text-muted mt-1 italic">
+                                            {readyToCalibrate ? "Ready to update config" : "Collect more data to calibrate"}
+                                        </div>
+                                    </>
+                                );
+                            })()}
                         </div>
                     </div>
 

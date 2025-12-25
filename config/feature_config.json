@@ -191,41 +191,41 @@
     }
   },
   "EOG": {
-    "amp_threshold": 2.98,
+    "amp_threshold": 0.7457,
     "blink": {
       "amplitude": [
-        2.98,
-        3.42
+        0.7457,
+        3.9985
       ],
       "asymmetry": [
-        0.5913,
-        0.7227
+        0.075,
+        2.175
       ],
       "duration_ms": [
-        900,
-        1100
+        35.1562,
+        58.5938
       ],
       "fall_time_ms": [
-        543.1641,
-        663.8672
+        11.1328,
+        41.6016
       ],
       "kurtosis": [
-        163.9257,
-        200.3536
+        -0.2688,
+        6.3137
       ],
       "rise_time_ms": [
-        356.8359,
-        436.1328
+        7.8125,
+        31.25
       ],
       "skewness": [
-        11.3564,
-        13.8801
+        -2.2433,
+        0.4098
       ]
     },
-    "max_asymmetry": 0.7227,
-    "max_duration_ms": 1100,
-    "min_asymmetry": 0.5913,
-    "min_duration_ms": 900,
-    "min_kurtosis": 163.9257
+    "max_asymmetry": 2.175,
+    "max_duration_ms": 58.5938,
+    "min_asymmetry": 0.075,
+    "min_duration_ms": 35.1562,
+    "min_kurtosis": -0.2688
   }
 }

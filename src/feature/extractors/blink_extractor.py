@@ -115,7 +115,7 @@ class BlinkExtractor:
             "fall_time_ms": float(fall_time_ms),
             "asymmetry": float(asymmetry),
             "kurtosis": kurt,
-            "skewness": skew,
+            "skewness": skew
         }
         
         return features

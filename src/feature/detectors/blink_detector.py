@@ -29,9 +29,21 @@ class BlinkDetector:
         is_valid_asymmetry = self.min_asymmetry <= asym <= self.max_asymmetry
         is_valid_shape = kurt >= self.min_kurtosis
         
+        # DEBUG LOGGING
+        # print(f"[Detector] Candidate: Dur={dur:.1f}ms (Range: {self.min_duration}-{self.max_duration}), "
+        #       f"Asym={asym:.2f} (Range: {self.min_asymmetry}-{self.max_asymmetry}), "
+        #       f"Kurt={kurt:.2f} (Min: {self.min_kurtosis})")
+
         if is_valid_duration and is_valid_asymmetry and is_valid_shape:
+            print(f"[Detector] Blink ACCEPTED: Dur={dur:.1f}ms, Amp={features['amplitude']:.2f}")
             return True
             
+        params = []
+        if not is_valid_duration: params.append(f"Duration {dur:.1f} not in {self.min_duration}-{self.max_duration}")
+        if not is_valid_asymmetry: params.append(f"Asymmetry {asym:.2f} not in {self.min_asymmetry}-{self.max_asymmetry}")
+        if not is_valid_shape: params.append(f"Kurtosis {kurt:.2f} < {self.min_kurtosis}")
+        
+        print(f"[Detector] Blink REJECTED: {', '.join(params)}")
         return False
 
     def update_config(self, config: dict):

@@ -41,7 +41,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         return DEFAULT_SETTINGS
     })
     const [savedMessage, setSavedMessage] = useState('')
-    
+
     // --- Event Logging System ---
     const [eventLogs, setEventLogs] = useState([])
     const logEvent = (msg) => {
@@ -151,12 +151,12 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         const now = Date.now()
         const timeSinceLastPress = now - blinkPressTimeRef.current
 
-        if ( 75 < timeSinceLastPress && timeSinceLastPress < 400) {
+        if (75 < timeSinceLastPress && timeSinceLastPress < 400) {
             handleDoublePress()
         } else {
             handleSinglePress()
         }
-        
+
         // Log raw interval for debugging
         logEvent(`⏱️ Interval: ${timeSinceLastPress}ms`)
 
@@ -847,7 +847,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                             {/* Game info */}
                             <div className="bg-bg/50 backdrop-blur-sm rounded-xl p-4 border border-border relative mt-8">
                                 {/* Eye Tracker (Absolute Positioned on Top Border) */}
-                                <div className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 -top-[1px] z-10 w-full flex justify-center gap-32 pointer-events-none">
+                                <div className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 -top-[1px] z-10 w-full flex justify-center gap-24 pointer-events-none">
                                     {/* Left Eye */}
                                     <div className="eye w-24 h-24 bg-surface rounded-full border-4 border-border relative overflow-hidden flex justify-center items-center shadow-sm" ref={leftEyeRef}>
                                         <div className="pupil w-8 h-8 bg-text rounded-full"></div>
@@ -858,13 +858,13 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                                     </div>
                                 </div>
 
-                                <div className="flex justify-between items-end pt-4 px-4">
+                                <div className="flex justify-between items-end pt-4 px-40">
                                     <div className="text-left">
-                                        <div className="text-muted text-sm font-medium">Status</div>
+                                        <div className="text-muted text-sm font-bold">Status</div>
                                         <div className="text-text font-bold text-lg capitalize">{gameState}</div>
                                     </div>
                                     <div className="text-right">
-                                        <div className="text-muted text-sm font-medium">EOG Sensor</div>
+                                        <div className="text-muted text-sm font-bold">EOG Sensor</div>
                                         <div className={`text-sm font-bold ${wsData ? 'text-green-500' : 'text-red-500'}`}>
                                             {wsData ? 'Connected' : 'Disconnected'}
                                         </div>
@@ -894,15 +894,15 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                         <h3 className="text-sm font-bold text-text uppercase tracking-wider mb-3">Controls</h3>
                         <div className="space-y-2 text-sm text-text">
                             <div className="flex justify-between">
-                                <span className="text-muted">1x Blink</span>
+                                <span className="text-muted">Blink ONCE</span>
                                 <span className="font-bold text-primary">Jump</span>
                             </div>
                             <div className="flex justify-between">
-                                <span className="text-muted">2x Blink</span>
+                                <span className="text-muted">Blink TWICE</span>
                                 <span className="font-bold text-primary">Pause / Resume</span>
                             </div>
                         </div>
-                        
+
                         <div className="mt-4 pt-3 border-t border-border">
                             <div className="flex justify-between items-center text-xs">
                                 <span className="text-muted font-medium uppercase tracking-wider">Input Status</span>

@@ -271,8 +271,8 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
   }
 
   // Get Sensor Names safely from config or defaults
-  const sensorName1 = channelMapping[`ch${displayCh0}`]?.name || `Channel ${displayCh0}`
-  const sensorName2 = channelMapping[`ch${displayCh1}`]?.name || `Channel ${displayCh1}`
+  const sensorName1 = channelMapping[`ch${displayCh0}`]?.sensor
+  const sensorName2 = channelMapping[`ch${displayCh1}`]?.sensor
 
   const rawData1 = getChannelData(displayCh0)
   const rawData2 = getChannelData(displayCh1)
@@ -424,7 +424,7 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
       <div className="flex-1 min-h-0">
         <div className="mb-2 text-sm font-semibold text-muted flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-          Channel {displayCh0} - {sensorName1}
+          Graph {displayCh0 + 1}
         </div>
         <SignalChart
           title={`${sensorName1}`}
@@ -443,7 +443,7 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
       <div className="flex-1 min-h-0">
         <div className="mb-2 text-sm font-semibold text-muted flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-          Channel {displayCh1} - {sensorName2}
+          Graph {displayCh1 + 1}
         </div>
         <SignalChart
           title={`${sensorName2}`}

@@ -136,36 +136,7 @@ export default function WindowListPanel({
                 )}
             </div>
 
-            {/* Calibration Controls */}
-            <div className="p-4 border-t border-border bg-bg/30 space-y-3">
-                {/* Calibration result (if any) */}
-                {calibrationResult && (
-                    <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-[10px] font-mono animate-in slide-in-from-bottom-2">
-                        <div className="text-emerald-400 font-bold mb-1">✓ Calibration Complete</div>
-                        <div className="flex justify-between text-muted">
-                            <span>Accuracy: {(calibrationResult.accuracy_before * 100).toFixed(0)}% → <span className="text-emerald-400">{(calibrationResult.accuracy * 100).toFixed(0)}%</span></span>
-                        </div>
-                    </div>
-                )}
-
-                {/* Calibrate button */}
-                <button
-                    onClick={() => onCalibrate?.()}
-                    disabled={!readyToCalibrate || calibrating}
-                    className={`w-full py-2.5 rounded-lg font-bold text-xs uppercase tracking-wider transition-all ${readyToCalibrate && !calibrating
-                        ? 'bg-primary text-primary-contrast hover:opacity-90 shadow-glow hover:scale-[1.02] active:scale-[0.98]'
-                        : 'bg-muted/20 text-muted cursor-not-allowed'
-                        }`}
-                >
-                    {calibrating ? 'Calibrating...' : `Calibrate Thresholds (${stats.total} samples)`}
-                </button>
-
-                {/* Status line */}
-                <div className="flex items-center justify-between text-[9px] text-muted font-mono">
-                    <span>Rec: {recommendedSamples}+ samples</span>
-                    {running && <span className="text-yellow-400 animate-pulse">Processing...</span>}
-                </div>
-            </div>
+            {/* Calibration Controls moved to parent */}
         </div>
     );
 }
