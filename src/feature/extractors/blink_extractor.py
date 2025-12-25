@@ -104,6 +104,12 @@ class BlinkExtractor:
         
         asymmetry = rise_time_ms / (fall_time_ms + 1e-6)
         
+        # New Feature: Peak Counting (for Double Blink Detection)
+        # Find peaks > 50% of max amplitude to ignore noise
+        from scipy.signal import find_peaks
+        peaks, _ = find_peaks(abs_data, height=peak_amp * 0.5, distance=sr * 0.05) # 50ms distance
+        peak_count = len(peaks)
+        
         # Statistical features
         kurt = float(stats.kurtosis(data))
         skew = float(stats.skew(data))
@@ -114,6 +120,7 @@ class BlinkExtractor:
             "rise_time_ms": float(rise_time_ms),
             "fall_time_ms": float(fall_time_ms),
             "asymmetry": float(asymmetry),
+            "peak_count": int(peak_count),
             "kurtosis": kurt,
             "skewness": skew
         }

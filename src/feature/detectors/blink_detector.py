@@ -30,8 +30,7 @@ class BlinkDetector:
         candidates = []
         
         for event_name, profile in self.profiles.items():
-            if event_name == "Rest":
-                continue
+            # if event_name == "Rest": continue - Enabled Rest for calibration detection
                 
             match_count = 0
             total_features = 0
@@ -52,8 +51,10 @@ class BlinkDetector:
                     else:
                         mismatches.append(f"{feat_name}={val:.2f} (Expected {range_val})")
             
+            # Debug print
+            # print(f"Checking {event_name}: matches={match_count}/{total_features} | Misses: {mismatches}")
+
             # Strict Policy: All configured constraints must pass for a blink
-            # Or at least the critical ones. Let's start with high confidence score.
             if total_features > 0:
                 score = match_count / total_features
                 if score == 1.0:
