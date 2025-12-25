@@ -16,11 +16,11 @@
   "features": {
     "EOG": {
       "amp_threshold": 1.5,
-      "min_duration_ms": 50.0,
+      "min_duration_ms": 100.0,
       "max_duration_ms": 600.0,
-      "min_asymmetry": 0.01,
-      "max_asymmetry": 5.0,
-      "min_kurtosis": -5.0
+      "min_asymmetry": 0.05,
+      "max_asymmetry": 2.5,
+      "min_kurtosis": -3.0
     }
   },
   "serial_port": "",
