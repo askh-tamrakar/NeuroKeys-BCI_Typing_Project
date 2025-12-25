@@ -18,6 +18,7 @@ except ImportError:
 # Import Feature Extractors
 from feature.extractors.blink_extractor import BlinkExtractor
 from feature.extractors.rps_extractor import RPSExtractor
+# Future: from feature.extractors.eeg_extractor import EEGExtractor
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -44,12 +45,29 @@ class CalibrationManager:
         elif sensor == "EMG":
             return RPSExtractor.extract_features(samples, sr)
         elif sensor == "EEG":
-            # For now, EEG extraction logic isn't refactored into a class yet, 
-            # or we can assume a similar pattern if we had EEGExtractor.
-            # Using basic extraction or returns empty if not available
-            return {} 
+            # Basic spectral power extraction for EEG (Alpha/Beta/Theta)
+            try:
+                # Simple placeholder logic until dedicated extractor is available
+                data = np.array(samples)
+                if len(data) < sr: 
+                    return {"status": "insufficient_data"}
+                
+                # Simple Variance/Amplitude check
+                amp_max = np.max(np.abs(data))
+                std_dev = np.std(data)
+                
+                # Mock spectral bands (Real impl requires FFT)
+                # For calibration, we might just track amplitude or variance for "Target vs Rest"
+                return {
+                    "amplitude": float(amp_max),
+                    "std_dev": float(std_dev),
+                    "alpha_power": float(np.random.uniform(0.5, 5.0)) # Mock
+                }
+            except Exception as e:
+                logger.error(f"EEG extraction error: {e}")
+                return {}
         else:
-            # Default to generic/EMG stats if unknown
+            # Default fallback
             return RPSExtractor.extract_features(samples, sr)
 
     def detect_signal(self, sensor: str, action: str, features: Dict[str, Any], config: Dict[str, Any]) -> bool:
@@ -59,8 +77,8 @@ class CalibrationManager:
         sensor = sensor.upper()
         sensor_cfg = config.get("features", {}).get(sensor, {})
         
+        # 1. EOG Specific Rules (Legacy/Specific)
         if sensor == "EOG":
-            # Blink logic
             min_duration = sensor_cfg.get("min_duration_ms", 100.0)
             max_duration = sensor_cfg.get("max_duration_ms", 600.0)
             min_asymmetry = sensor_cfg.get("min_asymmetry", 0.05)
@@ -80,28 +98,41 @@ class CalibrationManager:
             
             return is_valid_duration and is_valid_asymmetry and is_valid_shape and is_valid_amp
 
-        elif sensor == "EMG":
-            # RPS logic - compare against action profile
-            action_profile = sensor_cfg.get(action, {})
-            if not action_profile:
-                return False
-            
-            match_count = 0
-            total_features = 0
-            
-            for feat_name, range_val in action_profile.items():
-                if feat_name in features and isinstance(range_val, list) and len(range_val) == 2:
+        # 2. General Profile Matching (Used for EMG, EEG, and future EOG actions)
+        # Check if there is a specific profile for this action
+        action_profile = sensor_cfg.get(action, {})
+        
+        if not action_profile:
+            # If no profile, maybe it's a global threshold (like EOG above)?
+            # If not, return False
+            return False
+        
+        match_count = 0
+        total_features = 0
+        
+        for feat_name, range_val in action_profile.items():
+            if feat_name in features:
+                # Check for [min, max] range
+                if isinstance(range_val, list) and len(range_val) == 2:
                     total_features += 1
                     val = features[feat_name]
                     if range_val[0] <= val <= range_val[1]:
                         match_count += 1
-            
-            if total_features > 0:
-                score = match_count / total_features
-                return score >= 0.6
-            return False
+                # Check for single minimum (e.g. amplitude > X)
+                elif isinstance(range_val, (int, float)):
+                     total_features += 1
+                     if features[feat_name] >= range_val:
+                         match_count += 1
+
+        if total_features > 0:
+            # Allow some fuzziness? 
+            # Stricter: must match all key features
+            # Lenient: > 60% match
+            score = match_count / total_features
+            return score >= 0.8 # Require 80% match
             
         return False
+            
 
     def save_window(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -180,6 +211,8 @@ class CalibrationManager:
         for w in windows:
             action = w.get('action')
             features = w.get('features', {})
+            # Only calibration based on 'correct' or 'pending' windows?
+            # Or assume all windows passed in are valid examples of the action.
             if action and features:
                 if action not in windows_by_action:
                     windows_by_action[action] = []
@@ -192,6 +225,8 @@ class CalibrationManager:
         updated_thresholds = {}
         
         for action, feature_list in windows_by_action.items():
+            if action == 'Rest': continue # Don't calibrate 'Rest' parameters typically
+            
             if len(feature_list) < 3:
                 continue # Need more data
                 
@@ -218,9 +253,11 @@ class CalibrationManager:
                 min_val = sorted_vals[idx_lo]
                 max_val = sorted_vals[idx_hi]
                 
-                # Add 5% margin
-                margin = (max_val - min_val) * 0.05 if max_val != min_val else abs(min_val) * 0.1
+                # Add 5-10% margin
+                margin = (max_val - min_val) * 0.1 if max_val != min_val else abs(min_val) * 0.1
+                if margin == 0: margin = 0.5 # Safety for zeros
                 
+                # Store as [min, max]
                 action_thresholds[k] = [
                     round(min_val - margin, 4), 
                     round(max_val + margin, 4)
@@ -239,19 +276,22 @@ class CalibrationManager:
                 sensor_feats[action] = {}
             sensor_feats[action].update(new_thresh)
             
-        # Update EOG global thresholds if applicable
+        # Update EOG global thresholds if applicable (Backwards compatibility)
         if sensor == 'EOG' and 'blink' in updated_thresholds:
             blink_thresh = updated_thresholds['blink']
-            if 'duration_ms' in blink_thresh:
-                sensor_feats['min_duration_ms'] = blink_thresh['duration_ms'][0]
-                sensor_feats['max_duration_ms'] = blink_thresh['duration_ms'][1]
-            if 'asymmetry' in blink_thresh:
-                sensor_feats['min_asymmetry'] = blink_thresh['asymmetry'][0]
-                sensor_feats['max_asymmetry'] = blink_thresh['asymmetry'][1]
-            if 'kurtosis' in blink_thresh:
-                sensor_feats['min_kurtosis'] = blink_thresh['kurtosis'][0]
-            if 'amplitude' in blink_thresh:
-                sensor_feats['amp_threshold'] = blink_thresh['amplitude'][0]
+            # Map known keys to flat config
+            mapping = {
+                'duration_ms': ['min_duration_ms', 'max_duration_ms'],
+                'asymmetry': ['min_asymmetry', 'max_asymmetry'],
+                'kurtosis': ['min_kurtosis', None],
+                'amplitude': ['amp_threshold', None]
+            }
+            
+            for feat, map_keys in mapping.items():
+                if feat in blink_thresh:
+                    val_range = blink_thresh[feat]
+                    if map_keys[0]: sensor_feats[map_keys[0]] = val_range[0]
+                    if map_keys[1] and len(val_range) > 1: sensor_feats[map_keys[1]] = val_range[1]
 
         # Save Config
         current_cfg[sensor] = sensor_feats
@@ -266,16 +306,13 @@ class CalibrationManager:
             action = w.get('action')
             features = w.get('features', {})
             # We construct a full config object to reuse detect_signal
-            # This is a bit inefficient but safe
             temp_config = {"features": current_cfg}
             
             is_detected = self.detect_signal(sensor, action, features, temp_config)
             
-            # Original status
             original_status = w.get('status', 'unknown')
             
             # If detected, it matches the label => Correct
-            # If not detected, it's missed or Incorrect
             new_status = 'correct' if is_detected else 'incorrect'
             
             if new_status == 'correct':

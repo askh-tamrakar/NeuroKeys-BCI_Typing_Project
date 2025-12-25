@@ -21,6 +21,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     const [chartData, setChartData] = useState([]);
     const [markedWindows, setMarkedWindows] = useState([]);
     const [activeWindow, setActiveWindow] = useState(null);
+    const [highlightedWindow, setHighlightedWindow] = useState(null); // New: for inspection
     const [targetLabel, setTargetLabel] = useState('Rock'); // e.g., 'Rock', 'Paper', etc.
 
     // Refs for accessing latest state inside interval/timeouts
@@ -31,9 +32,14 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     // Keep refs in sync
     useEffect(() => { chartDataRef.current = chartData; }, [chartData]);
     useEffect(() => { activeSensorRef.current = activeSensor; }, [activeSensor]);
-
     useEffect(() => { targetLabelRef.current = targetLabel; }, [targetLabel]);
 
+    // Sync config from props when it loads
+    useEffect(() => {
+        if (initialConfig && Object.keys(initialConfig).length > 0) {
+            setConfig(initialConfig);
+        }
+    }, [initialConfig]);
 
 
     // Recording mode states
@@ -96,13 +102,13 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     const [manualYRange, setManualYRange] = useState("");
     const BASE_AMPLITUDE = 500;
 
-    const currentYDomain = (() => {
+    const currentYDomain = React.useMemo(() => {
         if (manualYRange && !isNaN(parseFloat(manualYRange))) {
             const r = parseFloat(manualYRange);
             return [-r, r];
         }
         return [-BASE_AMPLITUDE / zoom, BASE_AMPLITUDE / zoom];
-    })();
+    }, [manualYRange, zoom]);
 
     // Refs for real-time windowing
     const windowIntervalRef = useRef(null);
@@ -206,6 +212,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
                     // Determine prediction result
                     const detected = resp.detected === true;
+                    // For visualization, if not detected, we might label it 'Miss' or 'Rest'
                     const predicted = detected ? labelForWindow : 'Rest';
                     const isCorrect = predicted === labelForWindow;
 
@@ -241,17 +248,6 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
         };
 
         createNextWindow();
-
-        // Use a dynamic timeouts or interval? 
-        // Interval is simpler, but if duration changes, interval needs valid ref reading?
-        // setInterval captures the delay argument.
-        // If we want robust timing calculated from Ref each time, recursive setTimeout is better.
-        // But for now, let's just use the ref values inside the callback.
-        // The interval *period* typically doesn't need to change dynamically unless user changes Window Duration.
-        // If they do, they usually stop/start calibration. 
-        // So standard interval using the INITIAL execution time's duration is okay-ish, or better:
-        // Let's rely on the outer scoped `windowDuration` since we call startAutoWindowing() usually after setting configs.
-        // But to be safe, we'll use the value at start time.
 
         windowIntervalRef.current = setInterval(createNextWindow, windowDuration + GAP_DURATION);
     };
@@ -337,6 +333,9 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             console.log('[CalibrationView] Calibration result:', result);
 
             // 2. Update config locally
+            // Ideally we also trigger the ConfigPanel to reload, but since config is lifted state in parent (usually), 
+            // or here passing down... currently `config` is local state.
+            // We should refetch configuration.
             const refreshedConfig = await CalibrationApi.fetchSensorConfig();
             setConfig(refreshedConfig);
 
@@ -345,6 +344,8 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                 setMarkedWindows(prev => {
                     return prev.map((w, i) => {
                         const res = result.window_results[i];
+                        // Heuristic match by index as IDs might not persist in backend pure logic
+                        // If actions match
                         if (res && res.action === w.label) {
                             return {
                                 ...w,
@@ -356,6 +357,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                     });
                 });
             }
+            alert(`Calibration Complete! Accuracy: ${(result.accuracy * 100).toFixed(1)}%`);
 
         } catch (err) {
             console.error('Calibration error:', err);
@@ -376,77 +378,78 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             if (payload?.channels) {
                 const val = payload.channels[0] || 0;
                 const point = { time: Date.now(), value: typeof val === 'number' ? val : (val.value || 0) };
+
+                // Throttle upgrades if necessary, but 60Hz React renders are usually OK with simple array appends
                 // Increased buffer size to ensure we have data when window completes (future-spawned windows)
-                // 10000 samples at 512Hz is ~20s, plenty for 5s window + delays
-                setChartData(prev => [...prev.slice(-10000), point]);
+                // 10000 samples at 512Hz is ~20s, plenty for 5s window
+                setChartData(prev => {
+                    const next = [...prev, point];
+                    if (next.length > 10000) return next.slice(-10000);
+                    return next;
+                });
             }
         }
     }, [wsData, mode, activeSensor]);
 
     // Compute sweep-style data for calibration: plotted portion left of center, unplotted baseline to right
-    const sweepChartData = (() => {
+    // Memoize this to prevent recalculation on every minor state change (like hover)
+    const sweepChartData = React.useMemo(() => {
         const w = timeWindow;
         const center = Math.round(w / 2);
         const now = Date.now();
 
         // plotted points: newest at center, older to the left
-        const plotted = chartData.map(d => {
+        // Optimization: iterate from end
+        const plotted = [];
+        for (let i = chartData.length - 1; i >= 0; i--) {
+            const d = chartData[i];
             const age = now - d.time;
+            if (age > center) break; // Optimization: Stop if older than window left edge
             const x = Math.round(center - age);
-            return { time: x, value: d.value };
-        }).filter(p => Number.isFinite(p.time) && p.time >= 0 && p.time <= center);
+            if (x >= 0) plotted.unshift({ time: x, value: d.value }); // maintain order
+        }
 
         // baseline (unplotted) to right of center — keep static at 0 to avoid vertical movement
-        const step = 100; // ms resolution
+        const step = 50; // ms resolution
         const baseline = [];
         for (let t = center; t <= w; t += step) {
             baseline.push({ time: Math.round(t), future: 0 });
         }
 
         const merged = [...plotted, ...baseline];
+        // Sort might not be needed if pushed in order, but safe to keep
         merged.sort((a, b) => a.time - b.time);
+
+        if (highlightedWindow) {
+            // In inspection mode, we might want to overlay the specific data of that window
+            // For now, sweep mode is "Realtime" view. 
+            // If we want to inspect a past window, we would need to freeze the time sweep or show a static plot.
+            // Let's stick to showing just the Highlight marker for now.
+        }
+
         return merged;
-    })();
+    }, [chartData, timeWindow, highlightedWindow]);
+    // Note: 'now' changes every render if we forced it, but here it depends on renders triggered by chartData updates.
 
     // Map action windows to sweep coordinates so they match the chart data (center-relative)
-    // chartData logic: x = center - (now - time)
-    const mappedWindows = (() => {
+    const mappedWindows = React.useMemo(() => {
         const now = Date.now();
         const w = timeWindow;
         const center = Math.round(w / 2);
-        // We want to show windows that are in the view [0, w] or slightly approaching
-        // entrancePad allows seeing them just before they enter right edge?
-        // Actually, if we spawn at T+center, they are at x=w.
 
         return markedWindows.map(win => {
-            // win.startTime is logic time. 
-            // x = center - (now - win.startTime)
-            // If win.startTime > now (future), x > center.
-            // If win.startTime = now + center, x = center - (-center) = 2*center = w.
-
             const x1 = Math.round(center - (now - win.endTime));
             const x2 = Math.round(center - (now - win.startTime));
-
-            // Note: x1 (end) will be less than x2 (start) because older times have smaller x?
-            // Wait. Chart logic:
-            // Newer points (larger time) have smaller age, so x is larger (closer to center/right?).
-            // time = 1000. now = 2000. age = 1000. x = center - 1000.
-            // time = 1500. now = 2000. age = 500. x = center - 500. (Right of previous).
-            // So Start Time (smaller t) should be Left of End Time (larger t).
-            // But we said "Future" spawns at Right.
-            // Future t > now. age < 0. x > center.
-            // So future is to the Right.
-            // Start < End. So Start is Left of End? 
-            // Wait. A window is [Start, End]. Start occurs before End.
-            // So Start is "older" than End.
-            // So Start should be to the Left of End.
-            // x2 (Start) should be smaller than x1 (End).
-
+            // Correct order: Start (x2) < End (x1) in chart Logic?
+            // Actually, newer time = smaller age = larger X.
+            // win.endTime > win.startTime => age(endTime) < age(startTime) => X(endTime) > X(startTime).
+            // So x1 (End) acts as the Right edge, x2 (Start) as the Left edge.
             return { ...win, startTime: x2, endTime: x1 };
         }).filter(win => win.endTime >= -200 && win.startTime <= (w + 200));
-    })();
+    }, [markedWindows, timeWindow, chartData /* dependency on chartData triggers re-render/re-calc of positions as 'now' advances implicitly via render loop */]);
 
-    const activeWindowMapped = (() => {
+    // Active/Pending Window
+    const activeWindowMapped = React.useMemo(() => {
         if (!activeWindow) return null;
         const now = Date.now();
         const w = timeWindow;
@@ -456,9 +459,27 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
         const x2 = Math.round(center - (now - activeWindow.startTime));
 
         return { ...activeWindow, startTime: x2, endTime: x1 };
-    })();
+    }, [activeWindow, timeWindow, chartData]);
 
-    // scanner value is the latest sample value (will be plotted at center)
+    // Highlighted Window (for inspection)
+    const highlightedWindowMapped = React.useMemo(() => {
+        if (!highlightedWindow) return null;
+        // Similar logic, map it into current time frame
+        // NOTE: A past window will likely be far off-screen (negative X).
+        // To inspect it properly, we might want to FREEZE the chart or auto-scroll?
+        // For this iteration, we just allow seeing it if it's still in view.
+
+        const now = Date.now();
+        const w = timeWindow;
+        const center = Math.round(w / 2);
+
+        const x1 = Math.round(center - (now - highlightedWindow.endTime));
+        const x2 = Math.round(center - (now - highlightedWindow.startTime));
+
+        return { ...highlightedWindow, startTime: x2, endTime: x1, color: '#ff00ff' }; // magenta highlight
+    }, [highlightedWindow, timeWindow, chartData]);
+
+
     const scannerValue = chartData.length ? chartData[chartData.length - 1].value : 0;
 
     // Cleanup
@@ -469,9 +490,9 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     }, []);
 
     return (
-        <div className="flex flex-col gap-6 h-full min-h-[800px] p-6 bg-bg text-text animate-in fade-in duration-500">
+        <div className="flex flex-col gap-4 h-full p-6 bg-bg text-text animate-in fade-in duration-500 overflow-hidden">
             {/* Header / Tabs */}
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 card bg-surface border border-border p-6 rounded-2xl shadow-card">
+            <div className="flex-none flex flex-col lg:flex-row lg:items-center justify-between gap-6 card bg-surface border border-border p-6 rounded-2xl shadow-card">
                 <div className="flex items-center gap-4">
                     <div className="p-3 bg-primary/10 rounded-xl border border-primary/20">
                         <span className="text-2xl">🎯</span>
@@ -516,11 +537,13 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             </div>
 
             {/* Main Workspace: Graph full-width on top, panels below */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-grow">
-                {/* Graph: full width on large screens */}
-                <div className="lg:col-span-12">
-                    <div className="card bg-surface border border-border p-6 rounded-2xl shadow-card flex flex-col gap-4">
-                        <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
+            {/* Replaced grid with flex-col to allow graph to take necessary space and bottom panels to fill rest */}
+            <div className="flex flex-col gap-4 flex-grow min-h-0">
+
+                {/* Graph Area */}
+                <div className="flex-grow min-h-[400px] flex flex-col">
+                    <div className="card bg-surface border border-border p-6 rounded-2xl shadow-card flex flex-col gap-4 h-full">
+                        <div className="flex-none flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
                             <div className="flex items-center gap-3">
                                 <div className="text-xs font-bold text-muted uppercase">Zoom:</div>
                                 <div className="flex gap-1">
@@ -570,7 +593,6 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                             </div>
 
                             <div className="flex items-center gap-3">
-
                                 {/* Controls aligned to the right of the Start button: Time window, Window duration, Target */}
                                 <div className="flex items-center gap-2 ml-2">
                                     <label className="text-xs font-bold text-muted uppercase">Time Win:</label>
@@ -620,70 +642,80 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                             </div>
                         </div>
 
-                        <div className="w-full h-[420px]">
-                            <TimeSeriesZoomChart
-                                data={sweepChartData}
-                                title={`${activeSensor} Signal Stream`}
-                                mode={mode}
-                                markedWindows={mappedWindows}
-                                activeWindow={activeWindowMapped}
-                                onWindowSelect={handleManualWindowSelect}
-                                yDomain={currentYDomain}
-                                scannerX={Math.round(timeWindow / 2)}
-                                scannerValue={scannerValue}
-                                timeWindowMs={timeWindow}
-                                color={activeSensor === 'EMG' ? '#3b82f6' : (activeSensor === 'EOG' ? '#10b981' : '#f59e0b')}
-                            />
+                        <div className="flex-grow w-full relative">
+                            {/* Chart Container fills space */}
+                            <div className="absolute inset-0">
+                                <TimeSeriesZoomChart
+                                    data={sweepChartData}
+                                    title={`${activeSensor} Signal Stream`}
+                                    mode={mode}
+                                    markedWindows={mappedWindows}
+                                    activeWindow={activeWindowMapped || highlightedWindowMapped} // Show highlighted if no active
+                                    onWindowSelect={handleManualWindowSelect}
+                                    yDomain={currentYDomain}
+                                    scannerX={Math.round(timeWindow / 2)}
+                                    scannerValue={scannerValue}
+                                    timeWindowMs={timeWindow}
+                                    height="100%"
+                                    color={activeSensor === 'EMG' ? '#3b82f6' : (activeSensor === 'EOG' ? '#10b981' : '#f59e0b')}
+                                />
+                            </div>
                         </div>
 
-                        <div className="flex justify-between items-center text-[10px] text-muted font-mono uppercase tracking-widest pt-2">
+                        <div className="flex-none flex justify-between items-center text-[10px] text-muted font-mono uppercase tracking-widest pt-2">
                             <span>Status: {isCalibrating ? 'Active Collection' : 'Idle'}</span>
                             <span>Windows: {markedWindows.length}</span>
                         </div>
                     </div>
                 </div>
 
-                {/* Bottom row: Config (left), Stats (center), Windows (right) */}
-                <div className="lg:col-span-4 h-full">
-                    <ConfigPanel config={config} sensor={activeSensor} onSave={setConfig} />
-                </div>
+                {/* Bottom Row Area */}
+                <div className="flex-none h-[350px] grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    {/* Config (left) */}
+                    <div className="lg:col-span-4 h-full">
+                        <ConfigPanel config={config} sensor={activeSensor} onSave={setConfig} />
+                    </div>
 
-                <div className="lg:col-span-4 h-full flex flex-col gap-6">
-                    <div className="card bg-surface/50 border border-border p-4 rounded-xl flex items-center justify-between">
-                        <div>
-                            <div className="text-[10px] text-muted uppercase font-bold">Accuracy</div>
-                            <div className="text-lg font-bold text-emerald-400">
-                                {markedWindows.length > 0 ? ((markedWindows.filter(w => w.status === 'correct').length / markedWindows.length) * 100).toFixed(0) : 0}%
+                    {/* Stats (center) */}
+                    <div className="lg:col-span-4 h-full flex flex-col gap-6">
+                        <div className="card bg-surface/50 border border-border p-4 rounded-xl flex items-center justify-between flex-grow">
+                            <div>
+                                <div className="text-[10px] text-muted uppercase font-bold">Accuracy</div>
+                                <div className="text-lg font-bold text-emerald-400">
+                                    {markedWindows.length > 0 ? ((markedWindows.filter(w => w.status === 'correct').length / markedWindows.length) * 100).toFixed(0) : 0}%
+                                </div>
+                            </div>
+                            <div className="w-10 h-10 rounded-full border-2 border-emerald-500/20 flex items-center justify-center text-emerald-400 text-xs font-bold">
+                                GC
                             </div>
                         </div>
-                        <div className="w-10 h-10 rounded-full border-2 border-emerald-500/20 flex items-center justify-center text-emerald-400 text-xs font-bold">
-                            GC
+
+                        <div className="card bg-surface/50 border border-border p-4 rounded-xl flex items-center justify-between flex-grow">
+                            <div>
+                                <div className="text-[10px] text-muted uppercase font-bold">Missed Signals</div>
+                                <div className="text-lg font-bold text-red-400">
+                                    {markedWindows.filter(w => w.isMissedActual).length}
+                                </div>
+                            </div>
+                            <div className="w-10 h-10 rounded-full border-2 border-red-500/20 flex items-center justify-center text-red-400 text-xs font-bold">
+                                ER
+                            </div>
                         </div>
                     </div>
 
-                    <div className="card bg-surface/50 border border-border p-4 rounded-xl flex items-center justify-between">
-                        <div>
-                            <div className="text-[10px] text-muted uppercase font-bold">Missed Signals</div>
-                            <div className="text-lg font-bold text-red-400">
-                                {markedWindows.filter(w => w.isMissedActual).length}
-                            </div>
-                        </div>
-                        <div className="w-10 h-10 rounded-full border-2 border-red-500/20 flex items-center justify-center text-red-400 text-xs font-bold">
-                            ER
-                        </div>
+                    {/* Windows List (right) */}
+                    <div className="lg:col-span-4 h-full">
+                        <WindowListPanel
+                            windows={markedWindows}
+                            onDelete={deleteWindow}
+                            onMarkMissed={markMissed}
+                            onHighlight={setHighlightedWindow}
+                            activeSensor={activeSensor}
+                            onRun={runCalibration}
+                            running={runInProgress}
+                            windowProgress={windowProgress}
+                        />
                     </div>
-                </div>
-
-                <div className="lg:col-span-4 h-full">
-                    <WindowListPanel
-                        windows={markedWindows}
-                        onDelete={deleteWindow}
-                        onMarkMissed={markMissed}
-                        activeSensor={activeSensor}
-                        onRun={runCalibration}
-                        running={runInProgress}
-                        windowProgress={windowProgress}
-                    />
                 </div>
             </div>
         </div>
