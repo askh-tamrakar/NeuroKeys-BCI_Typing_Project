@@ -105,7 +105,7 @@ export default function ConfigPanel({ config, sensor, onSave }) {
                 </span>
             </div>
 
-            <div className="flex-grow overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-border hover:scrollbar-thumb-primary/50">
+            <div className="flex-grow min-h-0 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-border hover:scrollbar-thumb-primary/50">
                 {Object.keys(sensorFeatures).length > 0 ? (
                     renderConfigNode(sensorFeatures)
                 ) : (

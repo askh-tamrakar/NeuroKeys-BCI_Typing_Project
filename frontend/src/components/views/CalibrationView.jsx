@@ -34,13 +34,6 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     useEffect(() => { activeSensorRef.current = activeSensor; }, [activeSensor]);
     useEffect(() => { targetLabelRef.current = targetLabel; }, [targetLabel]);
 
-    // Sync config from props when it loads
-    useEffect(() => {
-        if (initialConfig && Object.keys(initialConfig).length > 0) {
-            setConfig(initialConfig);
-        }
-    }, [initialConfig]);
-
 
     // Recording mode states
     const [availableRecordings, setAvailableRecordings] = useState([]);
@@ -174,10 +167,12 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                 startTime: start,
                 endTime: end,
                 label: labelForWindow,
-                status: 'pending'
+                status: 'pending' // Added immediately to list
             };
 
-            setActiveWindow(newWindow);
+            // Add to list IMMEDIATELY so it appears and travels with the chart
+            setMarkedWindows(prev => [...prev, newWindow].slice(-MAX_WINDOWS));
+            setActiveWindow(newWindow); // Keep track for logic, but maybe not render separately?
 
             // Wait for window to finish
             setTimeout(async () => {
@@ -195,7 +190,6 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
                     if (samples.length === 0) {
                         console.warn(`[CalibrationView] No samples or empty range. Win: ${start}-${end}.`);
-                        // Don't throw logic error, just fail this window gracefully
                         throw new Error("No data collected in window range");
                     }
 
@@ -212,37 +206,35 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
                     // Determine prediction result
                     const detected = resp.detected === true;
-                    // For visualization, if not detected, we might label it 'Miss' or 'Rest'
                     const predicted = detected ? labelForWindow : 'Rest';
                     const isCorrect = predicted === labelForWindow;
 
-                    // Add to windows list - State Update Batch 1
-                    setMarkedWindows(prev => {
-                        const completedWindow = {
-                            ...newWindow,
-                            predictedLabel: predicted,
-                            status: isCorrect ? 'correct' : 'incorrect',
-                            features: resp.features
-                        };
-                        const next = [...prev, completedWindow];
-                        return next.slice(-MAX_WINDOWS);
-                    });
+                    // Update the window in the list (don't add new one)
+                    setMarkedWindows(prev => prev.map(w => {
+                        if (w.id === newWindow.id) {
+                            return {
+                                ...w,
+                                predictedLabel: predicted,
+                                status: isCorrect ? 'correct' : 'incorrect',
+                                features: resp.features
+                            };
+                        }
+                        return w;
+                    }));
+
                 } catch (err) {
                     console.error('Auto-save window error:', err);
                     setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'error', message: err?.message || String(err) } }));
 
-                    setMarkedWindows(prev => {
-                        const errorWindow = {
-                            ...newWindow,
-                            predictedLabel: 'Error',
-                            status: 'incorrect'
-                        };
-                        const next = [...prev, errorWindow];
-                        return next.slice(-MAX_WINDOWS);
-                    });
+                    setMarkedWindows(prev => prev.map(w => {
+                        if (w.id === newWindow.id) {
+                            return { ...w, predictedLabel: 'Error', status: 'incorrect' };
+                        }
+                        return w;
+                    }));
                 } finally {
                     setRunInProgress(false);
-                    setActiveWindow(null); // Clear active only after added to list
+                    setActiveWindow(null);
                 }
             }, delayToCenter + currentDur);
         };
@@ -262,6 +254,9 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             label: targetLabel,
             status: 'pending'
         };
+
+        // Add immediately
+        setMarkedWindows(prev => [...prev, newWindow].slice(-MAX_WINDOWS));
 
         // Mark as saving
         setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'saving' } }));
@@ -286,29 +281,31 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             // Determine prediction result
             const detected = resp.detected === true;
             const predicted = detected ? targetLabel : 'Rest';
-
-            // Compare prediction with labeled action for correct/missed status
             const isCorrect = predicted === targetLabel;
 
-            setMarkedWindows(prev => {
-                const completedWindow = {
-                    ...newWindow,
-                    predictedLabel: predicted,
-                    status: isCorrect ? 'correct' : 'incorrect',
-                    features: resp.features
-                };
-                const next = [...prev, completedWindow];
-                return next.slice(-MAX_WINDOWS);
-            });
+            // Update in place
+            setMarkedWindows(prev => prev.map(w => {
+                if (w.id === newWindow.id) {
+                    return {
+                        ...w,
+                        predictedLabel: predicted,
+                        status: isCorrect ? 'correct' : 'incorrect',
+                        features: resp.features
+                    };
+                }
+                return w;
+            }));
+
         } catch (err) {
             console.error('Manual window save error:', err);
             setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'error', message: err?.message || String(err) } }));
 
-            setMarkedWindows(prev => {
-                const errorWindow = { ...newWindow, predictedLabel: 'Error', status: 'incorrect' };
-                const next = [...prev, errorWindow];
-                return next.slice(-MAX_WINDOWS);
-            });
+            setMarkedWindows(prev => prev.map(w => {
+                if (w.id === newWindow.id) {
+                    return { ...w, predictedLabel: 'Error', status: 'incorrect' };
+                }
+                return w;
+            }));
         } finally {
             setRunInProgress(false);
         }
@@ -391,12 +388,26 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
         }
     }, [wsData, mode, activeSensor]);
 
+    // Unified Time Reference for this Render Frame
+    // We update 'now' whenever chartData updates (frame tick) or periodically.
+    // Since chartData updates frequently (WebSocket), we can use that as the clock tick.
+    const [frameTime, setFrameTime] = useState(Date.now());
+
+    useEffect(() => {
+        // Ensure we have a tick every frame or at least when data comes in
+        setFrameTime(Date.now());
+        // Optional: If data is slow, you might want a requestAnimationFrame loop here
+        // to keep the sweep moving smoothly even if data buffers.
+        const loop = setInterval(() => setFrameTime(Date.now()), 30); // ~30fps smooth sweep
+        return () => clearInterval(loop);
+    }, [chartData /* or just run independently */]);
+
     // Compute sweep-style data for calibration: plotted portion left of center, unplotted baseline to right
-    // Memoize this to prevent recalculation on every minor state change (like hover)
     const sweepChartData = React.useMemo(() => {
         const w = timeWindow;
         const center = Math.round(w / 2);
-        const now = Date.now();
+        // Use synchronized frameTime
+        const now = frameTime;
 
         // plotted points: newest at center, older to the left
         // Optimization: iterate from end
@@ -406,7 +417,8 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             const age = now - d.time;
             if (age > center) break; // Optimization: Stop if older than window left edge
             const x = Math.round(center - age);
-            if (x >= 0) plotted.unshift({ time: x, value: d.value }); // maintain order
+            // Relaxed filter to allow points slightly off-screen to prevent line clipping
+            if (x >= -100) plotted.unshift({ time: x, value: d.value });
         }
 
         // baseline (unplotted) to right of center — keep static at 0 to avoid vertical movement
@@ -417,41 +429,38 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
         }
 
         const merged = [...plotted, ...baseline];
-        // Sort might not be needed if pushed in order, but safe to keep
         merged.sort((a, b) => a.time - b.time);
 
-        if (highlightedWindow) {
-            // In inspection mode, we might want to overlay the specific data of that window
-            // For now, sweep mode is "Realtime" view. 
-            // If we want to inspect a past window, we would need to freeze the time sweep or show a static plot.
-            // Let's stick to showing just the Highlight marker for now.
-        }
-
         return merged;
-    }, [chartData, timeWindow, highlightedWindow]);
-    // Note: 'now' changes every render if we forced it, but here it depends on renders triggered by chartData updates.
+    }, [chartData, timeWindow, frameTime]); // Depend on frameTime
 
     // Map action windows to sweep coordinates so they match the chart data (center-relative)
     const mappedWindows = React.useMemo(() => {
-        const now = Date.now();
+        // Use SAME synchronized frameTime
+        const now = frameTime;
         const w = timeWindow;
         const center = Math.round(w / 2);
 
         return markedWindows.map(win => {
-            const x1 = Math.round(center - (now - win.endTime));
-            const x2 = Math.round(center - (now - win.startTime));
-            // Correct order: Start (x2) < End (x1) in chart Logic?
-            // Actually, newer time = smaller age = larger X.
-            // win.endTime > win.startTime => age(endTime) < age(startTime) => X(endTime) > X(startTime).
-            // So x1 (End) acts as the Right edge, x2 (Start) as the Left edge.
-            return { ...win, startTime: x2, endTime: x1 };
-        }).filter(win => win.endTime >= -200 && win.startTime <= (w + 200));
-    }, [markedWindows, timeWindow, chartData /* dependency on chartData triggers re-render/re-calc of positions as 'now' advances implicitly via render loop */]);
+            const ageStart = now - win.startTime;
+            const ageEnd = now - win.endTime;
+
+            const x1 = Math.round(center - ageEnd);     // Right edge
+            const x2 = Math.round(center - ageStart);   // Left edge
+
+            return {
+                ...win,
+                startTime: x2,
+                endTime: x1
+            };
+        });
+    }, [markedWindows, timeWindow, frameTime]); // Depend on frameTime
 
     // Active/Pending Window
     const activeWindowMapped = React.useMemo(() => {
         if (!activeWindow) return null;
-        const now = Date.now();
+        // Use SAME synchronized frameTime
+        const now = frameTime;
         const w = timeWindow;
         const center = Math.round(w / 2);
 
@@ -459,17 +468,12 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
         const x2 = Math.round(center - (now - activeWindow.startTime));
 
         return { ...activeWindow, startTime: x2, endTime: x1 };
-    }, [activeWindow, timeWindow, chartData]);
+    }, [activeWindow, timeWindow, frameTime]);
 
     // Highlighted Window (for inspection)
     const highlightedWindowMapped = React.useMemo(() => {
         if (!highlightedWindow) return null;
-        // Similar logic, map it into current time frame
-        // NOTE: A past window will likely be far off-screen (negative X).
-        // To inspect it properly, we might want to FREEZE the chart or auto-scroll?
-        // For this iteration, we just allow seeing it if it's still in view.
-
-        const now = Date.now();
+        const now = frameTime;
         const w = timeWindow;
         const center = Math.round(w / 2);
 
@@ -477,7 +481,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
         const x2 = Math.round(center - (now - highlightedWindow.startTime));
 
         return { ...highlightedWindow, startTime: x2, endTime: x1, color: '#ff00ff' }; // magenta highlight
-    }, [highlightedWindow, timeWindow, chartData]);
+    }, [highlightedWindow, timeWindow, frameTime]);
 
 
     const scannerValue = chartData.length ? chartData[chartData.length - 1].value : 0;
@@ -490,7 +494,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     }, []);
 
     return (
-        <div className="flex flex-col gap-4 h-full p-6 bg-bg text-text animate-in fade-in duration-500 overflow-hidden">
+        <div className="flex flex-col gap-4 h-[calc(100vh-3rem)] p-6 bg-bg text-text animate-in fade-in duration-500 overflow-hidden">
             {/* Header / Tabs */}
             <div className="flex-none flex flex-col lg:flex-row lg:items-center justify-between gap-6 card bg-surface border border-border p-6 rounded-2xl shadow-card">
                 <div className="flex items-center gap-4">
@@ -536,13 +540,12 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                 </div>
             </div>
 
-            {/* Main Workspace: Graph full-width on top, panels below */}
-            {/* Replaced grid with flex-col to allow graph to take necessary space and bottom panels to fill rest */}
+            {/* Main Workspace: Flex Column */}
             <div className="flex flex-col gap-4 flex-grow min-h-0">
 
-                {/* Graph Area */}
-                <div className="flex-grow min-h-[400px] flex flex-col">
-                    <div className="card bg-surface border border-border p-6 rounded-2xl shadow-card flex flex-col gap-4 h-full">
+                {/* Graph Area: Fixed or Flexible height? Fixed for stability. */}
+                <div className="flex-none flex flex-col">
+                    <div className="card bg-surface border border-border p-6 rounded-2xl shadow-card flex flex-col gap-4">
                         <div className="flex-none flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
                             <div className="flex items-center gap-3">
                                 <div className="text-xs font-bold text-muted uppercase">Zoom:</div>
@@ -642,24 +645,22 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                             </div>
                         </div>
 
-                        <div className="flex-grow w-full relative">
-                            {/* Chart Container fills space */}
-                            <div className="absolute inset-0">
-                                <TimeSeriesZoomChart
-                                    data={sweepChartData}
-                                    title={`${activeSensor} Signal Stream`}
-                                    mode={mode}
-                                    markedWindows={mappedWindows}
-                                    activeWindow={activeWindowMapped || highlightedWindowMapped} // Show highlighted if no active
-                                    onWindowSelect={handleManualWindowSelect}
-                                    yDomain={currentYDomain}
-                                    scannerX={Math.round(timeWindow / 2)}
-                                    scannerValue={scannerValue}
-                                    timeWindowMs={timeWindow}
-                                    height="100%"
-                                    color={activeSensor === 'EMG' ? '#3b82f6' : (activeSensor === 'EOG' ? '#10b981' : '#f59e0b')}
-                                />
-                            </div>
+                        <div className="w-full h-[320px]">
+                            {/* Chart Container fixed height for stability */}
+                            <TimeSeriesZoomChart
+                                data={sweepChartData}
+                                title={`${activeSensor} Signal Stream`}
+                                mode={mode}
+                                height={320}
+                                markedWindows={mappedWindows}
+                                activeWindow={null} // activeWindow is now part of markedWindows with 'pending' status
+                                onWindowSelect={handleManualWindowSelect}
+                                yDomain={currentYDomain}
+                                scannerX={Math.round(timeWindow / 2)}
+                                scannerValue={scannerValue}
+                                timeWindowMs={timeWindow}
+                                color={activeSensor === 'EMG' ? '#3b82f6' : (activeSensor === 'EOG' ? '#10b981' : '#f59e0b')}
+                            />
                         </div>
 
                         <div className="flex-none flex justify-between items-center text-[10px] text-muted font-mono uppercase tracking-widest pt-2">
@@ -669,8 +670,8 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                     </div>
                 </div>
 
-                {/* Bottom Row Area */}
-                <div className="flex-none h-[350px] grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Bottom Row Area: Fills remaining space */}
+                <div className="flex-grow min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-6">
                     {/* Config (left) */}
                     <div className="lg:col-span-4 h-full">
                         <ConfigPanel config={config} sensor={activeSensor} onSave={setConfig} />

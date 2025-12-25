@@ -65,7 +65,7 @@ export default function WindowListPanel({
             </div>
 
             {/* Window list - scrollable */}
-            <div className="flex-grow overflow-y-auto p-2 space-y-2 scrollbar-thin scrollbar-thumb-border hover:scrollbar-thumb-primary/50">
+            <div className="flex-grow min-h-0 overflow-y-auto p-2 space-y-2 scrollbar-thin scrollbar-thumb-border hover:scrollbar-thumb-primary/50">
                 {windows.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-40 text-muted text-sm italic opacity-50 space-y-2">
                         <span className="text-2xl">📉</span>

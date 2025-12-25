@@ -4,12 +4,12 @@
     "ch0": {
       "enabled": true,
       "label": "EOG Channel 0",
-      "sensor": "EOG"
+      "sensor": "EMG"
     },
     "ch1": {
       "enabled": true,
       "label": "EEG Channel 1",
-      "sensor": "EMG"
+      "sensor": "EOG"
     }
   },
   "num_channels": 2,

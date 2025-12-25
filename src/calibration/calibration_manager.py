@@ -34,41 +34,65 @@ class CalibrationManager:
         self.project_root = Path(__file__).resolve().parent.parent.parent
         self.data_dir = self.project_root / "data" / "processed" / "windows"
     
+    def _sanitize_features(self, features: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Recursively replace NaN/Infinity with None (null in JSON) or 0.
+        Standard JSON does not support NaN.
+        """
+        clean = {}
+        for k, v in features.items():
+            if isinstance(v, dict):
+                clean[k] = self._sanitize_features(v)
+            elif isinstance(v, float):
+                if np.isnan(v) or np.isinf(v):
+                    clean[k] = 0.0 # or None
+                else:
+                    clean[k] = v
+            elif isinstance(v, list):
+                # Simple list sanitization
+                clean[k] = [0.0 if (isinstance(x, float) and (np.isnan(x) or np.isinf(x))) else x for x in v]
+            else:
+                clean[k] = v
+        return clean
+
     def extract_features(self, sensor: str, samples: List[float], sr: int = 512) -> Dict[str, Any]:
         """
         Route feature extraction to the appropriate static method.
         """
         sensor = sensor.upper()
         
+        raw_features = {}
         if sensor == "EOG":
-            return BlinkExtractor.extract_features(samples, sr)
+            raw_features = BlinkExtractor.extract_features(samples, sr)
         elif sensor == "EMG":
-            return RPSExtractor.extract_features(samples, sr)
+            raw_features = RPSExtractor.extract_features(samples, sr)
         elif sensor == "EEG":
             # Basic spectral power extraction for EEG (Alpha/Beta/Theta)
             try:
                 # Simple placeholder logic until dedicated extractor is available
                 data = np.array(samples)
                 if len(data) < sr: 
-                    return {"status": "insufficient_data"}
-                
-                # Simple Variance/Amplitude check
-                amp_max = np.max(np.abs(data))
-                std_dev = np.std(data)
-                
-                # Mock spectral bands (Real impl requires FFT)
-                # For calibration, we might just track amplitude or variance for "Target vs Rest"
-                return {
-                    "amplitude": float(amp_max),
-                    "std_dev": float(std_dev),
-                    "alpha_power": float(np.random.uniform(0.5, 5.0)) # Mock
-                }
+                    raw_features = {"status": "insufficient_data"}
+                else:
+                    # Simple Variance/Amplitude check
+                    amp_max = np.max(np.abs(data))
+                    std_dev = np.std(data)
+                    
+                    # Mock spectral bands (Real impl requires FFT)
+                    # For calibration, we might just track amplitude or variance for "Target vs Rest"
+                    raw_features = {
+                        "amplitude": float(amp_max),
+                        "std_dev": float(std_dev),
+                        "alpha_power": float(np.random.uniform(0.5, 5.0)) # Mock
+                    }
             except Exception as e:
                 logger.error(f"EEG extraction error: {e}")
-                return {}
+                raw_features = {}
         else:
             # Default fallback
-            return RPSExtractor.extract_features(samples, sr)
+            raw_features = RPSExtractor.extract_features(samples, sr)
+            
+        return self._sanitize_features(raw_features)
 
     def detect_signal(self, sensor: str, action: str, features: Dict[str, Any], config: Dict[str, Any]) -> bool:
         """

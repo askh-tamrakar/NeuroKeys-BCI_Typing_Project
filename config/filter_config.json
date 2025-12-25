@@ -24,7 +24,9 @@
     "high": 10,
     "low": 0.5,
     "order": 5,
-    "type": "bandpass"
+    "type": "bandpass",
+    "notch_enabled": true,
+    "bandpass_enabled": true
   },
   "bandpass": {
     "enabled": true

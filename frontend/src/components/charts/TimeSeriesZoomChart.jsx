@@ -132,7 +132,7 @@ export default function TimeSeriesZoomChart({
                 </div>
             </div>
 
-            <div className="flex-grow p-2 select-none" style={{ height }}>
+            <div className="flex-grow p-2 select-none" style={height === '100%' ? {} : { height }}>
                 <ResponsiveContainer width="100%" height="100%">
                     <LineChart
                         data={data}
