@@ -141,14 +141,24 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
     useEffect(() => {
         if (!wsEvent) return;
 
+        // Legacy Generic BLINK (matches timing logic)
         if (wsEvent.event === 'BLINK') {
             logEvent("👁️ Blink Signal Recv")
             console.log("🦖 Dino: Blink Signal Received via Logic Pipeline!");
             handleEOGBlink();
         }
+        // V2: Specific Blink Events (No timing logic needed)
+        else if (wsEvent.event === 'SingleBlink') {
+            logEvent("👁️ Single Blink Recv")
+            handleSinglePress();
+        }
+        else if (wsEvent.event === 'DoubleBlink') {
+            logEvent("👁️👁️ Double Blink Recv")
+            handleDoublePress();
+        }
     }, [wsEvent]);
 
-    // Handle EOG blink detection
+    // Handle EOG blink detection (Legacy / Manual Timing)
     const handleEOGBlink = () => {
         const now = Date.now()
         const timeSinceLastPress = now - blinkPressTimeRef.current
@@ -161,8 +171,6 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
 
         // Log raw interval for debugging
         logEvent(`⏱️ Interval: ${timeSinceLastPress}ms`)
-
-        console.log(" timeSinceLastPress ", timeSinceLastPress);
         blinkPressTimeRef.current = now
     }
 

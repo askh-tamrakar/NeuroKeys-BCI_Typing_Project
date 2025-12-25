@@ -20,13 +20,13 @@
     "type": "high_pass"
   },
   "EOG": {
+    "bandpass_enabled": true,
     "cutoff": 123.1,
     "high": 10,
     "low": 0.5,
-    "order": 5,
-    "type": "bandpass",
     "notch_enabled": true,
-    "bandpass_enabled": true
+    "order": 5,
+    "type": "bandpass"
   },
   "bandpass": {
     "enabled": true

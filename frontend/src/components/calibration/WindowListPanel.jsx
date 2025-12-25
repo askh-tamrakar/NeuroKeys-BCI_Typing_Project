@@ -48,20 +48,6 @@ export default function WindowListPanel({
                     <span>Correct: <span className="text-emerald-400">{stats.correct}</span></span>
                     <span>Missed: <span className="text-red-400">{stats.missed}</span></span>
                 </div>
-
-                {/* Progress bar toward calibration */}
-                <div className="mt-1">
-                    <div className="flex justify-between text-[9px] text-muted mb-1">
-                        <span>Progress: {stats.total}/{recommendedSamples}</span>
-                        <span>{Math.round(progress)}%</span>
-                    </div>
-                    <div className="h-1.5 bg-bg rounded-full overflow-hidden">
-                        <div
-                            className={`h-full transition-all duration-500 ease-out ${progress >= 100 ? 'bg-emerald-500' : 'bg-primary'}`}
-                            style={{ width: `${progress}%` }}
-                        />
-                    </div>
-                </div>
             </div>
 
             {/* Window list - scrollable */}

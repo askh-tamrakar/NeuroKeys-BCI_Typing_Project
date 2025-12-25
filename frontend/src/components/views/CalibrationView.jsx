@@ -25,18 +25,22 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     const [activeWindow, setActiveWindow] = useState(null);
     const [highlightedWindow, setHighlightedWindow] = useState(null); // New: for inspection
     const [targetLabel, setTargetLabel] = useState('Rock'); // e.g., 'Rock', 'Paper', etc.
+    const [totalPredictedCount, setTotalPredictedCount] = useState(0);
+
 
     // Refs for accessing latest state inside interval/timeouts
     const chartDataRef = useRef(chartData);
     const activeSensorRef = useRef(activeSensor);
     const activeChannelIndexRef = useRef(activeChannelIndex); // Ref for channel
     const targetLabelRef = useRef(targetLabel);
+    const markedWindowsRef = useRef(markedWindows);
 
     // Keep refs in sync
     useEffect(() => { chartDataRef.current = chartData; }, [chartData]);
     useEffect(() => { activeSensorRef.current = activeSensor; }, [activeSensor]);
     useEffect(() => { activeChannelIndexRef.current = activeChannelIndex; }, [activeChannelIndex]);
     useEffect(() => { targetLabelRef.current = targetLabel; }, [targetLabel]);
+    useEffect(() => { markedWindowsRef.current = markedWindows; }, [markedWindows]);
 
     // Compute matching channels for the active sensor
     const matchingChannels = React.useMemo(() => {
@@ -166,6 +170,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     const handleSensorChange = (sensor) => {
         setActiveSensor(sensor);
         setMarkedWindows([]);
+        setTotalPredictedCount(0);
         // Set default label based on sensor
         if (sensor === 'EMG') setTargetLabel('Rock');
         else if (sensor === 'EOG') setTargetLabel('SingleBlink');
@@ -205,6 +210,19 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             const sensorForWindow = activeSensorRef.current;
             const labelForWindow = targetLabelRef.current;
             const channelForWindow = activeChannelIndexRef.current; // Use Ref
+
+            // STOP CONDITION: Check if we already have enough samples (including pending)
+            // This prevents over-collection while waiting for processing
+            const recommendedSamples = { 'EOG': 20, 'EMG': 30, 'EEG': 25 }[sensorForWindow] || 20;
+            const currentCount = markedWindowsRef.current.filter(w => w.label === labelForWindow).length;
+
+            // ONLY stop if in Auto-Calibration mode. Manual mode is unbounded.
+            if (autoCalibrate && currentCount >= recommendedSamples) {
+                // Do not spawn new window if target reached
+                return;
+            }
+
+
 
             const newWindow = {
                 id: Math.random().toString(36).substr(2, 9),
@@ -268,6 +286,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                         }
                         return w;
                     }));
+                    setTotalPredictedCount(prev => prev + 1);
 
                 } catch (err) {
                     console.error('Auto-save error:', err);
@@ -343,6 +362,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                 }
                 return w;
             }));
+            setTotalPredictedCount(prev => prev + 1);
 
         } catch (err) {
             console.error('Manual save error:', err);
@@ -373,8 +393,17 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
         setRunInProgress(true);
         try {
+            // Filter windows to only those matching the current target label (per user request)
+            const windowsToCalibrate = markedWindows.filter(w => w.label === targetLabel);
+
+            if (windowsToCalibrate.length === 0) {
+                console.warn('[CalibrationView] No matching windows for target label:', targetLabel);
+                setRunInProgress(false);
+                return;
+            }
+
             // 1. Call robust calibration endpoint
-            const result = await CalibrationApi.calibrateThresholds(activeSensor, markedWindows);
+            const result = await CalibrationApi.calibrateThresholds(activeSensor, windowsToCalibrate);
             console.log('[CalibrationView] Calibration result:', result);
 
             // 2. Update config locally
@@ -409,6 +438,9 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                 }
                 const acc = result.accuracy_after !== undefined ? result.accuracy_after : (result.accuracy || 0);
                 alert(`Calibration Complete! Accuracy: ${(acc * 100).toFixed(1)}%`);
+                // Reset just like auto mode
+                setMarkedWindows([]);
+                setTotalPredictedCount(0);
             }
 
         } catch (err) {
@@ -427,17 +459,17 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
     // Auto-Calibration Trigger
     useEffect(() => {
-        if (!autoCalibrate || isCalibrating || runInProgress) return;
+        if (!autoCalibrate || runInProgress) return;
 
         const recommendedSamples = { 'EOG': 20, 'EMG': 30, 'EEG': 25 }[activeSensor] || 20;
-        const validCount = markedWindows.length;
+        // Only count valid, non-pending samples that MATCH the current target label
+        const validCount = markedWindows.filter(w => w.status !== 'pending' && w.label === targetLabel).length;
 
-        // Trigger if we reached 100% and have at least 3 samples (safety)
         if (validCount >= recommendedSamples && validCount >= 3) {
-            console.log('[CalibrationView] Auto-calibration triggered.');
+            console.log('[CalibrationView] Auto-calibration triggered. Count:', validCount);
             runCalibration(true);
         }
-    }, [markedWindows, autoCalibrate, isCalibrating, runInProgress, activeSensor]);
+    }, [markedWindows, autoCalibrate, isCalibrating, runInProgress, activeSensor, runCalibration]);
 
     // Update chart data from WS or Mock
     useEffect(() => {
@@ -636,7 +668,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             </div>
 
             {/* Main Workspace: Flex Column */}
-            <div className="flex flex-col gap-2 flex-grow min-h-0">
+            <div className="flex-none flex flex-col gap-2">
 
                 {/* Graph Area: Compact */}
                 <div className="flex-none flex flex-col">
@@ -758,116 +790,126 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
                         <div className="flex-none flex justify-between items-center text-[9px] text-muted font-mono uppercase tracking-widest">
                             <span>Status: {isCalibrating ? 'Active Collection' : 'Idle'}</span>
-                            <span>Windows: {markedWindows.length}</span>
+                            <span>Target Samples: {markedWindows.filter(w => w.status !== 'pending' && w.label === targetLabel).length}</span>
+                            <span>Predictions: {totalPredictedCount}</span>
                         </div>
                     </div>
                 </div>
+            </div>
 
-                {/* Bottom Row Area: Fills remaining space */}
-                <div className="flex-grow min-h-0 grid grid-cols-1 lg:grid-cols-12 lg:grid-rows-[minmax(0,1fr)] gap-4">
-                    {/* Config (left) */}
-                    <div className="lg:col-span-4 h-full">
-                        <ConfigPanel config={config} sensor={activeSensor} onSave={setConfig} />
-                    </div>
+            {/* Bottom Row Area: Fills remaining space */}
+            <div className="flex-grow min-h-0 grid grid-cols-1 lg:grid-cols-12 lg:grid-rows-[minmax(0,1fr)] gap-4">
+                {/* Config (left) */}
+                <div className="lg:col-span-4 h-full">
+                    <ConfigPanel config={config} sensor={activeSensor} onSave={setConfig} />
+                </div>
 
-                    {/* Stats (center) */}
-                    <div className="lg:col-span-4 h-full flex flex-col gap-4">
-                        <div className="flex gap-4 h-1/3 min-h-0">
-                            <div className="card bg-surface/50 border border-border p-4 rounded-xl flex items-center justify-between flex-grow">
-                                <div>
-                                    <div className="text-[10px] text-muted uppercase font-bold">Accuracy</div>
-                                    <div className="text-lg font-bold text-emerald-400">
-                                        {markedWindows.length > 0 ? ((markedWindows.filter(w => w.status === 'correct').length / markedWindows.length) * 100).toFixed(0) : 0}%
-                                    </div>
-                                </div>
-                                <div className="w-10 h-10 rounded-full border-2 border-emerald-500/20 flex items-center justify-center text-emerald-400 text-xs font-bold">
-                                    GC
+                {/* Stats (center) */}
+                <div className="lg:col-span-4 h-full flex flex-col gap-4">
+                    <div className="flex gap-4 h-1/3 min-h-0">
+                        <div className="card bg-surface/50 border border-border p-4 rounded-xl flex items-center justify-between flex-grow">
+                            <div>
+                                <div className="text-[10px] text-muted uppercase font-bold">Accuracy</div>
+                                <div className="text-lg font-bold text-emerald-400">
+                                    {markedWindows.length > 0 ? ((markedWindows.filter(w => w.status === 'correct').length / markedWindows.length) * 100).toFixed(0) : 0}%
                                 </div>
                             </div>
-
-                            <div className="card bg-surface/50 border border-border p-4 rounded-xl flex items-center justify-between flex-grow">
-                                <div>
-                                    <div className="text-[10px] text-muted uppercase font-bold">Missed</div>
-                                    <div className="text-lg font-bold text-red-400">
-                                        {markedWindows.filter(w => w.isMissedActual).length}
-                                    </div>
-                                </div>
-                                <div className="w-10 h-10 rounded-full border-2 border-red-500/20 flex items-center justify-center text-red-400 text-xs font-bold">
-                                    ER
-                                </div>
+                            <div className="w-10 h-10 rounded-full border-2 border-emerald-500/20 flex items-center justify-center text-emerald-400 text-xs font-bold">
+                                GC
                             </div>
                         </div>
 
-                        {/* Calibration Control Card (Moved from WindowListPanel) */}
-                        <div className="card bg-surface border border-border p-4 rounded-xl flex flex-col justify-center gap-3 flex-grow h-2/3">
-                            {(() => {
-                                const recommendedSamples = { 'EOG': 20, 'EMG': 30, 'EEG': 25 }[activeSensor] || 20;
-                                const validCount = markedWindows.length;
-                                const progress = Math.min(100, (validCount / recommendedSamples) * 100);
-                                const readyToCalibrate = validCount >= 3 && markedWindows.some(w => w.features);
-
-                                return (
-                                    <>
-                                        <div className="flex justify-between items-start mb-2">
-                                            <div>
-                                                <h3 className="font-bold text-sm uppercase tracking-wide">Calibration</h3>
-                                                <span className="text-[10px] text-muted font-mono">{validCount}/{recommendedSamples} samples</span>
-                                            </div>
-
-                                            {/* Auto-Calibration Toggle */}
-                                            <div className="flex items-center gap-2">
-                                                <span className={`text-[9px] font-bold uppercase ${autoCalibrate ? 'text-primary' : 'text-muted'}`}>Auto</span>
-                                                <button
-                                                    onClick={() => setAutoCalibrate(!autoCalibrate)}
-                                                    className={`w-8 h-4 rounded-full relative transition-colors ${autoCalibrate ? 'bg-primary' : 'bg-muted/30'}`}
-                                                >
-                                                    <div className={`absolute top-0.5 bottom-0.5 w-3 rounded-full bg-white shadow transition-all ${autoCalibrate ? 'left-[calc(100%-14px)]' : 'left-0.5'}`} />
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        {/* Progress Bar - Only show if Auto Calibrate is ENABLED */}
-                                        {autoCalibrate && (
-                                            <div className="h-2 bg-bg rounded-full overflow-hidden mb-2 animate-in fade-in zoom-in duration-300">
-                                                <div className={`h-full transition-all duration-500 ease-out ${progress >= 100 ? 'bg-emerald-500' : 'bg-primary'}`} style={{ width: `${progress}%` }} />
-                                            </div>
-                                        )}
-
-                                        <button
-                                            onClick={() => runCalibration(false)}
-                                            disabled={!readyToCalibrate || runInProgress}
-                                            className={`w-full py-3 rounded-lg font-bold text-xs uppercase tracking-wider transition-all ${readyToCalibrate && !runInProgress
-                                                ? 'bg-primary text-primary-contrast hover:opacity-90 shadow-glow hover:scale-[1.02] active:scale-[0.98]'
-                                                : 'bg-muted/20 text-muted cursor-not-allowed'
-                                                }`}
-                                        >
-                                            {runInProgress ? 'Optimizing Parameters...' : 'Calibrate Thresholds'}
-                                        </button>
-
-                                        <div className="text-center text-[9px] text-muted mt-1 italic">
-                                            {readyToCalibrate
-                                                ? (autoCalibrate ? "Will calibrate automatically at 100%" : "Ready to update config")
-                                                : "Collect more data to calibrate"}
-                                        </div>
-                                    </>
-                                );
-                            })()}
+                        <div className="card bg-surface/50 border border-border p-4 rounded-xl flex items-center justify-between flex-grow">
+                            <div>
+                                <div className="text-[10px] text-muted uppercase font-bold">Missed</div>
+                                <div className="text-lg font-bold text-red-400">
+                                    {markedWindows.filter(w => w.isMissedActual).length}
+                                </div>
+                            </div>
+                            <div className="w-10 h-10 rounded-full border-2 border-red-500/20 flex items-center justify-center text-red-400 text-xs font-bold">
+                                ER
+                            </div>
                         </div>
                     </div>
 
-                    {/* Windows List (right) */}
-                    <div className="lg:col-span-4 h-full">
-                        <WindowListPanel
-                            windows={markedWindows}
-                            onDelete={deleteWindow}
-                            onMarkMissed={markMissed}
-                            onHighlight={setHighlightedWindow}
-                            activeSensor={activeSensor}
-                            onRun={runCalibration}
-                            running={runInProgress}
-                            windowProgress={windowProgress}
-                        />
-                    </div>
+                    {/* Calibration Control Card (Moved from WindowListPanel) */}
+                    <div className="card bg-surface border border-border p-4 rounded-xl flex flex-col justify-center gap-3 flex-grow h-2/3">
+                        {(() => {
+                            const recommendedSamples = { 'EOG': 20, 'EMG': 30, 'EEG': 25 }[activeSensor] || 20;
+                            const validCount = markedWindows.filter(w => w.status !== 'pending' && w.label === targetLabel).length;
+                            const progress = Math.min(100, (validCount / recommendedSamples) * 100);
+                            const readyToCalibrate = validCount >= 3 && markedWindows.some(w => w.features);
+
+                            return (
+                                <>
+                                    <div className="flex justify-between items-start mb-2">
+                                        <div>
+                                            <h3 className="font-bold text-sm uppercase tracking-wide">Calibration</h3>
+                                            <span className="text-[10px] text-muted font-mono">{validCount} samples</span>
+                                        </div>
+
+                                        {/* Auto-Calibration Toggle */}
+                                        <div className="flex items-center gap-2">
+                                            <span className={`text-[9px] font-bold uppercase ${autoCalibrate ? 'text-primary' : 'text-muted'}`}>Auto</span>
+                                            <button
+                                                onClick={() => setAutoCalibrate(!autoCalibrate)}
+                                                className={`w-8 h-4 rounded-full relative transition-colors ${autoCalibrate ? 'bg-primary' : 'bg-muted/30'}`}
+                                            >
+                                                <div className={`absolute top-0.5 bottom-0.5 w-3 rounded-full bg-white shadow transition-all ${autoCalibrate ? 'left-[calc(100%-14px)]' : 'left-0.5'}`} />
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Progress Bar - Only show if Auto Calibrate is ENABLED */}
+                                    {autoCalibrate && (
+                                        <div className="mt-1">
+                                            <div className="flex justify-between text-[9px] text-muted mb-1">
+                                                <span>Progress: {validCount}/{recommendedSamples}</span>
+                                                <span>{Math.round(progress)}%</span>
+                                            </div>
+                                            <div className="h-1.5 bg-bg rounded-full overflow-hidden">
+                                                <div
+                                                    className={`h-full transition-all duration-500 ease-out ${progress >= 100 ? 'bg-emerald-500' : 'bg-primary'}`}
+                                                    style={{ width: `${progress}%` }}
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <button
+                                        onClick={() => runCalibration(false)}
+                                        disabled={!readyToCalibrate || runInProgress}
+                                        className={`w-full py-3 rounded-lg font-bold text-xs uppercase tracking-wider transition-all ${readyToCalibrate && !runInProgress
+                                            ? 'bg-primary text-primary-contrast hover:opacity-90 shadow-glow hover:scale-[1.02] active:scale-[0.98]'
+                                            : 'bg-muted/20 text-muted cursor-not-allowed'
+                                            }`}
+                                    >
+                                        {runInProgress ? 'Optimizing Parameters...' : 'Calibrate Thresholds'}
+                                    </button>
+
+                                    <div className="text-center text-[9px] text-muted mt-1 italic">
+                                        {readyToCalibrate
+                                            ? (autoCalibrate ? "Will calibrate automatically at 100%" : "Ready to update config")
+                                            : "Collect more data to calibrate"}
+                                    </div>
+                                </>
+                            );
+                        })()}
+                    </div >
+                </div>
+
+                {/* Windows List (right) */}
+                <div className="lg:col-span-4 h-full">
+                    <WindowListPanel
+                        windows={markedWindows}
+                        onDelete={deleteWindow}
+                        onMarkMissed={markMissed}
+                        onHighlight={setHighlightedWindow}
+                        activeSensor={activeSensor}
+                        onRun={runCalibration}
+                        running={runInProgress}
+                        windowProgress={windowProgress}
+                    />
                 </div>
             </div>
         </div>

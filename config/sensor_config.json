@@ -1,51 +1,20 @@
 {
-  "baud": 230400,
-  "binary": true,
+  "sampling_rate": 512,
   "channel_mapping": {
     "ch0": {
       "enabled": true,
-      "sensor": "EMG"
+      "sensor": "EEG"
     },
     "ch1": {
       "enabled": true,
       "sensor": "EOG"
     }
   },
+  "num_channels": 2,
+  "serial_port": "",
   "display": {
     "scannerX": 0,
     "showGrid": true,
     "timeWindowMs": 30000
-  },
-  "filters": {
-    "EEG": {
-      "filters": [
-        {
-          "Q": 30,
-          "freq": 50,
-          "type": "notch"
-        },
-        {
-          "high": 45,
-          "low": 0.5,
-          "order": 4,
-          "type": "bandpass"
-        }
-      ]
-    },
-    "EMG": {
-      "cutoff": 70,
-      "order": 4,
-      "type": "high_pass"
-    },
-    "EOG": {
-      "cutoff": 10,
-      "order": 4,
-      "type": "low_pass",
-      "bandpass_enabled": true,
-      "notch_enabled": true
-    }
-  },
-  "num_channels": 2,
-  "sampling_rate": 512,
-  "serial_port": ""
+  }
 }

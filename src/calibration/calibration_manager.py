@@ -101,29 +101,6 @@ class CalibrationManager:
         sensor = sensor.upper()
         sensor_cfg = config.get("features", {}).get(sensor, {})
         
-        # 1. EOG Specific Rules (Legacy/Specific)
-        if sensor == "EOG":
-            min_duration = sensor_cfg.get("min_duration_ms", 100.0)
-            max_duration = sensor_cfg.get("max_duration_ms", 600.0)
-            min_asymmetry = sensor_cfg.get("min_asymmetry", 0.05)
-            max_asymmetry = sensor_cfg.get("max_asymmetry", 2.5)
-            min_kurtosis = sensor_cfg.get("min_kurtosis", -3.0)
-            amp_thresh = sensor_cfg.get("amp_threshold", 10.0)
-            
-            dur = features.get("duration_ms", 0)
-            asym = features.get("asymmetry", 0)
-            kurt = features.get("kurtosis", 0)
-            amp = features.get("amplitude", 0)
-            
-            is_valid_duration = min_duration <= dur <= max_duration
-            is_valid_asymmetry = min_asymmetry <= asym <= max_asymmetry
-            is_valid_shape = kurt >= min_kurtosis
-            is_valid_amp = amp >= amp_thresh
-            
-            return is_valid_duration and is_valid_asymmetry and is_valid_shape and is_valid_amp
-
-        # 2. General Profile Matching (Used for EMG, EEG, and future EOG actions)
-        # Check if there is a specific profile for this action
         action_profile = sensor_cfg.get(action, {})
         
         if not action_profile:
@@ -142,11 +119,16 @@ class CalibrationManager:
                     val = features[feat_name]
                     if range_val[0] <= val <= range_val[1]:
                         match_count += 1
+                    else:
+                        print(f"[Calibration] ❌ Feature Mismatch: {feat_name}={val:.4f} not in {range_val}")
                 # Check for single minimum (e.g. amplitude > X)
                 elif isinstance(range_val, (int, float)):
                      total_features += 1
-                     if features[feat_name] >= range_val:
+                     val = features[feat_name]
+                     if val >= range_val:
                          match_count += 1
+                     else:
+                         print(f"[Calibration] ❌ Threshold Mismatch: {feat_name}={val:.4f} < {range_val}")
 
         if total_features > 0:
             # Allow some fuzziness? 

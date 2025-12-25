@@ -162,7 +162,7 @@ def create_channel_mapping(lsl_info) -> Dict:
     """Create channel mapping from LSL stream info."""
     mapping = {}
     # Use facade
-    config = state.config or config_manager.get_all_configs()
+    config = config_manager.get_all_configs()
     config_mapping = config.get("channel_mapping", {})
 
     try:
@@ -378,7 +378,9 @@ def api_channels():
 @app.route('/api/config', methods=['GET'])
 def api_get_config():
     """Get current configuration."""
-    config = state.config or load_config()
+    # Force reload from ConfigManager to get latest file changes
+    config = load_config()
+    state.config = config
     return jsonify(config)
 
 
