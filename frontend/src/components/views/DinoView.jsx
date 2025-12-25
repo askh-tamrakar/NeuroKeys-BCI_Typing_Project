@@ -409,56 +409,9 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         return rgbToHex(r, g, b);
     }
 
-    const getThemeColors = (currentThemeId, time) => {
-        // 1. Identify Current and Paired Theme
-        const currentParams = themePresets.find(t => t.value === currentThemeId) || themePresets[0];
-        const pairId = currentParams.pair;
-        const pairParams = themePresets.find(t => t.value === pairId) || currentParams; // Fallback to self if no pair
-
-        // 2. Determine Day and Night Theme
-        let dayTheme = currentParams;
-        let nightTheme = pairParams;
-
-        if (currentParams.type === 'night') {
-            dayTheme = pairParams;
-            nightTheme = currentParams;
-        } else {
-            // If current is day, then day is current, night is pair
-            dayTheme = currentParams;
-            nightTheme = pairParams;
-        }
-
-        // 3. Calculate Day/Night Factor with FAST INSTANT transition
-        // Use stepped transition instead of smooth - background only changes fast
-        // time 0-0.4 = night, 0.4-0.6 = day, 0.6-1.0 = night
-        const angle = time * 2 * Math.PI;
-        const rawFactor = (-Math.cos(angle) + 1) / 2;
-
-        // MAKE BACKGROUND TRANSITION INSTANT/FAST
-        // Create sharp cutoff for background (less than 0.3s transition window)
-        const bgTransitionSpeed = 20; // Higher = sharper/faster transition
-        const bgFactor = 1 / (1 + Math.exp(-bgTransitionSpeed * (rawFactor - 0.5)));
-
-        // For objects (clouds, trees, ground, etc), keep them CONSTANT based on time of day
-        // Objects should be DAY colored during day (time 0.25-0.75) and NIGHT colored during night
-        const isDay = time > 0.25 && time < 0.75;
-        const objectFactor = isDay ? 1.0 : 0.0; // Binary: pure day or pure night colors
-
-        // 4. Interpolate Colors
-        const getC = (theme, key, fallback) => (theme.colors && theme.colors[key]) || theme[key] || fallback;
-
-        return {
-            // Background uses FAST transition
-            sceneBg: lerpColor(getC(nightTheme, 'bg', '#000000'), getC(dayTheme, 'bg', '#ffffff'), bgFactor),
-
-            // All objects use CONSTANT colors (no gradual transition)
-            sceneSurface: lerpColor(getC(nightTheme, 'surface', '#111111'), getC(dayTheme, 'surface', '#f5f5f5'), objectFactor),
-            sceneText: lerpColor(getC(nightTheme, 'text', '#ffffff'), getC(dayTheme, 'text', '#000000'), objectFactor),
-            sceneMuted: lerpColor(getC(nightTheme, 'muted', '#888888'), getC(dayTheme, 'muted', '#666666'), objectFactor),
-            scenePrimary: lerpColor(getC(nightTheme, 'primary', '#ffffff'), getC(dayTheme, 'primary', '#000000'), objectFactor),
-            sceneBorder: lerpColor(getC(nightTheme, 'border', '#333333'), getC(dayTheme, 'border', '#e0e0e0'), objectFactor),
-            sceneAccent: lerpColor(getC(nightTheme, 'accent', '#ffffff'), getC(dayTheme, 'accent', '#000000'), objectFactor),
-        };
+    const getSkyColor = (time, bgColor) => {
+        // Simple pass-through for now to respect CSS variables
+        return bgColor;
     }
 
 
