@@ -43,7 +43,7 @@ export default function Sidebar({
         }))
     }
 
-    /**
+    /*
      * Get the sensor type for a given channel
      * E.g., getSensorTypeForChannel('ch0') returns 'EMG'
      */
@@ -51,7 +51,7 @@ export default function Sidebar({
         return config.channel_mapping?.[chKey]?.sensor || 'EMG'
     }
 
-    /**
+    /*
      * Get filter config for a sensor type
      * E.g., getFilterConfig('EMG') returns the EMG filter settings
      */

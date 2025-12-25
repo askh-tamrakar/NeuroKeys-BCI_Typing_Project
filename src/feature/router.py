@@ -160,7 +160,7 @@ class FeatureRouter:
                                 if detection_result:
                                     # Determine event name
                                     if sensor_type == "EOG":
-                                        event_name = "BLINK"
+                                        event_name = detection_result # "SingleBlink" or "DoubleBlink"
                                     elif sensor_type == "EMG":
                                         event_name = detection_result # e.g. "ROCK", "PAPER", "SCISSORS"
                                     elif sensor_type == "EEG":

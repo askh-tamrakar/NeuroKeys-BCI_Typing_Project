@@ -17,6 +17,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     const [isCalibrating, setIsCalibrating] = useState(false);
     const [runInProgress, setRunInProgress] = useState(false);
     const [windowProgress, setWindowProgress] = useState({});
+    const [autoCalibrate, setAutoCalibrate] = useState(false); // Auto-calibration toggle
 
     // Data states
     const [chartData, setChartData] = useState([]);
@@ -167,8 +168,8 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
         setMarkedWindows([]);
         // Set default label based on sensor
         if (sensor === 'EMG') setTargetLabel('Rock');
-        else if (sensor === 'EOG') setTargetLabel('blink');
-        else if (sensor === 'EEG') setTargetLabel('target_10Hz');
+        else if (sensor === 'EOG') setTargetLabel('SingleBlink');
+        else if (sensor === 'EEG') setTargetLabel('Concentration');
     };
 
     const handleStartCalibration = async () => {
@@ -367,7 +368,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     };
 
     // Run calibration logic
-    const runCalibration = async () => {
+    const runCalibration = useCallback(async (isAuto = false) => {
         if (!markedWindows || markedWindows.length === 0) return;
 
         setRunInProgress(true);
@@ -383,36 +384,60 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             const refreshedConfig = await CalibrationApi.fetchSensorConfig();
             setConfig(refreshedConfig);
 
-            // 3. Update window statuses (if showing legacy list)
-            if (result.window_results) {
-                setMarkedWindows(prev => {
-                    return prev.map((w, i) => {
-                        const res = result.window_results[i];
-                        // Heuristic match by index as IDs might not persist in backend pure logic
-                        // If actions match
-                        if (res && res.action === w.label) {
-                            return {
-                                ...w,
-                                status: res.status_after,
-                                predictedLabel: res.status_after === 'correct' ? w.label : 'Rest'
-                            };
-                        }
-                        return w;
+            if (isAuto || autoCalibrate) {
+                // Auto-mode: Reset progress and samples
+                setMarkedWindows([]);
+                console.log('[CalibrationView] Auto-calibration complete. Resetting samples.');
+            } else {
+                // Manual mode: Update window statuses to show results
+                if (result.window_results) {
+                    setMarkedWindows(prev => {
+                        return prev.map((w, i) => {
+                            const res = result.window_results[i];
+                            // Heuristic match by index as IDs might not persist in backend pure logic
+                            // If actions match
+                            if (res && res.action === w.label) {
+                                return {
+                                    ...w,
+                                    status: res.status_after,
+                                    predictedLabel: res.status_after === 'correct' ? w.label : 'Rest'
+                                };
+                            }
+                            return w;
+                        });
                     });
-                });
+                }
+                const acc = result.accuracy_after !== undefined ? result.accuracy_after : (result.accuracy || 0);
+                alert(`Calibration Complete! Accuracy: ${(acc * 100).toFixed(1)}%`);
             }
-            alert(`Calibration Complete! Accuracy: ${(result.accuracy * 100).toFixed(1)}%`);
 
         } catch (err) {
             console.error('Calibration error:', err);
-            alert(`Calibration failed: ${err.message}`);
+            // Only alert in manual mode or log in auto
+            if (!isAuto) {
+                alert(`Calibration failed: ${err.message}`);
+            } else {
+                console.warn('Auto-calibration failed. Disabling auto-mode.');
+                setAutoCalibrate(false);
+            }
         } finally {
             setRunInProgress(false);
         }
-    };
+    }, [markedWindows, activeSensor, autoCalibrate]);
 
     // Auto-Calibration Trigger
-    // Removed batchSize state, useEffect, and Input UI
+    useEffect(() => {
+        if (!autoCalibrate || isCalibrating || runInProgress) return;
+
+        const recommendedSamples = { 'EOG': 20, 'EMG': 30, 'EEG': 25 }[activeSensor] || 20;
+        const validCount = markedWindows.length;
+
+        // Trigger if we reached 100% and have at least 3 samples (safety)
+        if (validCount >= recommendedSamples && validCount >= 3) {
+            console.log('[CalibrationView] Auto-calibration triggered.');
+            runCalibration(true);
+        }
+    }, [markedWindows, autoCalibrate, isCalibrating, runInProgress, activeSensor]);
 
     // Update chart data from WS or Mock
     useEffect(() => {
@@ -696,8 +721,8 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                                         className="bg-bg border border-border rounded px-2 py-1 text-[10px] font-bold outline-none"
                                     >
                                         {activeSensor === 'EMG' && ['Rock', 'Paper', 'Scissors', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
-                                        {activeSensor === 'EOG' && ['blink', 'doubleBlink', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
-                                        {activeSensor === 'EEG' && ['target_10Hz', 'target_12Hz', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
+                                        {activeSensor === 'EOG' && ['SingleBlink', 'DoubleBlink', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
+                                        {activeSensor === 'EEG' && ['Concentration', 'Relaxation', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
                                     </select>
 
                                     <button
@@ -783,17 +808,33 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
                                 return (
                                     <>
-                                        <div className="flex justify-between items-center mb-1">
-                                            <h3 className="font-bold text-sm uppercase tracking-wide">Calibration</h3>
-                                            <span className="text-[10px] text-muted font-mono">{validCount}/{recommendedSamples} samples</span>
+                                        <div className="flex justify-between items-start mb-2">
+                                            <div>
+                                                <h3 className="font-bold text-sm uppercase tracking-wide">Calibration</h3>
+                                                <span className="text-[10px] text-muted font-mono">{validCount}/{recommendedSamples} samples</span>
+                                            </div>
+
+                                            {/* Auto-Calibration Toggle */}
+                                            <div className="flex items-center gap-2">
+                                                <span className={`text-[9px] font-bold uppercase ${autoCalibrate ? 'text-primary' : 'text-muted'}`}>Auto</span>
+                                                <button
+                                                    onClick={() => setAutoCalibrate(!autoCalibrate)}
+                                                    className={`w-8 h-4 rounded-full relative transition-colors ${autoCalibrate ? 'bg-primary' : 'bg-muted/30'}`}
+                                                >
+                                                    <div className={`absolute top-0.5 bottom-0.5 w-3 rounded-full bg-white shadow transition-all ${autoCalibrate ? 'left-[calc(100%-14px)]' : 'left-0.5'}`} />
+                                                </button>
+                                            </div>
                                         </div>
 
-                                        <div className="h-2 bg-bg rounded-full overflow-hidden mb-2">
-                                            <div className={`h-full transition-all duration-500 ease-out ${progress >= 100 ? 'bg-emerald-500' : 'bg-primary'}`} style={{ width: `${progress}%` }} />
-                                        </div>
+                                        {/* Progress Bar - Only show if Auto Calibrate is ENABLED */}
+                                        {autoCalibrate && (
+                                            <div className="h-2 bg-bg rounded-full overflow-hidden mb-2 animate-in fade-in zoom-in duration-300">
+                                                <div className={`h-full transition-all duration-500 ease-out ${progress >= 100 ? 'bg-emerald-500' : 'bg-primary'}`} style={{ width: `${progress}%` }} />
+                                            </div>
+                                        )}
 
                                         <button
-                                            onClick={runCalibration}
+                                            onClick={() => runCalibration(false)}
                                             disabled={!readyToCalibrate || runInProgress}
                                             className={`w-full py-3 rounded-lg font-bold text-xs uppercase tracking-wider transition-all ${readyToCalibrate && !runInProgress
                                                 ? 'bg-primary text-primary-contrast hover:opacity-90 shadow-glow hover:scale-[1.02] active:scale-[0.98]'
@@ -804,7 +845,9 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                                         </button>
 
                                         <div className="text-center text-[9px] text-muted mt-1 italic">
-                                            {readyToCalibrate ? "Ready to update config" : "Collect more data to calibrate"}
+                                            {readyToCalibrate
+                                                ? (autoCalibrate ? "Will calibrate automatically at 100%" : "Ready to update config")
+                                                : "Collect more data to calibrate"}
                                         </div>
                                     </>
                                 );

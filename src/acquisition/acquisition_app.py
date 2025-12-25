@@ -196,6 +196,10 @@ class AcquisitionApp:
             # Fetch current state to avoid overwriting unrelated fields
             sensor_config = config_manager.sensor_config.get_all()
             
+            # HARDENING: Ensure 'features' is NOT in sensor_config (it belongs in feature_config)
+            if "features" in sensor_config:
+                del sensor_config["features"]
+            
             # Update specific fields controlled by this UI
             sensor_config["sampling_rate"] = self.config.get("sampling_rate", 512)
             

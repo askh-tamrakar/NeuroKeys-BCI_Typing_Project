@@ -124,7 +124,7 @@ export default function ConfigPanel({ config, sensor, onSave }) {
                     Save Configuration
                 </button>
                 <div className="flex justify-between items-center text-[8px] text-muted uppercase tracking-tighter">
-                    <span>Target: sensor_config.json</span>
+                    <span>Target: feature_config.json</span>
                     <span>Unsaved changes will be lost</span>
                 </div>
             </div>
