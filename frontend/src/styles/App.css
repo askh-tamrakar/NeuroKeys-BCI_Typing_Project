@@ -176,13 +176,13 @@
 /* First line: main brand */
 .headline-line.main {
   font-size: clamp(24px, 3vw, 34px);
-  letter-spacing: -0.08em; /* tighter so it looks bold & compact */
+  letter-spacing: -0.9px; /* tighter so it looks bold & compact */
 }
 
 /* Second line: visually same width, slightly smaller */
 .headline-line.sub {
-  font-size: clamp(20px, 2.6vw, 23.5px); /* smaller than main line */
-  letter-spacing: -0.04em;             /* less negative tracking */
+  font-size: clamp(20px, 2.6vw, 24.5px); /* smaller than main line */
+  letter-spacing: 0.6px;             /* less negative tracking */
   background: linear-gradient(90deg, var(--primary), var(--accent));
   -webkit-background-clip: text;
   background-clip: text;

@@ -6,6 +6,7 @@ import DinoView from '../views/DinoView'
 import SSVEPView from '../views/SSVEPView'
 import TestView from '../views/TestView'
 import RPSGame from '../views/RPSGame'
+import CalibrationView from '../views/CalibrationView'
 
 import '../../styles/App.css';
 import themePresets from '../themes/presets';
@@ -18,9 +19,14 @@ export default function Dashboard() {
   const { user, logout } = useAuth()
   const [currentPage, setCurrentPage] = useState('live')
   // const [sidebarOpen, setSidebarOpen] = useState(true)
-  const { status, lastMessage, lastConfig, lastEvent, latency, connect, disconnect, sendMessage } = useWebSocket(
+  const { status, lastMessage, lastConfig, lastEvent, latency, connect, disconnect, sendMessage, currentUrl } = useWebSocket(
     import.meta.env.VITE_WS_URL || 'ws://localhost:5000'
   )
+
+  // WebSocket modal state and preset URLs
+  const [wsModalOpen, setWsModalOpen] = useState(false)
+  const [localWs, setLocalWs] = useState(import.meta.env.VITE_WS_URL || 'ws://localhost:5000')
+  const [ngrokWs, setNgrokWs] = useState('')
   const [theme, setTheme] = React.useState(() => localStorage.getItem('theme') || 'theme-violet');
   const [navColors, setNavColors] = React.useState({ base: '#000000', pill: '#ffffff', pillText: '#000000', hoverText: '#ffffff' });
   const [authView, setAuthView] = useState(null);
@@ -90,17 +96,20 @@ export default function Dashboard() {
     { label: 'Dino', onClick: () => setCurrentPage('dino'), href: '#dino' },
     { label: 'SSVEP', onClick: () => setCurrentPage('ssvep'), href: '#ssvep' },
     { label: 'RPS', onClick: () => setCurrentPage('rps'), href: '#rps' },
+    { label: 'Calibration', onClick: () => setCurrentPage('calibration'), href: '#calibration' },
     { label: 'Test', onClick: () => setCurrentPage('test'), href: '#test' },
     {
       label: 'Theme',
       type: 'pill',
       key: 'theme-dropdown',
+      href: '#',
       menu: ({ close }) => (
         <ScrollStack>
           {themePresets.map((p) => (
             <ScrollStackItem key={p.value}>
               <Pill
                 label={p.label}
+                activeHref={`#${currentPage}`}
                 pillHeight={42}
                 pillWidth={pillSize.width}
                 active={theme === p.value}
@@ -132,8 +141,30 @@ export default function Dashboard() {
                 <source src="/Resources/brain_animation.mp4" type="video/mp4" />
               </video>
             </div>
+
+            {/* WebSocket connect modal */}
+            {wsModalOpen && (
+              <div className="fixed inset-0 z-60 flex items-start justify-center bg-black/40" style={{ paddingTop: '96px' }}>
+                <div className="bg-surface rounded-lg p-6 w-96">
+                  <h3 className="text-sm font-bold text-muted uppercase tracking-wider mb-4">WebSocket Connection</h3>
+                  <div className="mb-2">
+                    <label className="text-xs font-medium text-text block mb-1">Local WS URL</label>
+                    <input className="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm outline-none focus:border-primary/50" value={localWs} onChange={e => setLocalWs(e.target.value)} />
+                  </div>
+                  <div className="mb-2">
+                    <label className="text-xs font-medium text-text block mb-1">Ngrok WS URL</label>
+                    <input className="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm outline-none focus:border-primary/50" value={ngrokWs} onChange={e => setNgrokWs(e.target.value)} />
+                  </div>
+                  <div className="flex gap-2 mt-4">
+                    <button className="w-full py-2 bg-primary text-primary-contrast rounded-lg font-bold text-sm shadow-glow hover:opacity-90 active:scale-95 transition-all" onClick={() => { connect(localWs); setWsModalOpen(false) }}>Connect Local</button>
+                    <button className="w-full py-2 bg-primary text-primary-contrast rounded-lg font-bold text-sm shadow-glow hover:opacity-90 active:scale-95 transition-all" onClick={() => { connect(ngrokWs); setWsModalOpen(false) }}>Connect Ngrok</button>
+                    <button className="w-full py-2 bg-muted text-muted-contrast rounded-lg font-bold text-sm shadow-glow hover:opacity-90 active:scale-95 transition-all" onClick={() => setWsModalOpen(false)}>Close</button>
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="headline flex flex-col">
-              <div className="headline-line main">NeuroKeys
+              <div className="headline-line main">NeuroTECH
                 <br />
                 <div className="headline-line sub">BCI Dashboard</div>
               </div>
@@ -151,6 +182,7 @@ export default function Dashboard() {
                 pillColor={navColors.pill}
                 hoveredPillTextColor={navColors.hoverText}
                 pillTextColor={navColors.pillText}
+                onLogoClick={() => setWsModalOpen(true)}
               />
             </div>
           </nav>
@@ -170,6 +202,7 @@ export default function Dashboard() {
         {currentPage === 'ssvep' && <SSVEPView />}
         {currentPage === 'test' && <TestView wsData={lastMessage} wsEvent={lastEvent} config={lastConfig} />}
         {currentPage === 'rps' && <RPSGame wsEvent={lastEvent} />}
+        {currentPage === 'calibration' && <CalibrationView wsData={lastMessage} wsEvent={lastEvent} config={lastConfig} />}
       </div>
 
       {/* Footer */}

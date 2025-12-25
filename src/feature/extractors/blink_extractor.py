@@ -8,7 +8,11 @@ class BlinkExtractor:
     Maintains a rolling buffer and detects peak candidates to extract features.
     """
     
-    def __init__(self, channel_index: int, config: dict, sr: int):
+    def __init__(self, 
+                 channel_index: int, 
+                 config: dict, 
+                 sr: int):
+        
         self.channel_index = channel_index
         self.sr = sr
         

@@ -30,6 +30,8 @@ from .extractors.blink_extractor import BlinkExtractor
 from .detectors.blink_detector import BlinkDetector
 from .extractors.rps_extractor import RPSExtractor
 from .detectors.rps_detector import RPSDetector
+from .extractors.trigger_extractor import EEGExtractor
+from .detectors.trigger_detector import EEGDetector
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 CONFIG_PATH = PROJECT_ROOT / "config" / "sensor_config.json"
@@ -126,6 +128,11 @@ class FeatureRouter:
                     extractor = RPSExtractor(i, self.config, self.sr)
                     detector = RPSDetector(self.config)
                     self.pipeline[i] = (extractor, detector, "EMG")
+                elif sensor == "EEG":
+                    print(f" [{i}] -> EEG Pipeline (Mean Band Power)")
+                    extractor = EEGExtractor(i, self.config, self.sr)
+                    detector = EEGDetector(self.config)
+                    self.pipeline[i] = (extractor, detector, "EEG")
 
     def run(self):
         self.running = True
@@ -153,6 +160,8 @@ class FeatureRouter:
                                         event_name = "BLINK"
                                     elif sensor_type == "EMG":
                                         event_name = detection_result # e.g. "ROCK", "PAPER", "SCISSORS"
+                                    elif sensor_type == "EEG":
+                                        event_name = detection_result # e.g. "CONCENTRATION", "RELAXATION"
                                     else:
                                         event_name = "UNKNOWN_EVENT"
 
@@ -175,3 +184,5 @@ if __name__ == "__main__":
     router = FeatureRouter()
     if router.resolve_stream():
         router.run()
+
+

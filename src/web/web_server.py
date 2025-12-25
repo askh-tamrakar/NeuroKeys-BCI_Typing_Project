@@ -13,6 +13,8 @@ import threading
 import time
 from pathlib import Path
 from typing import Dict, Optional
+import math
+import statistics
 
 try:
     import pylsl
@@ -25,6 +27,11 @@ except Exception as e:
 from flask import Flask, render_template, jsonify, request
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit, join_room, leave_room
+
+# Feature extraction and detection imports
+import numpy as np
+from scipy import stats as scipy_stats
+from scipy import signal as scipy_signal
 
 
 # ========== Configuration ==========
@@ -523,6 +530,519 @@ def api_get_recording(filename):
         return jsonify({"error": str(e)}), 500
 
 
+# ========== WINDOW SAVING & FEATURE EXTRACTION ==========
+
+
+def extract_emg_features(samples: list, sr: int = 512) -> dict:
+    """Extract EMG features matching RPSExtractor.
+    
+    Features: rms, mav, zcr, var, wl, peak, range, iemg, entropy, energy
+    """
+    if not samples or len(samples) < 2:
+        return {}
+    
+    data = np.array(samples, dtype=float)
+    n = len(data)
+    
+    # Core EMG features (matching rps_extractor.py)
+    rms = float(np.sqrt(np.mean(data**2)))
+    mav = float(np.mean(np.abs(data)))
+    zcr = float(((data[:-1] * data[1:]) < 0).sum() / n)
+    var = float(np.var(data))
+    wl = float(np.sum(np.abs(np.diff(data))))
+    peak = float(np.max(np.abs(data)))
+    rng = float(np.ptp(data))
+    iemg = float(np.sum(np.abs(data)))
+    energy = float(np.sum(data**2))
+    
+    # Entropy via histogram
+    try:
+        hist, _ = np.histogram(data, bins=10, density=True)
+        hist = hist[hist > 0]
+        entropy = float(-np.sum(hist * np.log2(hist))) if len(hist) > 0 else 0.0
+    except Exception:
+        entropy = 0.0
+    
+    return {
+        "rms": rms,
+        "mav": mav,
+        "zcr": zcr,
+        "var": var,
+        "wl": wl,
+        "peak": peak,
+        "range": rng,
+        "iemg": iemg,
+        "entropy": entropy,
+        "energy": energy
+    }
+
+
+def extract_eog_features(samples: list, sr: int = 512) -> dict:
+    """Extract EOG blink features matching BlinkExtractor.
+    
+    Features: amplitude, duration_ms, rise_time_ms, fall_time_ms, asymmetry, kurtosis, skewness
+    """
+    if not samples or len(samples) < 2:
+        return {}
+    
+    data = np.array(samples, dtype=float)
+    abs_data = np.abs(data)
+    n = len(data)
+    
+    peak_idx = int(np.argmax(abs_data))
+    peak_amp = float(abs_data[peak_idx])
+    
+    duration_ms = float((n / sr) * 1000.0)
+    rise_time_ms = float((peak_idx / sr) * 1000.0)
+    fall_time_ms = float(((n - peak_idx) / sr) * 1000.0)
+    
+    asymmetry = float(rise_time_ms / (fall_time_ms + 1e-6))
+    
+    # Statistical features
+    kurt = float(scipy_stats.kurtosis(data))
+    skew = float(scipy_stats.skew(data))
+    
+    return {
+        "amplitude": peak_amp,
+        "duration_ms": duration_ms,
+        "rise_time_ms": rise_time_ms,
+        "fall_time_ms": fall_time_ms,
+        "asymmetry": asymmetry,
+        "kurtosis": kurt,
+        "skewness": skew
+    }
+
+
+def extract_eeg_features(samples: list, sr: int = 512) -> dict:
+    """Extract EEG features matching EEGExtractor.
+    
+    Features: band powers (delta, theta, alpha, beta) and relative powers
+    """
+    if not samples or len(samples) < 16:
+        return {}
+    
+    data = np.array(samples, dtype=float)
+    
+    # Welch's periodogram
+    try:
+        freqs, psd = scipy_signal.welch(data, sr, nperseg=min(len(data), 256))
+    except Exception:
+        return {}
+    
+    freq_bands = {
+        "delta": (0.5, 4),
+        "theta": (4, 8),
+        "alpha": (8, 13),
+        "beta": (13, 30)
+    }
+    
+    features = {}
+    total_power = 0.0
+    
+    for band, (low, high) in freq_bands.items():
+        idx = np.logical_and(freqs >= low, freqs <= high)
+        power = float(np.sum(psd[idx]))
+        features[band] = power
+        total_power += power
+    
+    features["total_power"] = total_power
+    
+    # Relative powers
+    if total_power > 0:
+        for band in freq_bands.keys():
+            features[f"{band}_rel"] = features[band] / total_power
+    
+    return features
+
+
+def extract_features_for_sensor(sensor: str, samples: list, sr: int = 512) -> dict:
+    """Route to sensor-specific feature extraction."""
+    sensor = sensor.upper()
+    
+    if sensor == "EMG":
+        return extract_emg_features(samples, sr)
+    elif sensor == "EOG":
+        return extract_eog_features(samples, sr)
+    elif sensor == "EEG":
+        return extract_eeg_features(samples, sr)
+    else:
+        # Fallback to EMG features for unknown sensors
+        return extract_emg_features(samples, sr)
+
+
+def detect_for_sensor(sensor: str, action: str, features: dict, config: dict) -> bool:
+    """Run sensor-specific detection logic matching the detectors."""
+    sensor = sensor.upper()
+    sensor_cfg = config.get("features", {}).get(sensor, {})
+    
+    if sensor == "EOG":
+        # BlinkDetector logic
+        if not features:
+            return False
+        
+        min_duration = sensor_cfg.get("min_duration_ms", 100.0)
+        max_duration = sensor_cfg.get("max_duration_ms", 600.0)
+        min_asymmetry = sensor_cfg.get("min_asymmetry", 0.05)
+        max_asymmetry = sensor_cfg.get("max_asymmetry", 2.5)
+        min_kurtosis = sensor_cfg.get("min_kurtosis", -3.0)
+        
+        dur = features.get("duration_ms", 0)
+        asym = features.get("asymmetry", 0)
+        kurt = features.get("kurtosis", 0)
+        
+        is_valid_duration = min_duration <= dur <= max_duration
+        is_valid_asymmetry = min_asymmetry <= asym <= max_asymmetry
+        is_valid_shape = kurt >= min_kurtosis
+        
+        return is_valid_duration and is_valid_asymmetry and is_valid_shape
+    
+    elif sensor == "EMG":
+        # RPSDetector logic - check if features match action profile
+        action_profile = sensor_cfg.get(action, {})
+        if not action_profile:
+            return False
+        
+        match_count = 0
+        total_features = 0
+        
+        for feat_name, range_val in action_profile.items():
+            if feat_name in features and isinstance(range_val, list) and len(range_val) == 2:
+                total_features += 1
+                val = features[feat_name]
+                if range_val[0] <= val <= range_val[1]:
+                    match_count += 1
+        
+        if total_features > 0:
+            score = match_count / total_features
+            return score >= 0.6  # Consensus threshold
+        return False
+    
+    elif sensor == "EEG":
+        # EEGDetector logic
+        profiles = sensor_cfg.get("profiles", {})
+        action_profile = profiles.get(action, {})
+        if not action_profile:
+            return False
+        
+        match_count = 0
+        total_features = 0
+        
+        for feat_name, range_val in action_profile.items():
+            if feat_name in features and isinstance(range_val, list) and len(range_val) == 2:
+                total_features += 1
+                val = features[feat_name]
+                if range_val[0] <= val <= range_val[1]:
+                    match_count += 1
+        
+        if total_features > 0:
+            return (match_count / total_features) >= 0.6
+        return False
+    
+    return False
+
+
+@app.route('/api/window', methods=['POST'])
+def api_save_window():
+    """Accept a recorded window, save as CSV, compute features and update config thresholds.
+
+    Expected JSON:
+    {
+      "sensor": "EMG",
+      "channel": 0,
+      "action": "Rock",
+      "samples": [ ... ],
+      "timestamps": [ ... ] (optional)
+    }
+    """
+    try:
+        payload = request.get_json()
+        if not payload:
+            return jsonify({"error": "No payload provided"}), 400
+
+        sensor = payload.get('sensor')
+        action = payload.get('action')
+        channel = payload.get('channel', None)
+        samples = payload.get('samples')
+        timestamps = payload.get('timestamps', None)
+
+        # samples may be an empty list (allowed). Ensure required keys exist.
+        if sensor is None or action is None or samples is None:
+            return jsonify({"error": "Missing required fields: sensor, action, samples"}), 400
+
+        # Create output directories
+        windows_dir = PROJECT_ROOT / 'data' / 'processed' / 'windows' / sensor / action
+        windows_dir.mkdir(parents=True, exist_ok=True)
+
+        ts = time.time()
+        safe_name = f"window__{action}__{int(ts)}__ch{channel if channel is not None else 'na'}.csv"
+        csv_path = windows_dir / safe_name
+
+        # Save CSV: timestamp,value
+        with open(csv_path, 'w') as f:
+            f.write('timestamp,value\n')
+            if timestamps and len(timestamps) == len(samples):
+                for t, v in zip(timestamps, samples):
+                    f.write(f"{t},{v}\n")
+            else:
+                # write sample index as time
+                for i, v in enumerate(samples):
+                    f.write(f"{i},{v}\n")
+
+        # Compute features using sensor-specific extraction
+        sr = state.config.get('sampling_rate', 512) if state.config else 512
+        features = extract_features_for_sensor(sensor, samples, sr)
+
+        # Save features JSON alongside CSV
+        feat_path = csv_path.with_suffix('.features.json')
+        with open(feat_path, 'w') as f:
+            json.dump({"features": features, "sensor": sensor, "action": action, "channel": channel, "saved_at": ts}, f, indent=2)
+
+        # Load config and update thresholds for sensor/action
+        cfg = state.config or load_config()
+        cfg_features = cfg.setdefault('features', {})
+        sensor_features = cfg_features.setdefault(sensor, {})
+
+        # Ensure action entry exists
+        action_entry = sensor_features.setdefault(action, {})
+
+        updated = {}
+        matches = 0
+        total = 0
+
+        for k, val in features.items():
+            total += 1
+            old_range = action_entry.get(k)
+            # if existing range, check match
+            if isinstance(old_range, list) and len(old_range) == 2:
+                lo, hi = float(old_range[0]), float(old_range[1])
+                if lo <= val <= hi:
+                    matches += 1
+                # expand range to include observed value
+                new_lo = min(lo, val)
+                new_hi = max(hi, val)
+                action_entry[k] = [new_lo, new_hi]
+                updated[k] = [new_lo, new_hi]
+            else:
+                # create initial range +/-10%
+                if val == 0:
+                    new_lo, new_hi = 0.0, 0.0
+                else:
+                    new_lo = val * 0.9
+                    new_hi = val * 1.1
+                action_entry[k] = [new_lo, new_hi]
+                updated[k] = [new_lo, new_hi]
+
+        # Save updated config to disk
+        save_success = save_config(cfg)
+
+        # Use sensor-specific detection logic
+        detected = detect_for_sensor(sensor, action, features, cfg)
+
+        result = {
+            "status": "saved",
+            "csv_path": str(csv_path),
+            "features": features,
+            "detected": detected,
+            "updated_thresholds": updated,
+            "config_saved": save_success
+        }
+
+        # Broadcast via socket for live UI updates
+        try:
+            socketio.emit('window_saved', {"sensor": sensor, "action": action, "features": features, "detected": detected})
+        except Exception:
+            pass
+
+        print(f"[WebServer] 💾 Window saved: {csv_path} (detected={detected})")
+        return jsonify(result)
+
+    except Exception as e:
+        print(f"[WebServer] ❌ Error saving window: {e}")
+        return jsonify({"error": str(e)}), 500
+
+# ========== CALIBRATION THRESHOLD OPTIMIZATION ==========
+
+
+@app.route('/api/calibrate', methods=['POST'])
+def api_calibrate():
+    """
+    Calibrate detection thresholds based on collected windows.
+    
+    Uses percentile-based approach to compute optimal feature ranges
+    from labeled windows, excluding outliers.
+    
+    Expected JSON:
+    {
+        "sensor": "EOG",
+        "windows": [
+            {"action": "blink", "features": {...}, "status": "correct"},
+            ...
+        ]
+    }
+    
+    Returns:
+    {
+        "updated_thresholds": {...},
+        "accuracy_before": 0.65,
+        "accuracy_after": 0.92,
+        "samples_per_action": {"blink": 20, "Rest": 15},
+        "recommended_samples": 20
+    }
+    """
+    try:
+        payload = request.get_json()
+        if not payload:
+            return jsonify({"error": "No payload provided"}), 400
+        
+        sensor = payload.get('sensor')
+        windows = payload.get('windows', [])
+        
+        if not sensor or not windows:
+            return jsonify({"error": "Missing sensor or windows"}), 400
+        
+        # Group windows by action
+        windows_by_action = {}
+        for w in windows:
+            action = w.get('action')
+            features = w.get('features', {})
+            if action and features:
+                if action not in windows_by_action:
+                    windows_by_action[action] = []
+                windows_by_action[action].append({
+                    'features': features,
+                    'status': w.get('status', 'unknown')
+                })
+        
+        if not windows_by_action:
+            return jsonify({"error": "No valid windows with features found"}), 400
+        
+        # Calculate accuracy before calibration
+        total_before = len(windows)
+        correct_before = sum(1 for w in windows if w.get('status') == 'correct')
+        accuracy_before = correct_before / total_before if total_before > 0 else 0
+        
+        # Compute optimal thresholds using percentile approach
+        updated_thresholds = {}
+        samples_per_action = {}
+        
+        for action, action_windows in windows_by_action.items():
+            samples_per_action[action] = len(action_windows)
+            
+            if len(action_windows) < 3:
+                # Not enough samples for reliable thresholds
+                continue
+            
+            # Collect all feature values
+            feature_values = {}
+            for w in action_windows:
+                for feat_name, feat_val in w['features'].items():
+                    if isinstance(feat_val, (int, float)):
+                        if feat_name not in feature_values:
+                            feature_values[feat_name] = []
+                        feature_values[feat_name].append(feat_val)
+            
+            # Compute percentile-based ranges (5th-95th to exclude outliers)
+            action_thresholds = {}
+            for feat_name, values in feature_values.items():
+                if len(values) >= 3:
+                    sorted_vals = sorted(values)
+                    n = len(sorted_vals)
+                    # 5th percentile
+                    idx_lo = max(0, int(n * 0.05))
+                    # 95th percentile
+                    idx_hi = min(n - 1, int(n * 0.95))
+                    
+                    min_val = sorted_vals[idx_lo]
+                    max_val = sorted_vals[idx_hi]
+                    
+                    # Add small margin (5%)
+                    margin = (max_val - min_val) * 0.05 if max_val != min_val else abs(min_val) * 0.1
+                    action_thresholds[feat_name] = [
+                        round(min_val - margin, 4),
+                        round(max_val + margin, 4)
+                    ]
+            
+            if action_thresholds:
+                updated_thresholds[action] = action_thresholds
+        
+        # Load current config and update thresholds
+        cfg = state.config or load_config()
+        cfg_features = cfg.setdefault('features', {})
+        sensor_features = cfg_features.setdefault(sensor, {})
+        
+        # Update thresholds for each action
+        for action, thresholds in updated_thresholds.items():
+            if action not in sensor_features:
+                sensor_features[action] = {}
+            sensor_features[action].update(thresholds)
+        
+        # Also update global sensor thresholds for detection (EOG specific)
+        if sensor == 'EOG' and 'blink' in updated_thresholds:
+            blink_thresh = updated_thresholds['blink']
+            if 'duration_ms' in blink_thresh:
+                sensor_features['min_duration_ms'] = blink_thresh['duration_ms'][0]
+                sensor_features['max_duration_ms'] = blink_thresh['duration_ms'][1]
+            if 'asymmetry' in blink_thresh:
+                sensor_features['min_asymmetry'] = blink_thresh['asymmetry'][0]
+                sensor_features['max_asymmetry'] = blink_thresh['asymmetry'][1]
+            if 'kurtosis' in blink_thresh:
+                sensor_features['min_kurtosis'] = blink_thresh['kurtosis'][0]
+            if 'amplitude' in blink_thresh:
+                sensor_features['amp_threshold'] = blink_thresh['amplitude'][0]
+        
+        # Save updated config
+        save_success = save_config(cfg)
+        
+        # Recalculate accuracy with new thresholds (simulate)
+        correct_after = 0
+        for w in windows:
+            action = w.get('action')
+            features = w.get('features', {})
+            if action in updated_thresholds:
+                # Check if features fall within new thresholds
+                match_count = 0
+                total_feats = 0
+                for feat_name, range_val in updated_thresholds[action].items():
+                    if feat_name in features:
+                        total_feats += 1
+                        if range_val[0] <= features[feat_name] <= range_val[1]:
+                            match_count += 1
+                if total_feats > 0 and (match_count / total_feats) >= 0.6:
+                    correct_after += 1
+        
+        accuracy_after = correct_after / total_before if total_before > 0 else 0
+        
+        # Recommended sample count based on sensor type
+        recommended_samples = {
+            'EOG': 20,
+            'EMG': 30,
+            'EEG': 25
+        }.get(sensor, 20)
+        
+        result = {
+            "status": "calibrated",
+            "updated_thresholds": updated_thresholds,
+            "accuracy_before": round(accuracy_before, 4),
+            "accuracy_after": round(accuracy_after, 4),
+            "samples_per_action": samples_per_action,
+            "recommended_samples": recommended_samples,
+            "config_saved": save_success
+        }
+        
+        # Broadcast config update
+        try:
+            socketio.emit('config_updated', {"sensor": sensor})
+        except Exception:
+            pass
+        
+        print(f"[WebServer] 🎯 Calibration complete: {sensor} | Accuracy: {accuracy_before:.1%} → {accuracy_after:.1%}")
+        return jsonify(result)
+    
+    except Exception as e:
+        print(f"[WebServer] ❌ Calibration error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 # ========== SOCKETIO EVENTS ==========
 
 
@@ -605,32 +1125,6 @@ def main():
 
     # Load config from disk first
     state.config = load_config()
-
-    # ===== MONITOR CONFIG CHANGES & BROADCAST TO WEBSOCKET =====
-    def monitor_config_changes():
-        """Monitor config via ConfigWatcher and broadcast changes."""
-        last_config = config.get_all()
-        
-        while state.running:
-            try:
-                current_config = config.get_all()
-                
-                # If config changed, broadcast to all WebSocket clients
-                if current_config != last_config:
-                    print("[WebServer] 🔔 Config changed - broadcasting to clients...")
-                    socketio.emit('config_updated', {
-                        'status': 'config_changed',
-                        'config': current_config,
-                        'source': 'acquisition_app'
-                    }, broadcast=True)
-                    last_config = current_config
-                
-                time.sleep(0.5)  # Check every 500ms
-                
-            except Exception as e:
-                print(f"[WebServer] ⚠️ Config monitor error: {e}")
-                time.sleep(1)
-
 
     # Resolve LSL stream
     if not resolve_lsl_stream():

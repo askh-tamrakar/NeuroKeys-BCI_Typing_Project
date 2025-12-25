@@ -83,7 +83,7 @@ export default function Sidebar({
 
                     {/* Channel 0 */}
                     <div className="mb-3">
-                        <label className="text-xs font-medium text-text block mb-1">Graph 1 (Channel 0)</label>
+                        <label className="text-xs font-medium text-text block mb-1">Graph 1</label>
                         <select
                             value={config.channel_mapping?.ch0?.sensor || 'EMG'}
                             onChange={(e) => handleChannelMapping('ch0', e.target.value)}
@@ -97,7 +97,7 @@ export default function Sidebar({
 
                     {/* Channel 1 */}
                     <div className="mb-4">
-                        <label className="text-xs font-medium text-text block mb-1">Graph 2 (Channel 1)</label>
+                        <label className="text-xs font-medium text-text block mb-1">Graph 2</label>
                         <select
                             value={config.channel_mapping?.ch1?.sensor || 'EOG'}
                             onChange={(e) => handleChannelMapping('ch1', e.target.value)}
@@ -124,58 +124,160 @@ export default function Sidebar({
                 </section>
 
                 {/* Filters */}
-                <section>
-                    <h3 className="text-sm font-bold text-muted uppercase tracking-wider mb-4">Signal Filters</h3>
-                    <div className="space-y-3">
-                        {/* Notch */}
-                        <div className="bg-bg/50 p-3 rounded-lg border border-border">
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="text-sm font-medium text-text">Notch Filter</span>
+                <section className="space-y-6">
+                    <h3 className="text-sm font-bold text-muted uppercase tracking-wider">Signal Filters</h3>
+
+                    {/* Channel 0 Filters */}
+                    <div className="space-y-3 p-3 rounded-lg border border-border bg-surface/50">
+                        <div className="flex items-center justify-between border-b border-border/50 pb-2 mb-2">
+                            <h4 className="text-xs font-bold text-primary">Channel 0 ({(config.channel_mapping?.ch0?.sensor || 'EMG')})</h4>
+                            <button onClick={() => onSave?.()} className="px-2 py-0.5 text-[10px] bg-primary text-primary-contrast rounded font-bold hover:opacity-90">APPLY</button>
+                        </div>
+
+                        {/* Noise Filter (Notch) */}
+                        <div className="flex items-center justify-between">
+                            <label className="text-xs text-text flex items-center gap-2">
                                 <input
                                     type="checkbox"
-                                    checked={config.filters?.notch?.enabled || false}
-                                    onChange={(e) => handleFilterChange('notch', 'enabled', e.target.checked)}
+                                    checked={config.filters?.ch0?.notch_enabled || false}
+                                    onChange={(e) => setConfig(prev => ({ ...prev, filters: { ...prev.filters, ch0: { ...prev.filters?.ch0, notch_enabled: e.target.checked } } }))}
                                     className="accent-primary"
                                 />
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <input
-                                    type="number"
-                                    value={config.filters?.notch?.freq || 50}
-                                    onChange={(e) => handleFilterChange('notch', 'freq', Number(e.target.value))}
-                                    className="w-16 bg-surface border border-border rounded px-2 py-1 text-xs text-center"
-                                />
-                                <span className="text-xs text-muted">Hz</span>
-                            </div>
+                                Noise Filter
+                            </label>
+                            {config.filters?.ch0?.notch_enabled && (
+                                <div className="flex items-center gap-1">
+                                    <input
+                                        type="number"
+                                        className="w-12 bg-bg border border-border rounded px-1 py-0.5 text-xs text-right"
+                                        value={config.filters?.ch0?.notch_freq || 50}
+                                        onChange={(e) => setConfig(prev => ({ ...prev, filters: { ...prev.filters, ch0: { ...prev.filters?.ch0, notch_freq: Number(e.target.value) } } }))}
+                                    />
+                                    <span className="text-[10px] text-muted">Hz</span>
+                                </div>
+                            )}
                         </div>
 
                         {/* Bandpass */}
-                        <div className="bg-bg/50 p-3 rounded-lg border border-border">
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="text-sm font-medium text-text">Bandpass</span>
+                        <div className="space-y-1">
+                            <label className="text-xs text-text flex items-center gap-2">
                                 <input
                                     type="checkbox"
-                                    checked={config.filters?.bandpass?.enabled || false}
-                                    onChange={(e) => handleFilterChange('bandpass', 'enabled', e.target.checked)}
+                                    checked={config.filters?.ch0?.bandpass_enabled || false}
+                                    onChange={(e) => setConfig(prev => ({ ...prev, filters: { ...prev.filters, ch0: { ...prev.filters?.ch0, bandpass_enabled: e.target.checked } } }))}
                                     className="accent-primary"
                                 />
-                            </div>
-                            <div className="flex items-center gap-2">
+                                Bandpass
+                            </label>
+                            {config.filters?.ch0?.bandpass_enabled && (
+                                <div className="flex gap-2 items-center pl-5">
+                                    <input
+                                        type="number"
+                                        className="w-12 bg-bg border border-border rounded px-1 py-0.5 text-xs"
+                                        value={config.filters?.ch0?.bandpass_low || 20}
+                                        onChange={(e) => setConfig(prev => ({ ...prev, filters: { ...prev.filters, ch0: { ...prev.filters?.ch0, bandpass_low: Number(e.target.value) } } }))}
+                                    />
+                                    <span className="text-[10px] text-muted">-</span>
+                                    <input
+                                        type="number"
+                                        className="w-12 bg-bg border border-border rounded px-1 py-0.5 text-xs"
+                                        value={config.filters?.ch0?.bandpass_high || 450}
+                                        onChange={(e) => setConfig(prev => ({ ...prev, filters: { ...prev.filters, ch0: { ...prev.filters?.ch0, bandpass_high: Number(e.target.value) } } }))}
+                                    />
+                                    <span className="text-[10px] text-muted">Hz</span>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* High Pass Cutoff */}
+                        <div className="space-y-1 pt-2 border-t border-border/30">
+                            <label className="text-[10px] text-muted flex justify-between">
+                                <span>High Pass Cutoff</span>
+                                <span>{config.filters?.ch0?.cutoff || 70} Hz</span>
+                            </label>
+                            <input
+                                type="range" min="1" max="100"
+                                value={config.filters?.ch0?.cutoff || 70}
+                                onChange={(e) => setConfig(prev => ({ ...prev, filters: { ...prev.filters, ch0: { ...prev.filters?.ch0, cutoff: Number(e.target.value) } } }))}
+                                className="w-full accent-primary h-1 bg-bg rounded-lg appearance-none cursor-pointer"
+                            />
+                        </div>
+                    </div>
+
+                    {/* Channel 1 Filters */}
+                    <div className="space-y-3 p-3 rounded-lg border border-border bg-surface/50">
+                        <div className="flex items-center justify-between border-b border-border/50 pb-2 mb-2">
+                            <h4 className="text-xs font-bold text-emerald-500">Channel 1 ({(config.channel_mapping?.ch1?.sensor || 'EOG')})</h4>
+                            <button onClick={() => onSave?.()} className="px-2 py-0.5 text-[10px] bg-emerald-500 text-white rounded font-bold hover:opacity-90">APPLY</button>
+                        </div>
+
+                        {/* Noise Filter (Notch) */}
+                        <div className="flex items-center justify-between">
+                            <label className="text-xs text-text flex items-center gap-2">
                                 <input
-                                    type="number"
-                                    value={config.filters?.bandpass?.low || 0.5}
-                                    onChange={(e) => handleFilterChange('bandpass', 'low', Number(e.target.value))}
-                                    className="w-14 bg-surface border border-border rounded px-2 py-1 text-xs text-center"
+                                    type="checkbox"
+                                    checked={config.filters?.ch1?.notch_enabled || false}
+                                    onChange={(e) => setConfig(prev => ({ ...prev, filters: { ...prev.filters, ch1: { ...prev.filters?.ch1, notch_enabled: e.target.checked } } }))}
+                                    className="accent-emerald-500"
                                 />
-                                <span className="text-xs text-muted">-</span>
+                                Noise Filter
+                            </label>
+                            {config.filters?.ch1?.notch_enabled && (
+                                <div className="flex items-center gap-1">
+                                    <input
+                                        type="number"
+                                        className="w-12 bg-bg border border-border rounded px-1 py-0.5 text-xs text-right"
+                                        value={config.filters?.ch1?.notch_freq || 50}
+                                        onChange={(e) => setConfig(prev => ({ ...prev, filters: { ...prev.filters, ch1: { ...prev.filters?.ch1, notch_freq: Number(e.target.value) } } }))}
+                                    />
+                                    <span className="text-[10px] text-muted">Hz</span>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Bandpass */}
+                        <div className="space-y-1">
+                            <label className="text-xs text-text flex items-center gap-2">
                                 <input
-                                    type="number"
-                                    value={config.filters?.bandpass?.high || 45}
-                                    onChange={(e) => handleFilterChange('bandpass', 'high', Number(e.target.value))}
-                                    className="w-14 bg-surface border border-border rounded px-2 py-1 text-xs text-center"
+                                    type="checkbox"
+                                    checked={config.filters?.ch1?.bandpass_enabled || false}
+                                    onChange={(e) => setConfig(prev => ({ ...prev, filters: { ...prev.filters, ch1: { ...prev.filters?.ch1, bandpass_enabled: e.target.checked } } }))}
+                                    className="accent-emerald-500"
                                 />
-                                <span className="text-xs text-muted">Hz</span>
-                            </div>
+                                Bandpass
+                            </label>
+                            {config.filters?.ch1?.bandpass_enabled && (
+                                <div className="flex gap-2 items-center pl-5">
+                                    <input
+                                        type="number"
+                                        className="w-12 bg-bg border border-border rounded px-1 py-0.5 text-xs"
+                                        value={config.filters?.ch1?.bandpass_low || 0.5}
+                                        onChange={(e) => setConfig(prev => ({ ...prev, filters: { ...prev.filters, ch1: { ...prev.filters?.ch1, bandpass_low: Number(e.target.value) } } }))}
+                                    />
+                                    <span className="text-[10px] text-muted">-</span>
+                                    <input
+                                        type="number"
+                                        className="w-12 bg-bg border border-border rounded px-1 py-0.5 text-xs"
+                                        value={config.filters?.ch1?.bandpass_high || 10}
+                                        onChange={(e) => setConfig(prev => ({ ...prev, filters: { ...prev.filters, ch1: { ...prev.filters?.ch1, bandpass_high: Number(e.target.value) } } }))}
+                                    />
+                                    <span className="text-[10px] text-muted">Hz</span>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* High Pass Cutoff */}
+                        <div className="space-y-1 pt-2 border-t border-border/30">
+                            <label className="text-[10px] text-muted flex justify-between">
+                                <span>High Pass Cutoff</span>
+                                <span>{config.filters?.ch1?.cutoff || 10} Hz</span>
+                            </label>
+                            <input
+                                type="range" min="1" max="100"
+                                value={config.filters?.ch1?.cutoff || 10}
+                                onChange={(e) => setConfig(prev => ({ ...prev, filters: { ...prev.filters, ch1: { ...prev.filters?.ch1, cutoff: Number(e.target.value) } } }))}
+                                className="w-full accent-emerald-500 h-1 bg-bg rounded-lg appearance-none cursor-pointer"
+                            />
                         </div>
                     </div>
                 </section>

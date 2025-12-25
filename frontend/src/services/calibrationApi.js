@@ -99,26 +99,81 @@ export const CalibrationApi = {
      */
     async runCalibration(sensorType, labeledWindows) {
         console.log(`[CalibrationApi] Running calibration for ${sensorType} with ${labeledWindows.length} windows`);
-
-        // Mock processing delay
-        await new Promise(r => setTimeout(r, 1000));
-
-        // Return dummy recommended updates based on sensor type
-        if (sensorType === 'EMG') {
-            return {
-                recommendations: {
-                    Rock: { rms: [450, 850] }, // shifted slightly
-                    Rest: { rms: [0, 180] }
-                },
-                summary: {
-                    total: labeledWindows.length,
-                    correct: labeledWindows.filter(w => w.status === 'correct').length,
-                    missed: labeledWindows.filter(w => w.isMissedActual).length
-                }
-            };
-        }
-
+        // Legacy mock - use calibrateThresholds instead
         return { recommendations: {}, summary: { total: 0, correct: 0, missed: 0 } };
+    },
+
+    /**
+     * Calibrate detection thresholds using all collected windows.
+     * @param {SensorType} sensorType
+     * @param {CalibrationWindow[]} windows - All collected windows with features
+     * @returns {Promise<Object>} Calibration results with updated thresholds and accuracy
+     */
+    async calibrateThresholds(sensorType, windows) {
+        console.log(`[CalibrationApi] Calibrating thresholds for ${sensorType} with ${windows.length} windows`);
+
+        try {
+            // Prepare windows payload with action, features, status
+            const windowsPayload = windows.map(w => ({
+                action: w.label,
+                features: w.features || {},
+                status: w.status
+            }));
+
+            const response = await fetch('/api/calibrate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    sensor: sensorType,
+                    windows: windowsPayload
+                })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Calibration failed');
+            }
+
+            const result = await response.json();
+            console.log('[CalibrationApi] Calibration result:', result);
+            return result;
+        } catch (err) {
+            console.error('[CalibrationApi] Calibration error:', err);
+            throw err;
+        }
+    },
+
+    /**
+     * Send a single window (samples) to the backend for saving and feature extraction.
+     * @param {string} sensorType
+     * @param {{action: string, channel?: number, samples: number[], timestamps?: number[]}} windowPayload
+     */
+    async sendWindow(sensorType, windowPayload) {
+        try {
+            const body = {
+                sensor: sensorType,
+                action: windowPayload.action,
+                channel: windowPayload.channel,
+                samples: windowPayload.samples,
+                timestamps: windowPayload.timestamps
+            };
+
+            const resp = await fetch('/api/window', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+
+            if (!resp.ok) {
+                const txt = await resp.text();
+                throw new Error(`Server error: ${resp.status} ${txt}`);
+            }
+
+            return resp.json();
+        } catch (err) {
+            console.error('[CalibrationApi] sendWindow error', err);
+            throw err;
+        }
     },
 
     /**
