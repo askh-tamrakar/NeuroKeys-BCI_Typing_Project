@@ -1,5 +1,6 @@
 {
-  "sampling_rate": 512,
+  "baud": 230400,
+  "binary": true,
   "channel_mapping": {
     "ch0": {
       "enabled": true,
