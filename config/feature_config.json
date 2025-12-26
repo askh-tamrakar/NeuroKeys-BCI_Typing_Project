@@ -1,0 +1,136 @@
+{
+  "EOG": {
+    "Rest": {
+      "amplitude": [
+        0,
+        0.5
+      ]
+    },
+    "SingleBlink": {
+      "peak_count": [
+        0.9,
+        1.1
+      ],
+      "amplitude": [
+        -0.0559,
+        2.9937
+      ],
+      "duration_ms": [
+        37.3047,
+        58.3984
+      ],
+      "rise_time_ms": [
+        7.8125,
+        31.25
+      ],
+      "fall_time_ms": [
+        17.5781,
+        41.0156
+      ],
+      "asymmetry": [
+        0.1935,
+        1.4006
+      ],
+      "kurtosis": [
+        -1.2458,
+        3.9363
+      ],
+      "skewness": [
+        -2.082,
+        0.8403
+      ]
+    },
+    "DoubleBlink": {
+      "peak_count": [
+        0.9,
+        1.1
+      ],
+      "amplitude": [
+        1.5853,
+        3.0725
+      ],
+      "duration_ms": [
+        39.6484,
+        56.0547
+      ],
+      "rise_time_ms": [
+        7.6172,
+        33.3984
+      ],
+      "fall_time_ms": [
+        16.9922,
+        47.4609
+      ],
+      "asymmetry": [
+        -0.0355,
+        3.5487
+      ],
+      "kurtosis": [
+        -1.0181,
+        2.817
+      ],
+      "skewness": [
+        -1.8499,
+        0.7774
+      ]
+    }
+  },
+  "EMG": {
+    "Rest": {},
+    "Rock": {
+      "mav": [
+        0.3,
+        2.0
+      ],
+      "rms": [
+        0.3,
+        2.0
+      ]
+    },
+    "Paper": {
+      "mav": [
+        2.0,
+        5.0
+      ],
+      "rms": [
+        2.0,
+        5.0
+      ]
+    },
+    "Scissors": {
+      "mav": [
+        0.5,
+        1.5
+      ],
+      "zc": [
+        10,
+        50
+      ]
+    }
+  },
+  "EEG": {
+    "profiles": {
+      "Rest": {},
+      "Concentration": {
+        "alpha_power": [
+          0.5,
+          1.5
+        ],
+        "beta_power": [
+          1.0,
+          3.0
+        ]
+      },
+      "Relaxation": {
+        "alpha_power": [
+          2.0,
+          5.0
+        ],
+        "theta_power": [
+          1.0,
+          5.0
+        ]
+      }
+    }
+  }
+}

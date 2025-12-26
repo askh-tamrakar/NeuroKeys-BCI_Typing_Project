@@ -196,7 +196,7 @@ export default function Dashboard() {
       </div>
 
       {/* Main Content Area */}
-      <div className="container" style={{ flex: 1, padding: '24px 0', overflowY: 'auto' }}>
+      <div className="container" style={{ flex: 1, padding: '0px 0px', overflowY: 'auto' }}>
         {currentPage === 'live' && <LiveDashboard wsData={lastMessage} wsConfig={lastConfig} wsEvent={lastEvent} sendMessage={sendMessage} />}
         {currentPage === 'dino' && <DinoView wsData={lastMessage} wsEvent={lastEvent} isPaused={false} />}
         {currentPage === 'ssvep' && <SSVEPView />}

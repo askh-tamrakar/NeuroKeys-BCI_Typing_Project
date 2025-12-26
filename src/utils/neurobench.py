@@ -33,11 +33,13 @@ ADC_MAX = (1 << ADC_BITS) - 1
 # -------------------------
 # Signal generation helpers
 # -------------------------
-def clamp(v, a=-1.0, b=1.0):
+DEFAULT_RANGE = 5.0  # Range in "units" (e.g. uV approx or just abstract). Allows signals > 1.5 threshold.
+
+def clamp(v, a=-DEFAULT_RANGE, b=DEFAULT_RANGE):
     return max(a, min(b, v))
 
 class ChannelGenerator:
-    """Generates normalized [-1..1] samples for a single logical channel."""
+    """Generates normalized samples for a single logical channel."""
     def __init__(self, role="EMG"):
         self.role = role  # "EMG" | "EEG" | "EOG" | "NONE"
         self.lock = threading.Lock()
@@ -71,8 +73,16 @@ class ChannelGenerator:
 
     def trigger_eog(self, dir_name="blink"):
         with self.lock:
-            dur = 0.18 if dir_name != "blink" else 0.08
-            amp = 0.8 if dir_name != "blink" else 1.2
+            # Matches Extractor/Detector requirements:
+            # Min Duration: 100ms (we use 250ms for blink)
+            # Min Amplitude: 1.5 (we use 3.0 for blink)
+            if dir_name == "blink":
+                dur = self.random.uniform(0.22, 0.9) # Target efficient width ~100-500ms
+                amp = 3.0
+            else:
+                dur = 0.35
+                amp = 2.0
+                
             ev = {"type": "eog_pulse", "t0": None, "dur": dur, "amp": amp, "dir": dir_name}
             self.events.append(ev)
 
@@ -110,7 +120,7 @@ class ChannelGenerator:
             env = 0.05 * (1 + 0.5 * math.sin(2 * math.pi * 0.15 * t_seconds))
             val += env * noise
         elif role == "EOG":
-            val += 0.005 * self.random.gauss(0, 1)
+            val += 0.0  # Clean baseline, actions only
         else:
             val += 0.0
 
@@ -134,9 +144,22 @@ class ChannelGenerator:
                     dur = ev["dur"]
                     amp = ev["amp"]
                     if dt <= dur:
-                        # simple decaying step shaped pulse depending on dir
-                        pulse = amp * (1.0 - (dt / dur))
-                        # direction mapping: up/down/left/right/blink -> sign/offset
+                        # Asymmetric shape for BlinkDetector
+                        # BlinkDetector requires min_asymmetry=0.05 (Rise / Fall)
+                        # We use a skewed triangle with fast rise (30%) and slower fall (70%)
+                        # Asymmetry = 0.3 / 0.7 = 0.42, which is > 0.05 and < 2.5 (valid)
+                        
+                        rise_ratio = 0.3
+                        peak_t = dur * rise_ratio
+                        
+                        if dt < peak_t:
+                            # Rise phase
+                            pulse = amp * (dt / peak_t)
+                        else:
+                            # Fall phase
+                            pulse = amp * (1.0 - (dt - peak_t) / (dur - peak_t))
+
+                        # direction mapping: up/down/left/right/blink
                         if ev.get("dir") == "up":
                             val += pulse * 0.6
                         elif ev.get("dir") == "down":
@@ -146,7 +169,8 @@ class ChannelGenerator:
                         elif ev.get("dir") == "right":
                             val += pulse * 0.4
                         else:  # blink
-                            val += pulse * 1.0
+                            val += pulse * 1.0 # Positive deflection
+                            
                         remaining.append(ev)
                     # else finished
             # commit remaining events back (thread-safe)
@@ -161,6 +185,7 @@ class CustomAxisItem(pg.AxisItem):
     def tickStrings(self, values, scale, spacing):
         # Return values formatted to 2 decimal places
         return [f"{v:.2f}" for v in values]
+
 
 # -------------------------
 # Serial writer thread
@@ -366,6 +391,17 @@ class MainWindow(QtWidgets.QMainWindow):
         ctrl_layout.addWidget(self.controls_ch1)
         left_layout.addWidget(ctrl_wrapper)
 
+        left_layout.addWidget(ctrl_wrapper)
+
+        left_layout.addSpacing(12)
+        
+        # Log Window
+        left_layout.addWidget(QtWidgets.QLabel("<b>Event Log</b>"))
+        self.left_console = QtWidgets.QPlainTextEdit()
+        self.left_console.setReadOnly(True)
+        self.left_console.setMaximumHeight(150)
+        left_layout.addWidget(self.left_console)
+        
         left_layout.addSpacing(12)
 
         # Serial / Streaming controls
@@ -642,9 +678,9 @@ class MainWindow(QtWidgets.QMainWindow):
             v0 = self.ch_gens[0].synth_now(t_seconds)
             v1 = self.ch_gens[1].synth_now(t_seconds)
 
-            # map normalized [-1..1] -> 14-bit ADC
-            a0 = int(round(((v0 + 1.0) / 2.0) * ADC_MAX))
-            a1 = int(round(((v1 + 1.0) / 2.0) * ADC_MAX))
+            # map normalized [-RANGE..RANGE] -> 14-bit ADC
+            a0 = int(round(((v0 + DEFAULT_RANGE) / (2.0 * DEFAULT_RANGE)) * ADC_MAX))
+            a1 = int(round(((v1 + DEFAULT_RANGE) / (2.0 * DEFAULT_RANGE)) * ADC_MAX))
             
             # push to plot buffers (scale back to -1..1 for plot)
             self._append_plot(v0, v1)
@@ -685,7 +721,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def log(self, s):
         now = datetime.now().strftime("%H:%M:%S")
-        self.console.appendPlainText(f"[{now}] {s}")
+        msg = f"[{now}] {s}"
+        self.console.appendPlainText(msg)
+        if hasattr(self, 'left_console'):
+            self.left_console.appendPlainText(msg)
+            # Auto-scroll
+            sb = self.left_console.verticalScrollBar()
+            sb.setValue(sb.maximum())
         # also print to stdout
         print(f"[{now}] {s}")
 

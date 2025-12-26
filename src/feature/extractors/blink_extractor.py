@@ -83,25 +83,36 @@ class BlinkExtractor:
                 
         return None
 
-    def _extract_features(self, window):
+    @staticmethod
+    def extract_features(data: list | np.ndarray, sr: int) -> dict:
         """
         Extract temporal and morphological features from a signal window.
+        Static method for stateless usage.
         """
-        data = np.array(window)
+        if not len(data):
+            return {}
+
+        data = np.array(data)
         abs_data = np.abs(data)
         
         peak_idx = np.argmax(abs_data)
         peak_amp = abs_data[peak_idx]
         
-        duration_ms = (len(data) / self.sr) * 1000.0
-        rise_time_ms = (peak_idx / self.sr) * 1000.0
-        fall_time_ms = ((len(data) - peak_idx) / self.sr) * 1000.0
+        duration_ms = (len(data) / sr) * 1000.0
+        rise_time_ms = (peak_idx / sr) * 1000.0
+        fall_time_ms = ((len(data) - peak_idx) / sr) * 1000.0
         
         asymmetry = rise_time_ms / (fall_time_ms + 1e-6)
         
+        # New Feature: Peak Counting (for Double Blink Detection)
+        # Find peaks > 50% of max amplitude to ignore noise
+        from scipy.signal import find_peaks
+        peaks, _ = find_peaks(abs_data, height=peak_amp * 0.5, distance=sr * 0.05) # 50ms distance
+        peak_count = len(peaks)
+        
         # Statistical features
-        kurt = stats.kurtosis(data)
-        skew = stats.skew(data)
+        kurt = float(stats.kurtosis(data))
+        skew = float(stats.skew(data))
         
         features = {
             "amplitude": float(peak_amp),
@@ -109,11 +120,19 @@ class BlinkExtractor:
             "rise_time_ms": float(rise_time_ms),
             "fall_time_ms": float(fall_time_ms),
             "asymmetry": float(asymmetry),
-            "kurtosis": float(kurt),
-            "skewness": float(skew),
-            "timestamp": self.current_idx / self.sr
+            "peak_count": int(peak_count),
+            "kurtosis": kurt,
+            "skewness": skew
         }
         
+        return features
+
+    def _extract_features(self, window):
+        """
+        Internal wrapper to maintain compatibility and add timestamp.
+        """
+        features = BlinkExtractor.extract_features(window, self.sr)
+        features["timestamp"] = self.current_idx / self.sr
         return features
 
     def update_config(self, config: dict):

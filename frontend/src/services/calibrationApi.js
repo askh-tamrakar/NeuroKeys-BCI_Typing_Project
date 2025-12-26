@@ -45,8 +45,8 @@ export const CalibrationApi = {
                 channel_mapping: {},
                 features: {
                     EMG: { Rock: { rms: [400, 800] }, Rest: { rms: [0, 200] } },
-                    EOG: { blink: { threshold: 0.5 } },
-                    EEG: { target_10Hz: { power: 10 } }
+                    EOG: { SingleBlink: { threshold: 0.5 }, DoubleBlink: { threshold: 1.0 } },
+                    EEG: { profiles: { Concentration: { power: 10 }, Relaxation: { power: 5 } } }
                 },
                 filters: {},
                 sampling_rate: 250

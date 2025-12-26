@@ -27,6 +27,8 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         CANVAS_HEIGHT: 376,
         CYCLE_DURATION: 100,
         JUMP_DISTANCE: 150,
+        ENABLE_TREES: true,
+        ENABLE_MANUAL_CONTROLS: false,
     }
 
     const [settings, setSettings] = useState(() => {
@@ -41,6 +43,13 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         return DEFAULT_SETTINGS
     })
     const [savedMessage, setSavedMessage] = useState('')
+
+    // --- Event Logging System ---
+    const [eventLogs, setEventLogs] = useState([])
+    const logEvent = (msg) => {
+        const time = new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        setEventLogs(prev => [`[${time}] ${msg}`, ...prev].slice(0, 50))
+    }
 
     // Refs for game state (to avoid stale closures)
     const canvasRef = useRef(null)
@@ -132,30 +141,22 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
     useEffect(() => {
         if (!wsEvent) return;
 
-        if (wsEvent.event === 'BLINK') {
-            console.log("🦖 Dino: Blink Event Received via Logic Pipeline!");
-            handleEOGBlink();
+        if (wsEvent.event === 'SingleBlink') {
+            logEvent("👁️ Single Blink")
+            handleSinglePress();
+        }
+        else if (wsEvent.event === 'DoubleBlink') {
+            logEvent("👁️👁️ Double Blink")
+            handleDoublePress();
         }
     }, [wsEvent]);
 
-    // Handle EOG blink detection
-    const handleEOGBlink = () => {
-        const now = Date.now()
-        const timeSinceLastPress = now - blinkPressTimeRef.current
-
-        if ( 75 < timeSinceLastPress && timeSinceLastPress < 400) {
-            handleDoublePress()
-        } else {
-            handleSinglePress()
-        }
-
-        console.log(" timeSinceLastPress ", timeSinceLastPress);
-        blinkPressTimeRef.current = now
-    }
-
-    // Keyboard controls (hidden from UI but still functional for testing)
+    // Keyboard controls (hidden from UI but functional if enabled)
     useEffect(() => {
         const handleKeyDown = (e) => {
+            // Only if setting enabled
+            if (!settingsRef.current.ENABLE_MANUAL_CONTROLS) return
+
             if (e.code === 'Space' || e.key === ' ') {
                 e.preventDefault()
                 const now = Date.now()
@@ -176,6 +177,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
 
     // Single press - Jump
     const handleSinglePress = () => {
+        logEvent("🦘 Jump Triggered")
         // Eye blink animation
         triggerSingleBlink()
 
@@ -215,6 +217,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
 
     // Double press - Pause/Resume
     const handleDoublePress = () => {
+        logEvent("⏯️ Pause/Resume Triggered")
         // Double eye blink animation
         triggerDoubleBlink()
 
@@ -674,23 +677,21 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                 distanceRef.current += GAME_SPEED
 
                 // Update trees (Parallax with depth)
-                treesRef.current.forEach(tree => {
-                    tree.x -= GAME_SPEED * tree.speedFactor
-                    if (tree.x + tree.width < -100) { // Wrap around
-                        tree.x = CANVAS_WIDTH + Math.random() * 100
-                        // Randomize properties again for variety on respawn
-                        const depth = 0.4 + Math.random() * 0.6
-                        tree.depth = depth
-                        tree.speedFactor = 0.5 * depth
-                        tree.height = (50 + Math.random() * 70) * depth
-                        tree.width = (25 + Math.random() * 25) * depth
-                        tree.type = Math.random() > 0.5 ? 'round' : 'pine'
-
-                        // We strictly need to re-sort if we want perfect Z-ordering but
-                        // re-sorting every frame is expensive and popping creates issues.
-                        // Just letting them wrap is fine for background noise.
-                    }
-                })
+                if (currentSettings.ENABLE_TREES) {
+                    treesRef.current.forEach(tree => {
+                        tree.x -= GAME_SPEED * tree.speedFactor
+                        if (tree.x + tree.width < -100) { // Wrap around
+                            tree.x = CANVAS_WIDTH + Math.random() * 100
+                            // Randomize properties again for variety on respawn
+                            const depth = 0.4 + Math.random() * 0.6
+                            tree.depth = depth
+                            tree.speedFactor = 0.5 * depth
+                            tree.height = (50 + Math.random() * 70) * depth
+                            tree.width = (25 + Math.random() * 25) * depth
+                            tree.type = Math.random() > 0.5 ? 'round' : 'pine'
+                        }
+                    })
+                }
             }
 
 
@@ -730,7 +731,9 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
 
                 // Parallax Trees (Behind terrain)
                 const groundY = height - GROUND_OFFSET
-                drawTrees(ctx, width, groundY, mutedColor)
+                if (settingsRef.current.ENABLE_TREES) {
+                    drawTrees(ctx, width, groundY, mutedColor)
+                }
 
                 // Terrain
                 drawTerrain(ctx, width, height, groundY, surfaceColor, borderColor, mutedColor)
@@ -801,7 +804,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
     const handleSettingChange = (key, value) => {
         setSettings(prev => ({
             ...prev,
-            [key]: parseFloat(value)
+            [key]: typeof value === 'boolean' ? value : parseFloat(value)
         }))
     }
 
@@ -832,22 +835,26 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
 
                         <div className="space-y-4">
                             {/* Game info */}
-                            <div className="bg-bg/50 backdrop-blur-sm rounded-xl p-4 border border-border">
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-                                    <div>
-                                        <div className="text-muted text-sm font-medium">Status</div>
+                            <div className="bg-bg/50 backdrop-blur-sm rounded-xl p-4 border border-border relative mt-8">
+                                {/* Eye Tracker (Absolute Positioned on Top Border) */}
+                                <div className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 -top-[1px] z-10 w-full flex justify-center gap-24 pointer-events-none">
+                                    {/* Left Eye */}
+                                    <div className="eye w-24 h-24 bg-surface rounded-full border-4 border-border relative overflow-hidden flex justify-center items-center shadow-sm" ref={leftEyeRef}>
+                                        <div className="pupil w-8 h-8 bg-text rounded-full"></div>
+                                    </div>
+                                    {/* Right Eye */}
+                                    <div className="eye w-24 h-24 bg-surface rounded-full border-4 border-border relative overflow-hidden flex justify-center items-center shadow-sm" ref={rightEyeRef}>
+                                        <div className="pupil w-8 h-8 bg-text rounded-full"></div>
+                                    </div>
+                                </div>
+
+                                <div className="flex justify-between items-end pt-4 px-40">
+                                    <div className="text-left">
+                                        <div className="text-muted text-sm font-bold">Status</div>
                                         <div className="text-text font-bold text-lg capitalize">{gameState}</div>
                                     </div>
-                                    <div>
-                                        <div className="text-muted text-sm font-medium">Score</div>
-                                        <div className="text-primary font-bold text-lg">{Math.floor(score / 10)}</div>
-                                    </div>
-                                    <div>
-                                        <div className="text-muted text-sm font-medium">Best</div>
-                                        <div className="text-primary font-bold text-lg">{Math.floor(highScore / 10)}</div>
-                                    </div>
-                                    <div>
-                                        <div className="text-muted text-sm font-medium">EOG Sensor</div>
+                                    <div className="text-right">
+                                        <div className="text-muted text-sm font-bold">EOG Sensor</div>
                                         <div className={`text-sm font-bold ${wsData ? 'text-green-500' : 'text-red-500'}`}>
                                             {wsData ? 'Connected' : 'Disconnected'}
                                         </div>
@@ -872,26 +879,51 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                 {/* Right Sidebar */}
                 <div className="w-full lg:w-80 space-y-6 h-full overflow-y-auto no-scrollbar pb-6">
 
-                    {/* Eye Tracker Panel */}
-                    <div className="eye-tracker">
-                        <h3>Eye Blink Tracker</h3>
-
-                        <div className="eyes-container">
-                            <div className="eye" ref={leftEyeRef}>
-                                <div className="pupil"></div>
+                    {/* Eye Controls Panel */}
+                    <div className="card bg-surface border border-border shadow-card rounded-2xl p-4">
+                        <h3 className="text-sm font-bold text-text uppercase tracking-wider mb-3">Controls</h3>
+                        <div className="space-y-2 text-sm text-text">
+                            <div className="flex justify-between">
+                                <span className="text-muted">Blink ONCE</span>
+                                <span className="font-bold text-primary">Jump</span>
                             </div>
-                            <div className="eye" ref={rightEyeRef}>
-                                <div className="pupil"></div>
+                            <div className="flex justify-between">
+                                <span className="text-muted">Blink TWICE</span>
+                                <span className="font-bold text-primary">Pause / Resume</span>
                             </div>
                         </div>
 
-                        <div className="blink-info">
-                            <strong>Controls:</strong><br />
-                            <strong>Single blink</strong> → Jump<br />
-                            <strong>Double blink</strong> → Pause/Resume<br />
-                            <br />
-                            <strong>Input Mode:</strong><br />
-                            {wsData ? '✓ EOG Sensor Active' : '✗ EOG Sensor Disconnected'}
+                        <div className="mt-4 pt-3 border-t border-border">
+                            <div className="flex justify-between items-center text-xs">
+                                <span className="text-muted font-medium uppercase tracking-wider">Input Status</span>
+                                <span className={`font-bold ${wsData ? 'text-green-500' : 'text-red-500'}`}>
+                                    {wsData ? 'ACTIVE' : 'OFFLINE'}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Event Log Panel */}
+                    <div className="card bg-surface border border-border shadow-card rounded-2xl p-4">
+                        <div className="flex justify-between items-center mb-2">
+                            <h3 className="text-sm font-bold text-text uppercase tracking-wider">Event Log</h3>
+                            <button
+                                onClick={() => setEventLogs([])}
+                                className="text-xs text-muted hover:text-red-400"
+                            >
+                                Clear
+                            </button>
+                        </div>
+                        <div className="bg-bg/50 rounded-lg p-2 h-32 overflow-y-auto font-mono text-xs space-y-1 border border-border/50">
+                            {eventLogs.length === 0 ? (
+                                <div className="text-muted italic text-center py-4">No events yet...</div>
+                            ) : (
+                                eventLogs.map((log, i) => (
+                                    <div key={i} className="text-muted hover:text-text transition-colors border-b border-border/20 last:border-0 pb-0.5">
+                                        {log}
+                                    </div>
+                                ))
+                            )}
                         </div>
                     </div>
 
@@ -943,6 +975,8 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                                 </div>
                                 <div className="space-y-3">
                                     <h4 className="text-xs font-bold text-primary border-b border-border pb-1">Environment</h4>
+                                    <SettingToggle label="Enable Trees" value={settings.ENABLE_TREES} onChange={(v) => handleSettingChange('ENABLE_TREES', v)} />
+                                    <SettingToggle label="Manual Controls (Space)" value={settings.ENABLE_MANUAL_CONTROLS} onChange={(v) => handleSettingChange('ENABLE_MANUAL_CONTROLS', v)} />
                                     <SettingInput label="Day Cycle (s)" value={settings.CYCLE_DURATION} onChange={(v) => handleSettingChange('CYCLE_DURATION', v)} min="10" max="300" step="5" />
                                 </div>
                             </div>
@@ -993,5 +1027,17 @@ const SettingInput = ({ label, value, onChange, min, max, step }) => (
             onChange={(e) => onChange(parseFloat(e.target.value))}
             className="w-full accent-primary h-2 bg-surface border border-border rounded-lg appearance-none cursor-pointer"
         />
+    </div>
+)
+
+const SettingToggle = ({ label, value, onChange }) => (
+    <div className="flex justify-between items-center py-1">
+        <span className="text-xs text-muted">{label}</span>
+        <button
+            onClick={() => onChange(!value)}
+            className={`w-8 h-4 rounded-full relative transition-colors ${value ? 'bg-primary' : 'bg-border'}`}
+        >
+            <div className={`w-3 h-3 bg-white rounded-full absolute top-0.5 transition-transform ${value ? 'translate-x-4' : 'translate-x-1'}`} />
+        </button>
     </div>
 )

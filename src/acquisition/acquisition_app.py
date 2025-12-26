@@ -10,11 +10,14 @@ import sys
 import os
 import queue
 
+
 # Ensure we can import sibling packages
 current_dir = os.path.dirname(os.path.abspath(__file__))
 src_dir = os.path.abspath(os.path.join(current_dir, '..'))
 if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
+
+from utils.config import config_manager, ConfigWriter
 
 # Local imports
 from .serial_reader import SerialPacketReader
@@ -78,14 +81,22 @@ class AcquisitionApp:
         self.last_packet_counter = None
         
         # Channel mapping
-        self.ch0_type = "EMG"
-        self.ch1_type = "EOG"
+        channel_map = self.config.get("channel_mapping", {})
+        self.ch0_type = channel_map.get("ch0", {}).get("sensor", "EMG")
+        self.ch1_type = channel_map.get("ch1", {}).get("sensor", "EOG")
+
         
-        # Data buffers for real-time plotting
-        self.window_seconds = self.config.get("ui_settings", {}).get("window_seconds", 5.0)
-        self.buffer_size = int(self.config.get("sampling_rate", 512) * self.window_seconds)
+        self.ch0_var = tk.StringVar(value=self.ch0_type)
+        self.ch1_var = tk.StringVar(value=self.ch1_type)
+
+         # Data buffers for real-time plotting
+        self.window_seconds = (
+            self.config.get("ui_settings", {}).get("window_seconds", 5.0)
+        )
+        self.buffer_size = int(
+            self.config.get("sampling_rate", 512) * self.window_seconds
+        )
         
-        # Ring buffers
         self.ch0_buffer = np.zeros(self.buffer_size)
         self.ch1_buffer = np.zeros(self.buffer_size)
         self.buffer_ptr = 0
@@ -108,11 +119,18 @@ class AcquisitionApp:
         self.main_loop()
 
     def _load_config(self) -> dict:
-        """Load configuration from API or JSON file"""
-        # Try API first
+        """
+        Load configuration with proper fallback chain:
+        1. Try API endpoint
+        2. Fall back to sensor_config.json
+        3. Fall back to defaults
+        """
+        
+        # 1. Try API first (optional)
         try:
             import urllib.request
             import urllib.error
+            
             url = "http://localhost:5000/api/config"
             with urllib.request.urlopen(url, timeout=0.5) as response:
                 if response.status == 200:
@@ -120,31 +138,36 @@ class AcquisitionApp:
                     print("[App] ✅ Loaded config from API")
                     return data
         except Exception as e:
-            print(f"[App] ⚠️ API load failed ({e}), falling back to file")
-
-        # Fallback to local file
-        project_root = Path(__file__).resolve().parent.parent.parent
-        config_path = project_root / "config" / "sensor_config.json"
-        if config_path.exists():
-            try:
-                with open(config_path, 'r') as f:
-                    return json.load(f)
-            except Exception as e:
-                print(f"[App] Error loading config: {e}")
-                return self._default_config()
+            print(f"[App] ⚠️ API load failed ({e}), falling back to files")
+        
+        # 2. Fall back to file-based config using config_manager
+        try:
+            sensor_cfg = config_manager.sensor_config.get_all()
+            if sensor_cfg:
+                print("[App] ✅ Loaded config from sensor_config.json")
+                return sensor_cfg
+        except Exception as e:
+            print(f"[App] ⚠️ File load failed: {e}")
+        
+        # 3. Fall back to defaults
+        print("[App] Using default configuration")
         return self._default_config()
 
     def _default_config(self) -> dict:
-        """Default configuration"""
+        """Default configuration with proper structure."""
         return {
             "sampling_rate": 512,
             "channel_mapping": {
-                "ch0": {"sensor": "EMG", "enabled": True, "label": "EMG Channel 0"},
-                "ch1": {"sensor": "EOG", "enabled": True, "label": "EOG Channel 1"}
-            },
-            "filters": {
-                "EMG": {"type": "high_pass", "cutoff": 70.0, "order": 4, "enabled": True},
-                "EOG": {"type": "low_pass", "cutoff": 10.0, "order": 4, "enabled": True}
+                "ch0": {
+                    "sensor": "EMG",
+                    "enabled": True,
+                    "label": "EMG Channel 0"
+                },
+                "ch1": {
+                    "sensor": "EOG",
+                    "enabled": True,
+                    "label": "EOG Channel 1"
+                }
             },
             "adc_settings": {
                 "bits": 14,
@@ -161,42 +184,120 @@ class AcquisitionApp:
             }
         }
 
-    def _save_config(self):
-        """Save configuration to JSON file and API"""
-        
-        # UPDATE channel mapping from UI BEFORE saving
-        self.config["channel_mapping"] = {
-            "ch0": {"sensor": self.ch0_var.get(), "enabled": True},
-            "ch1": {"sensor": self.ch1_var.get(), "enabled": True}
-        }
-        
-        # 1. Save to Local File (Backup)
-        self.config_path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            with open(self.config_path, 'w') as f:
-                json.dump(self.config, f, indent=2)
-            print(f"[App] Config saved to {self.config_path}")
-        except Exception as e:
-            print(f"[App] Error saving config locally: {e}")
-            messagebox.showerror("Error", f"Failed to save config: {e}")
 
-        # 2. Push to API (Primary)
+    def _save_config(self):
+        """
+        Save configuration properly using config_manager.
+        
+        Updates BOTH sensor_config.json and calibration_config.json
+        """
+        try:
+            # 1. Update Sensor Config
+            # Fetch current state to avoid overwriting unrelated fields
+            sensor_config = config_manager.sensor_config.get_all()
+            
+            # HARDENING: Ensure 'features' is NOT in sensor_config (it belongs in feature_config)
+            if "features" in sensor_config:
+                del sensor_config["features"]
+            
+            # Update specific fields controlled by this UI
+            sensor_config["sampling_rate"] = self.config.get("sampling_rate", 512)
+            
+            # Update Channel Mapping
+            channel_mapping = sensor_config.get("channel_mapping", {})
+            channel_mapping["ch0"] = {
+                "sensor": self.ch0_var.get(),
+                "enabled": True,
+                "label": f"{self.ch0_var.get()} Channel 0"
+            }
+            channel_mapping["ch1"] = {
+                "sensor": self.ch1_var.get(),
+                "enabled": True,
+                "label": f"{self.ch1_var.get()} Channel 1"
+            }
+            sensor_config["channel_mapping"] = channel_mapping
+            
+            # Update other settings (merge if they exist)
+            if "adc_settings" in self.config:
+                sensor_config["adc_settings"] = self.config["adc_settings"]
+            if "ui_settings" in self.config:
+                sensor_config["ui_settings"] = self.config["ui_settings"]
+                
+             # Save
+            if config_manager.save_sensor_config(sensor_config):
+                print("[App] ✅ Sensor config saved")
+            else:
+                 raise Exception("Failed to save sensor config")
+
+            # 2. Update Calibration Config
+            calibration_config = config_manager.calib_config.get_all()
+            
+            # Update entries for ch0 and ch1
+            calibration_config["ch0"] = {
+                "sensor": self.ch0_var.get(),
+                "enabled": True,
+                "offset": 0.0,
+                "gain": 1.0,
+                "calibration_date": datetime.now().strftime("%Y-%m-%d"),
+                "calibrated": True
+            }
+            calibration_config["ch1"] = {
+                "sensor": self.ch1_var.get(),
+                "enabled": True,
+                "offset": 0.0,
+                "gain": 1.0,
+                "calibration_date": datetime.now().strftime("%Y-%m-%d"),
+                "calibrated": True
+            }
+
+            # Save
+            if config_manager.save_calibration_config(calibration_config):
+                print("[App] ✅ Calibration config saved")
+            else:
+                 print("[App] ⚠️ Warning: Calibration config save failed")
+
+        except Exception as e:
+            print(f"[App] ❌ Error saving configs: {e}")
+            messagebox.showerror("Error", f"Failed to save config: {e}")
+            return
+    
         def push_to_api(cfg):
             try:
                 import urllib.request
+                
+                # We need to push the FULL config (Facade) because the API expects it for hot-reload notifications
+                # The API will then split it again and save, but since we already saved to disk, 
+                # the file watchers on the backend might pick it up before this push arrives.
+                # Actually, API save_config does write to disk. This is double writing.
+                # However, the API serves as the event bus for the Frontend.
+                
+                # Let's construct the facade object to push
+                facade = config_manager.get_all_configs()
+                
                 url = "http://localhost:5000/api/config"
                 req = urllib.request.Request(
                     url,
-                    data=json.dumps(cfg).encode('utf-8'),
+                    data=json.dumps(facade).encode('utf-8'),
                     headers={'Content-Type': 'application/json'},
                     method='POST'
                 )
+                
                 with urllib.request.urlopen(req, timeout=1) as response:
-                    print(f"[App] 📤 Config pushed to API: {response.status}")
+                    if response.status == 200:
+                        print(f"[App] 📤 Config pushed to API: {response.status}")
+            
             except Exception as e:
-                print(f"[App] ❌ Failed to push to API: {e}")
+                print(f"[App] ⚠️ Could not push to API: {e}")
         
-        threading.Thread(target=push_to_api, args=(self.config,), daemon=True).start()
+        import threading
+        threading.Thread(
+            target=push_to_api,
+            args=(sensor_config,), # Argument not used inside, but kept for signature compatibility if needed
+            daemon=True
+        ).start()
+        
+        print("[App] ✅ Configuration saved successfully")
+        messagebox.showinfo("Success", "Configuration saved successfully")
 
     def start_sync_thread(self):
         """Poll API for config changes"""

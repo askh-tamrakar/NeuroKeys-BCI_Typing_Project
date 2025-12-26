@@ -1,0 +1,18 @@
+{
+  "ch0": {
+    "sensor": "EMG",
+    "enabled": true,
+    "offset": 0.0,
+    "gain": 1.0,
+    "calibration_date": "2025-12-25",
+    "calibrated": true
+  },
+  "ch1": {
+    "sensor": "EOG",
+    "enabled": true,
+    "offset": 0.0,
+    "gain": 1.0,
+    "calibration_date": "2025-12-25",
+    "calibrated": true
+  }
+}
