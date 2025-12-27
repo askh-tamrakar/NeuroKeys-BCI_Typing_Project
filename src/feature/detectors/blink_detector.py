@@ -1,17 +1,20 @@
 class BlinkDetector:
     """
     Classifies an event as a blink based on extracted features.
+    Refactored to focus on robust amplitude and duration checks, removing brittle shape checks.
     """
     
     def __init__(self, config: dict):
         eog_cfg = config.get("features", {}).get("EOG", {})
         
-        # Classification thresholds
-        self.min_duration = eog_cfg.get("min_duration_ms", 100.0)
-        self.max_duration = eog_cfg.get("max_duration_ms", 600.0)
-        self.min_asymmetry = eog_cfg.get("min_asymmetry", 0.05) 
-        self.max_asymmetry = eog_cfg.get("max_asymmetry", 2.5) 
-        self.min_kurtosis = eog_cfg.get("min_kurtosis", -3.0) 
+        # Simplified thresholds
+        self.min_duration = eog_cfg.get("min_duration_ms", 50.0)    # Relaxed from 100
+        self.max_duration = eog_cfg.get("max_duration_ms", 800.0)   # Relaxed from 600
+        self.threshold_amp = eog_cfg.get("amp_threshold", 1.5)      # Primary detector
+        
+        # Debounce/Cooldown state
+        self.last_detection_ts = 0.0
+        self.cooldown_seconds = 0.5  # Ignore second phase of blink (biphasic)
         
     def detect(self, features: dict) -> bool:
         """
@@ -20,16 +23,23 @@ class BlinkDetector:
         if not features:
             return False
             
-        dur = features["duration_ms"]
-        asym = features["asymmetry"]
-        kurt = features["kurtosis"]
+        dur = features.get("duration_ms", 0)
+        amp = features.get("amplitude", 0)
+        ts = features.get("timestamp", 0)
         
-        # Rule-based classification
+        # Cooldown Check
+        if (ts - self.last_detection_ts) < self.cooldown_seconds:
+             return False
+
+        # Robust Logic:
+        # 1. Amplitude must be significant (already checked by extractor, but verified here)
+        # 2. Duration must be physiological (not a spike, not a drift)
+        
+        is_valid_amp = amp >= (self.threshold_amp * 0.8) # Allow slightly lower if extractor caught it
         is_valid_duration = self.min_duration <= dur <= self.max_duration
-        is_valid_asymmetry = self.min_asymmetry <= asym <= self.max_asymmetry
-        is_valid_shape = kurt >= self.min_kurtosis
         
-        if is_valid_duration and is_valid_asymmetry and is_valid_shape:
+        if is_valid_amp and is_valid_duration:
+            self.last_detection_ts = ts
             return True
             
         return False
@@ -38,6 +48,4 @@ class BlinkDetector:
         eog_cfg = config.get("features", {}).get("EOG", {})
         self.min_duration = eog_cfg.get("min_duration_ms", self.min_duration)
         self.max_duration = eog_cfg.get("max_duration_ms", self.max_duration)
-        self.min_asymmetry = eog_cfg.get("min_asymmetry", self.min_asymmetry)
-        self.max_asymmetry = eog_cfg.get("max_asymmetry", self.max_asymmetry)
-        self.min_kurtosis = eog_cfg.get("min_kurtosis", self.min_kurtosis)
+        self.threshold_amp = eog_cfg.get("amp_threshold", self.threshold_amp)

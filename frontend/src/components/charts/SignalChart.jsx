@@ -12,6 +12,7 @@ export default function SignalChart({
   data = [],
   byChannel = null,
   color = '#3b82f6',
+  curveType = 'monotone',
   timeWindowMs = 10000,
   channelLabelPrefix = 'Ch',
   height = 300,
@@ -283,7 +284,7 @@ export default function SignalChart({
               channelKeys.map((k, idx) => (
                 <Line
                   key={`ch-${k}`}
-                  type="monotone"
+                  type={curveType}
                   dataKey={`ch${k}`}
                   name={`${channelLabelPrefix ?? 'Ch'} ${k}`}
                   stroke={channelColors?.[k] || DEFAULT_PALETTE[idx % DEFAULT_PALETTE.length]}
@@ -295,7 +296,7 @@ export default function SignalChart({
               ))
             ) : (
               <Line
-                type="monotone"
+                type={curveType}
                 dataKey="value"
                 name="Signal"
                 stroke={color}

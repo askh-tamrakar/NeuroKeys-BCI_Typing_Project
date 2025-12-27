@@ -313,8 +313,16 @@ def broadcast_events():
              time.sleep(0.01)
 
 def broadcast_data():
-    """Broadcast stream data to all connected clients."""
-    print("[WebServer] 📡 Starting broadcast thread...")
+    """
+    Broadcast stream data to all connected clients.
+    Optimized: Batches samples to ~30Hz (33ms) to prevent frontend overload.
+    """
+    print("[WebServer] 📡 Starting broadcast thread (BATCHED)...")
+    
+    # Batch settings
+    BATCH_INTERVAL = 0.033  # 33ms target (approx 30Hz)
+    last_batch_time = time.time()
+    batch_buffer = []
 
     while state.running:
         if state.inlet is None:
@@ -322,12 +330,13 @@ def broadcast_data():
             continue
 
         try:
+            # Pull sample with short timeout
             sample, ts = state.inlet.pull_sample(timeout=1.0)
 
             if sample is not None and len(sample) == state.num_channels:
                 state.sample_count += 1
 
-                # Format data for broadcasting
+                # Format single sample
                 channels_data = {}
                 for ch_idx in range(state.num_channels):
                     ch_mapping = state.channel_mapping.get(ch_idx, {})
@@ -338,20 +347,35 @@ def broadcast_data():
                         "timestamp": ts
                     }
 
-                data = {
-                    "stream_name": RAW_STREAM_NAME,
+                # Add to batch buffer
+                batch_buffer.append({
                     "channels": channels_data,
-                    "channel_count": state.num_channels,
-                    "sample_rate": state.sr,
-                    "sample_count": state.sample_count,
-                    "timestamp": ts
-                }
+                    "timestamp": ts,
+                    "sample_count": state.sample_count
+                })
 
-                socketio.emit('bio_data_update', data)
+                # Check if it's time to flush batch
+                now = time.time()
+                if now - last_batch_time >= BATCH_INTERVAL and len(batch_buffer) > 0:
+                    
+                    batch_payload = {
+                        "stream_name": RAW_STREAM_NAME,
+                        "type": "batch",
+                        "samples": batch_buffer,
+                        "sample_rate": state.sr,
+                        "batch_size": len(batch_buffer),
+                        "timestamp": now
+                    }
+                    
+                    socketio.emit('bio_data_batch', batch_payload)
+                    
+                    # Reset buffer
+                    batch_buffer = []
+                    last_batch_time = now
 
-                # Log progress every 512 samples
-                if state.sample_count % 512 == 0:
-                    print(f"[WebServer] ✅ {state.sample_count} samples broadcast")
+                    # Log progress every 512 samples
+                    if state.sample_count % 512 == 0:
+                         print(f"[WebServer] ✅ {state.sample_count} samples broadcast")
 
         except Exception as e:
             if "timeout" not in str(e).lower():

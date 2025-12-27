@@ -103,6 +103,38 @@ export function useWebSocket(url = 'http://localhost:5000') {
       })
 
       // === DATA EVENTS ===
+      // === DATA EVENTS ===
+      socketRef.current.on('bio_data_batch', (batchData) => {
+        try {
+          if (!batchData || !batchData.samples || batchData.samples.length === 0) return
+
+          // compatibility: use last sample for simple views
+          const lastSample = batchData.samples[batchData.samples.length - 1]
+
+          // Normalize channels for legacy consumers
+          // ... (normalization logic similar to bio_data_update but typically already formatted by python)
+          // Python sends: {0: {label:..., value:..., timestamp:...}} which matches NEW LSL format in bio_data_update hook
+
+          const rawPayload = {
+            stream_name: batchData.stream_name,
+            channels: lastSample.channels,
+            sample_rate: batchData.sample_rate,
+            sample_count: lastSample.sample_count,
+            timestamp: lastSample.timestamp,
+            // Attach FULL BATCH for LiveView
+            _batch: batchData.samples
+          }
+
+          setLastMessage({
+            data: JSON.stringify(rawPayload),
+            timestamp: Date.now(),
+            raw: rawPayload
+          })
+        } catch (e) {
+          console.warn('⚠️ Failed to parse bio_data_batch:', e)
+        }
+      })
+
       socketRef.current.on('bio_data_update', (data) => {
         try {
           // Handle NEW LSL format (from fixed web_server.py)

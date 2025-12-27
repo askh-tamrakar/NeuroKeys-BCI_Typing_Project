@@ -25,10 +25,14 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
   const [recordingChannels, setRecordingChannels] = useState([0, 1]) // Default to first two channels
   const [isSaving, setIsSaving] = useState(false)
 
-  const addDataPoint = (dataArray, newPoint, maxAge) => {
-    const now = newPoint.time
-    const filtered = dataArray.filter(p => (now - p.time) < maxAge)
-    return [...filtered, newPoint]
+  // Optimized batch adder
+  const addDataPoints = (dataArray, newPoints, maxAge) => {
+    if (newPoints.length === 0) return dataArray
+    const latestTime = newPoints[newPoints.length - 1].time
+    const cutoff = latestTime - maxAge
+    // Filter out old points from existing data
+    const filtered = dataArray.filter(p => p.time > cutoff)
+    return [...filtered, ...newPoints]
   }
 
   // Update recording timer
@@ -47,106 +51,95 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
   useEffect(() => {
     if (!wsData || isPaused) return
 
-    let payload = null
+    let basePayload = null
     try {
-      payload = wsData.raw ?? (typeof wsData === 'string' ? JSON.parse(wsData) : wsData)
+      basePayload = wsData.raw ?? (typeof wsData === 'string' ? JSON.parse(wsData) : wsData)
     } catch (e) {
       console.warn('[LiveView] Failed to parse wsData:', e)
       return
     }
 
-    if (!payload?.channels) {
-      console.warn('[LiveView] No channels in payload')
-      return
-    }
+    if (!basePayload) return
 
-    // normalize timestamp (ms)
-    let incomingTs = Number(payload.timestamp)
+    // Handle Batch or Single Sample
+    const samples = basePayload._batch || (basePayload.channels ? [basePayload] : [])
+    if (samples.length === 0) return
 
-    if (!incomingTs || incomingTs < 1e9) {
-      incomingTs = Date.now()
-    }
-
-    // sample interval used to bump monotonic timestamps (in ms)
     const sampleIntervalMs = Math.round(1000 / (samplingRate || 250))
 
-    // global incremental timestamp
-    if (!window.__lastTs) window.__lastTs = incomingTs
-    if (incomingTs <= window.__lastTs) {
-      incomingTs = window.__lastTs + sampleIntervalMs
-    }
-    window.__lastTs = incomingTs
+    // Temporary buffers for this update
+    const batchUpdates = { 0: [], 1: [], 2: [], 3: [] }
+    const recordingUpdates = []
 
-    // If recording, accumulate data
-    if (isRecording) {
-      const recordPoint = {
-        timestamp: incomingTs,
-        channels: {}
+    samples.forEach(payload => {
+      if (!payload.channels) return
+
+      let incomingTs = Number(payload.timestamp)
+      // Fix timestamp if needed
+      if (!incomingTs || incomingTs < 1e9) incomingTs = Date.now()
+
+      // Monotonic timestamp logic
+      if (!window.__lastTs) window.__lastTs = incomingTs
+      if (incomingTs <= window.__lastTs) {
+        incomingTs = window.__lastTs + sampleIntervalMs
+      }
+      window.__lastTs = incomingTs
+
+      // Recording accumulation
+      if (isRecording) {
+        const recordPoint = { timestamp: incomingTs, channels: {} }
+        let hasData = false
+        recordingChannels.forEach(chNum => {
+          const chKey = `ch${chNum}` // payload might use integer keys, check Object.entries below
+          // Search in payload.channels (which might be object with keys '0','1'...)
+          // We'll iterate channels below, so let's do it there or efficient lookup
+        })
+        // Efficient mapping:
+        Object.entries(payload.channels).forEach(([chIdx, chData]) => {
+          const chNum = parseInt(chIdx)
+          if (recordingChannels.includes(chNum)) {
+            let val = 0
+            if (typeof chData === 'number') val = chData
+            else if (typeof chData === 'object') val = chData.value ?? chData.val ?? 0
+            recordPoint.channels[`ch${chNum}`] = val
+            hasData = true
+          }
+        })
+        if (hasData) recordingUpdates.push(recordPoint)
       }
 
+      // View Buffers accumulation
       Object.entries(payload.channels).forEach(([chIdx, chData]) => {
         const chNum = parseInt(chIdx)
-        if (recordingChannels.includes(chNum)) {
-          let value = 0
-          if (typeof chData === 'number') value = chData
-          else if (typeof chData === 'object') value = chData.value ?? chData.val ?? 0
-          recordPoint.channels[`ch${chNum}`] = value
+        const chKey = `ch${chNum}`
+
+        // Skip disabled
+        const chConfig = channelMapping[chKey]
+        if (chConfig?.enabled === false) return
+
+        let value = 0
+        if (typeof chData === 'number') value = chData
+        else if (typeof chData === 'object') value = chData.value ?? chData.val ?? 0
+
+        if (!Number.isFinite(value)) return
+
+        // Push to temp buffer
+        if (batchUpdates[chNum]) {
+          batchUpdates[chNum].push({ time: incomingTs, value: Number(value) })
         }
       })
+    })
 
-      if (Object.keys(recordPoint.channels).length > 0) {
-        setRecordedData(prev => [...prev, recordPoint])
-      }
+    // Commit State Updates
+    if (batchUpdates[0].length) setCh0Data(prev => addDataPoints(prev, batchUpdates[0], timeWindowMs))
+    if (batchUpdates[1].length) setCh1Data(prev => addDataPoints(prev, batchUpdates[1], timeWindowMs))
+    if (batchUpdates[2].length) setCh2Data(prev => addDataPoints(prev, batchUpdates[2], timeWindowMs))
+    if (batchUpdates[3].length) setCh3Data(prev => addDataPoints(prev, batchUpdates[3], timeWindowMs))
+
+    if (recordingUpdates.length > 0) {
+      setRecordedData(prev => [...prev, ...recordingUpdates])
     }
 
-    Object.entries(payload.channels).forEach(([chIdx, chData]) => {
-      const chNum = parseInt(chIdx)
-      const chKey = `ch${chNum}`
-      const chConfig = channelMapping[chKey]
-      if (chConfig?.enabled === false) return
-
-      let value = 0
-      if (typeof chData === 'number') value = chData
-      else if (typeof chData === 'object') value = chData.value ?? chData.val ?? 0
-
-      if (!Number.isFinite(value)) return
-
-      // ensure monotonic timestamp per channel: if incomingTs <= lastTs -> bump
-      const newPointFactory = (ts) => ({ time: ts, value: Number(value) })
-
-      switch (chNum) {
-        case 0:
-          setCh0Data(prev => {
-            const lastTs = prev.length ? prev[prev.length - 1].time : (incomingTs - sampleIntervalMs)
-            const ts = incomingTs <= lastTs ? lastTs + sampleIntervalMs : incomingTs
-            return addDataPoint(prev, newPointFactory(ts), timeWindowMs)
-          })
-          break
-        case 1:
-          setCh1Data(prev => {
-            const lastTs = prev.length ? prev[prev.length - 1].time : (incomingTs - sampleIntervalMs)
-            const ts = incomingTs <= lastTs ? lastTs + sampleIntervalMs : incomingTs
-            return addDataPoint(prev, newPointFactory(ts), timeWindowMs)
-          })
-          break
-        case 2:
-          setCh2Data(prev => {
-            const lastTs = prev.length ? prev[prev.length - 1].time : (incomingTs - sampleIntervalMs)
-            const ts = incomingTs <= lastTs ? lastTs + sampleIntervalMs : incomingTs
-            return addDataPoint(prev, newPointFactory(ts), timeWindowMs)
-          })
-          break
-        case 3:
-          setCh3Data(prev => {
-            const lastTs = prev.length ? prev[prev.length - 1].time : (incomingTs - sampleIntervalMs)
-            const ts = incomingTs <= lastTs ? lastTs + sampleIntervalMs : incomingTs
-            return addDataPoint(prev, newPointFactory(ts), timeWindowMs)
-          })
-          break
-        default:
-          console.warn(`[LiveView] Ch${chNum}: Unknown channel index`)
-      }
-    })
   }, [wsData, isPaused, timeWindowMs, channelMapping, samplingRate, isRecording, recordingChannels])
 
   useEffect(() => {
@@ -428,6 +421,7 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
         </div>
         <SignalChart
           title={`${sensorName1}`}
+          curveType="natural"
           byChannel={{ active: sweep1.active, history: sweep1.history }}
           channelColors={{ active: 'rgb(59, 130, 246)', history: 'rgba(59, 130, 246, 0.3)' }}
           timeWindowMs={timeWindowMs}
@@ -447,6 +441,7 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
         </div>
         <SignalChart
           title={`${sensorName2}`}
+          curveType="natural"
           byChannel={{ active: sweep2.active, history: sweep2.history }}
           channelColors={{ active: 'rgb(16, 185, 129)', history: 'rgba(16, 185, 129, 0.3)' }}
           timeWindowMs={timeWindowMs}
