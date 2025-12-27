@@ -18,7 +18,15 @@ except ImportError:
 # Import Feature Extractors
 from feature.extractors.blink_extractor import BlinkExtractor
 from feature.extractors.rps_extractor import RPSExtractor
-# Future: from feature.extractors.eeg_extractor import EEGExtractor
+from feature.extractors.trigger_extractor import EEGExtractor
+
+# Import Action Detectors
+from feature.detectors.blink_detector import BlinkDetector
+from feature.detectors.rps_detector import RPSDetector
+from feature.detectors.trigger_detector import EEGDetector
+
+# Import Database Manager
+from database.db_manager import db_manager
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -94,50 +102,33 @@ class CalibrationManager:
             
         return self._sanitize_features(raw_features)
 
-    def detect_signal(self, sensor: str, action: str, features: Dict[str, Any], config: Dict[str, Any]) -> bool:
+    def predict_signal(self, sensor: str, features: Dict[str, Any], config: Dict[str, Any]) -> Optional[str]:
         """
-        Check if features match the current detection thresholds in config.
+        Use the appropriate detector to predict the signal label.
         """
         sensor = sensor.upper()
-        sensor_cfg = config.get("features", {}).get(sensor, {})
-        
-        action_profile = sensor_cfg.get(action, {})
-        
-        if not action_profile:
-            # If no profile, maybe it's a global threshold (like EOG above)?
-            # If not, return False
-            return False
-        
-        match_count = 0
-        total_features = 0
-        
-        for feat_name, range_val in action_profile.items():
-            if feat_name in features:
-                # Check for [min, max] range
-                if isinstance(range_val, list) and len(range_val) == 2:
-                    total_features += 1
-                    val = features[feat_name]
-                    if range_val[0] <= val <= range_val[1]:
-                        match_count += 1
-                    else:
-                        print(f"[Calibration] ❌ Feature Mismatch: {feat_name}={val:.4f} not in {range_val}")
-                # Check for single minimum (e.g. amplitude > X)
-                elif isinstance(range_val, (int, float)):
-                     total_features += 1
-                     val = features[feat_name]
-                     if val >= range_val:
-                         match_count += 1
-                     else:
-                         print(f"[Calibration] ❌ Threshold Mismatch: {feat_name}={val:.4f} < {range_val}")
+        try:
+            if sensor == "EMG":
+                detector = RPSDetector(config)
+                return detector.detect(features)
+            elif sensor == "EOG":
+                detector = BlinkDetector(config)
+                return detector.detect(features)
+            elif sensor == "EEG":
+                # Placeholder
+                return None
+        except Exception as e:
+            logger.error(f"Prediction error: {e}")
+        return None
 
-        if total_features > 0:
-            # Allow some fuzziness? 
-            # Stricter: must match all key features
-            # Lenient: > 60% match
-            score = match_count / total_features
-            return score >= 0.8 # Require 80% match
-            
-        return False
+    def detect_signal(self, sensor: str, action: str, features: Dict[str, Any], config: Dict[str, Any]) -> Optional[str]:
+        """
+        Check if features match the expected action.
+        Returns the detected label (str) if any, else None.
+        (Previously returned bool)
+        """
+        detected_label = self.predict_signal(sensor, features, config)
+        return detected_label
             
 
     def save_window(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -193,15 +184,44 @@ class CalibrationManager:
                     "channel": channel,
                     "saved_at": ts
                 }, f, indent=2)
+
+            # 4b. Save to SQLite DB (for EMG)
+            if valid_samples and features and sensor == 'EMG':
+                try:
+                    # Dynamic Label Mapping
+                    # Get gestures from Feature Config
+                    feature_cfg = config.get("features", {}).get("EMG", {})
+                    # Create a deterministic mapping based on sorted keys
+                    # Filter out "Rest" if you want specific IDs or just map everything
+                    known_gestures = sorted([k for k in feature_cfg.keys() if k != "Rest"])
+                    
+                    # Standard mapping: Rest=0, others=1,2,3...
+                    label_map = {"Rest": 0}
+                    for idx, gesture in enumerate(known_gestures, 1):
+                        label_map[gesture] = idx
+                        
+                    int_label = label_map.get(action, 0) 
+                    
+                    db_manager.insert_window(
+                        features,
+                        label=int_label,
+                        session_id=str(int(ts)) 
+                    )
+                    logger.info(f"[Calibration] Saved to separate DB: {action} (ID: {int_label})")
+                except Exception as db_err:
+                    logger.error(f"[Calibration] DB Save Error: {db_err}")
         
-        # 5. Check Detection
-        detected = self.detect_signal(sensor, action, features, config)
+        # 5. Check Detection & Prediction
+        # detect_signal now returns string or None
+        detected_action = self.detect_signal(sensor, action, features, config)
+        predicted_label = self.predict_signal(sensor, features, config)
         
         return {
             "status": "saved",
             "csv_path": str(csv_path),
             "features": features,
-            "detected": detected
+            "detected": detected_action, # Now a string (or None)
+            "predicted_label": predicted_label
         }
 
     def calibrate_sensor(self, sensor: str, windows: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -231,7 +251,7 @@ class CalibrationManager:
         updated_thresholds = {}
         
         for action, feature_list in windows_by_action.items():
-            if action == 'Rest': continue # Don't calibrate 'Rest' parameters typically
+
             
             if len(feature_list) < 3:
                 continue # Need more data
@@ -245,29 +265,77 @@ class CalibrationManager:
                             feature_values[k] = []
                         feature_values[k].append(v)
             
-            # Compute 5th-95th percentile ranges
-            action_thresholds = {}
+            
+            # Remove outliers via IQR before percentile calculation
+            # This prevents one bad window from ruining the calibration
+            clean_values_map = {}
             for k, vals in feature_values.items():
                 if len(vals) < 3:
-                    continue
+                     clean_values_map[k] = vals
+                     continue
+
+                # robust IQR filtering
+                q1 = np.percentile(vals, 25)
+                q3 = np.percentile(vals, 75)
+                iqr = q3 - q1
+                lower_fence = q1 - 1.5 * iqr
+                upper_fence = q3 + 1.5 * iqr
+                
+                clean_vals = [v for v in vals if lower_fence <= v <= upper_fence]
+                # If we filtered everything, fall back to original
+                if not clean_vals: 
+                    clean_vals = vals
+                clean_values_map[k] = clean_vals
+
+            # Compute ranges on CLEAN data
+            action_thresholds = {}
+            for k, vals in clean_values_map.items():
+                if not vals: continue
                 
                 sorted_vals = sorted(vals)
                 n = len(sorted_vals)
-                idx_lo = max(0, int(n * 0.05))
-                idx_hi = min(n - 1, int(n * 0.95))
                 
-                min_val = sorted_vals[idx_lo]
-                max_val = sorted_vals[idx_hi]
+                # Use slightly broader percentiles for validity (5th-95th)
+                # But rely on the IQR cleaning above to handle extreme outliers
+                min_val = np.percentile(vals, 5)
+                max_val = np.percentile(vals, 95)
                 
-                # Add 5-10% margin
-                margin = (max_val - min_val) * 0.1 if max_val != min_val else abs(min_val) * 0.1
-                if margin == 0: margin = 0.5 # Safety for zeros
+                # Add margin (20% is safer than 30% if we already removed outliers)
+                margin = (max_val - min_val) * 0.2
+                if margin == 0: margin = abs(min_val) * 0.1
+                if margin == 0: margin = 1.0
                 
-                # Store as [min, max]
-                action_thresholds[k] = [
-                    round(min_val - margin, 4), 
-                    round(max_val + margin, 4)
-                ]
+                lower_bound = float(min_val - margin)
+                upper_bound = float(max_val + margin)
+                
+                # Sanity Checks / Hard Caps based on Sensor Physics
+                if sensor == 'EOG':
+                    if 'duration_ms' in k:
+                        lower_bound = max(50.0, lower_bound) # Blinks can't be < 50ms
+                        upper_bound = min(1500.0, upper_bound)
+                    elif 'amplitude' in k:
+                        lower_bound = max(10.0, lower_bound) # Noise floor
+                        upper_bound = min(2000.0, upper_bound) # Max phys cap
+                    elif 'peak_count' in k:
+                        # integer-ish logic
+                        lower_bound = max(0.5, lower_bound)
+                    elif 'kurtosis' in k:
+                        lower_bound = max(-5.0, lower_bound)
+                        upper_bound = min(50.0, upper_bound)
+
+                elif sensor == 'EMG':
+                    if 'mav' in k or 'rms' in k:
+                         lower_bound = max(1.0, lower_bound)
+                
+                # General Positive-Only Cap
+                positive_only = {
+                    'rms', 'mav', 'energy', 'var', 'peak', 'range', 'iemg', 
+                    'amplitude', 'period', 'power', 'std_dev', 'rise_time_ms', 'fall_time_ms', 'duration_ms'
+                }
+                if k.lower() in positive_only:
+                    lower_bound = max(0.0, lower_bound)
+
+                action_thresholds[k] = [round(lower_bound, 4), round(upper_bound, 4)]
             
             if action_thresholds:
                 updated_thresholds[action] = action_thresholds

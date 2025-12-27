@@ -197,7 +197,7 @@ class SerialWriter(threading.Thread):
         self.baud = baud
         self.sample_rate = sample_rate
         self.channels = channels
-        self.data_queue = data_queue  # receives tuples (adc0, adc1, timestamp)
+        self.data_queue = data_queue  # receives tuples (adc0, adc1, adc2, adc3, timestamp)
         self._stop = threading.Event()
         self.binary = binary
         self.quiet = quiet
@@ -224,17 +224,21 @@ class SerialWriter(threading.Thread):
         interval = 1.0 / float(self.sample_rate)
         while not self._stop.is_set():
             try:
-                adc0, adc1, ts = self.data_queue.get(timeout=0.1) # Reduced timeout for faster stop check
+                adc0, adc1, adc2, adc3, ts = self.data_queue.get(timeout=0.1) # Reduced timeout for faster stop check
             except queue.Empty:
                 continue
             # Build packet according to the expected layout
             ctr = self.counter & 0xFF
             ch0 = int(adc0) & 0xFFFF
             ch1 = int(adc1) & 0xFFFF
-            # packet bytes indices: sync1 sync2 counter ch0_hi ch0_lo ch1_hi ch1_lo end
+            ch2 = int(adc2) & 0xFFFF
+            ch3 = int(adc3) & 0xFFFF
+            # packet bytes indices: sync1 sync2 counter ch0_hi ch0_lo ch1_hi ch1_lo ch2_hi ch2_lo ch3_hi ch3_lo end
             packet = bytes([SYNC1, SYNC2, ctr,
                             (ch0 >> 8) & 0xFF, ch0 & 0xFF,
                             (ch1 >> 8) & 0xFF, ch1 & 0xFF,
+                            (ch2 >> 8) & 0xFF, ch2 & 0xFF,
+                            (ch3 >> 8) & 0xFF, ch3 & 0xFF,
                             END_BYTE])
             # write
             if opened and self.ser:
@@ -273,12 +277,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.streaming = False
         self.binary = self.config.get("binary", True)
 
-        # two channel generators
-        self.ch_gens = [ChannelGenerator(), ChannelGenerator()]
+        # four channel generators
+        self.ch_gens = [ChannelGenerator() for _ in range(4)]
         # apply config mapping if exist
         mapping = self.config.get("channel_mapping", {})
-        for i in range(2):
-            role = mapping.get(f"ch{i}", {}).get("sensor", "EMG")
+        for i in range(4):
+            role = mapping.get(f"ch{i}", {}).get("sensor", "EMG" if i==0 else "EEG")
             self.ch_gens[i].set_role(role)
 
         # queue for inter-thread samples
@@ -320,7 +324,9 @@ class MainWindow(QtWidgets.QMainWindow):
             "binary": True,
             "channel_mapping": {
                 "ch0": {"sensor": "EMG"},
-                "ch1": {"sensor": "EEG"}
+                "ch1": {"sensor": "EEG"},
+                "ch2": {"sensor": "EEG"},
+                "ch3": {"sensor": "EEG"}
             },
             "display": {
                 "manualZoom": False,
@@ -339,7 +345,9 @@ class MainWindow(QtWidgets.QMainWindow):
             # channel mapping read from UI
             self.config["channel_mapping"] = {
                 "ch0": {"sensor": self.ch0_map.currentText()},
-                "ch1": {"sensor": self.ch1_map.currentText()}
+                "ch1": {"sensor": self.ch1_map.currentText()},
+                "ch2": {"sensor": self.ch2_map.currentText()},
+                "ch3": {"sensor": self.ch3_map.currentText()}
             }
             CONFIG_PATH.write_text(json.dumps(self.config, indent=2))
             print("[Main] Config saved to", CONFIG_PATH)
@@ -373,6 +381,20 @@ class MainWindow(QtWidgets.QMainWindow):
         left_layout.addWidget(QtWidgets.QLabel("Channel 1"))
         left_layout.addWidget(self.ch1_map)
 
+        self.ch2_map = QtWidgets.QComboBox()
+        self.ch2_map.addItems(["EMG", "EEG", "EOG", "NONE"])
+        self.ch2_map.setCurrentText(self.config.get("channel_mapping", {}).get("ch2", {}).get("sensor", "EEG"))
+        self.ch2_map.currentTextChanged.connect(lambda v: self._on_map_change(2, v))
+        left_layout.addWidget(QtWidgets.QLabel("Channel 2"))
+        left_layout.addWidget(self.ch2_map)
+
+        self.ch3_map = QtWidgets.QComboBox()
+        self.ch3_map.addItems(["EMG", "EEG", "EOG", "NONE"])
+        self.ch3_map.setCurrentText(self.config.get("channel_mapping", {}).get("ch3", {}).get("sensor", "EEG"))
+        self.ch3_map.currentTextChanged.connect(lambda v: self._on_map_change(3, v))
+        left_layout.addWidget(QtWidgets.QLabel("Channel 3"))
+        left_layout.addWidget(self.ch3_map)
+
         left_layout.addSpacing(6)
 
         # dynamic per-channel controls container
@@ -389,6 +411,14 @@ class MainWindow(QtWidgets.QMainWindow):
         ctrl_layout.addSpacing(8)
         ctrl_layout.addWidget(QtWidgets.QLabel("Channel 1 controls"))
         ctrl_layout.addWidget(self.controls_ch1)
+        
+        self.controls_ch2 = self._build_channel_controls(2)
+        ctrl_layout.addWidget(QtWidgets.QLabel("Channel 2 controls"))
+        ctrl_layout.addWidget(self.controls_ch2)
+
+        self.controls_ch3 = self._build_channel_controls(3)
+        ctrl_layout.addWidget(QtWidgets.QLabel("Channel 3 controls"))
+        ctrl_layout.addWidget(self.controls_ch3)
         left_layout.addWidget(ctrl_wrapper)
 
         left_layout.addWidget(ctrl_wrapper)
@@ -475,6 +505,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.curve1 = self.plot1.plot(pen=pg.mkPen('y', width=1.4))
         right_layout.addWidget(self.plot0, 1)
         right_layout.addWidget(self.plot1, 1)
+        
+        ax2 = CustomAxisItem(orientation='left')
+        ax3 = CustomAxisItem(orientation='left')
+        self.plot2 = pg.PlotWidget(title="Channel 2", axisItems={'left': ax2})
+        self.plot3 = pg.PlotWidget(title="Channel 3", axisItems={'left': ax3})
+        self.plot2.showGrid(x=True, y=True)
+        self.plot3.showGrid(x=True, y=True)
+        self.curve2 = self.plot2.plot(pen=pg.mkPen('g', width=1.4))
+        self.curve3 = self.plot3.plot(pen=pg.mkPen('m', width=1.4))
+        right_layout.addWidget(self.plot2, 1)
+        right_layout.addWidget(self.plot3, 1)
 
         # console log
         self.console = QtWidgets.QPlainTextEdit()
@@ -563,6 +604,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.plot_len = int(self.sample_rate * 4)  # 4 seconds buffer
         self.buf0 = np.zeros(self.plot_len, dtype=float)
         self.buf1 = np.zeros(self.plot_len, dtype=float)
+        self.buf2 = np.zeros(self.plot_len, dtype=float)
+        self.buf3 = np.zeros(self.plot_len, dtype=float)
         self.ptr = 0
 
     def _on_timer(self):
@@ -574,11 +617,15 @@ class MainWindow(QtWidgets.QMainWindow):
         # drain queue
         new_data0 = []
         new_data1 = []
+        new_data2 = []
+        new_data3 = []
         while True:
             try:
-                v0, v1 = self.plot_queue.get_nowait()
+                v0, v1, v2, v3 = self.plot_queue.get_nowait()
                 new_data0.append(v0)
                 new_data1.append(v1)
+                new_data2.append(v2)
+                new_data3.append(v3)
             except queue.Empty:
                 break
         
@@ -589,14 +636,23 @@ class MainWindow(QtWidgets.QMainWindow):
             if n >= self.plot_len:
                 self.buf0 = np.array(new_data0[-self.plot_len:], dtype=float)
                 self.buf1 = np.array(new_data1[-self.plot_len:], dtype=float)
+                self.buf2 = np.array(new_data2[-self.plot_len:], dtype=float)
+                self.buf3 = np.array(new_data3[-self.plot_len:], dtype=float)
             else:
                 self.buf0 = np.roll(self.buf0, -n)
                 self.buf1 = np.roll(self.buf1, -n)
+                self.buf2 = np.roll(self.buf2, -n)
+                self.buf3 = np.roll(self.buf3, -n)
                 self.buf0[-n:] = new_data0
                 self.buf1[-n:] = new_data1
+                self.buf2[-n:] = new_data2
+                self.buf3[-n:] = new_data3
         
         self.curve0.setData(self.buf0)
+        self.curve0.setData(self.buf0)
         self.curve1.setData(self.buf1)
+        self.curve2.setData(self.buf2)
+        self.curve3.setData(self.buf3)
         
         # apply manual Y limits if needed
         if not self.autoscale_chk.isChecked():
@@ -604,6 +660,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 ymin = float(self.ylim_min.text()); ymax = float(self.ylim_max.text())
                 self.plot0.setYRange(ymin, ymax, padding=0)
                 self.plot1.setYRange(ymin, ymax, padding=0)
+                self.plot2.setYRange(ymin, ymax, padding=0)
+                self.plot3.setYRange(ymin, ymax, padding=0)
             except Exception:
                 pass
 
@@ -629,7 +687,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # prepare serial writer
         self.sample_queue = queue.Queue(maxsize=8192)
-        self.serial_writer = SerialWriter(self.port, self.baud, self.sample_rate, channels=2,
+        self.serial_writer = SerialWriter(self.port, self.baud, self.sample_rate, channels=4,
                                           data_queue=self.sample_queue, binary=self.binary, quiet=False)
         self.serial_writer.start()
         self.streaming = True
@@ -675,20 +733,25 @@ class MainWindow(QtWidgets.QMainWindow):
             t_seconds = time.perf_counter() - origin
 
             # synth values for both channels
+            # synth values for all channels
             v0 = self.ch_gens[0].synth_now(t_seconds)
             v1 = self.ch_gens[1].synth_now(t_seconds)
+            v2 = self.ch_gens[2].synth_now(t_seconds)
+            v3 = self.ch_gens[3].synth_now(t_seconds)
 
             # map normalized [-RANGE..RANGE] -> 14-bit ADC
             a0 = int(round(((v0 + DEFAULT_RANGE) / (2.0 * DEFAULT_RANGE)) * ADC_MAX))
             a1 = int(round(((v1 + DEFAULT_RANGE) / (2.0 * DEFAULT_RANGE)) * ADC_MAX))
+            a2 = int(round(((v2 + DEFAULT_RANGE) / (2.0 * DEFAULT_RANGE)) * ADC_MAX))
+            a3 = int(round(((v3 + DEFAULT_RANGE) / (2.0 * DEFAULT_RANGE)) * ADC_MAX))
             
             # push to plot buffers (scale back to -1..1 for plot)
-            self._append_plot(v0, v1)
+            self._append_plot(v0, v1, v2, v3)
             
             # enqueue for serial writer if streaming
             if self.streaming and self.serial_writer:
                 try:
-                    self.sample_queue.put_nowait((a0, a1, time.time()))
+                    self.sample_queue.put_nowait((a0, a1, a2, a3, time.time()))
                 except queue.Full:
                     # drop if writer is slow
                     pass
@@ -709,14 +772,16 @@ class MainWindow(QtWidgets.QMainWindow):
                 if frame % 100 == 0:
                     time.sleep(0.001)
 
-    def _append_plot(self, v0, v1):
+    def _append_plot(self, v0, v1, v2, v3):
         # Enqueue for main thread to handle
         try:
-            self.plot_queue.put_nowait((v0, v1))
+            self.plot_queue.put_nowait((v0, v1, v2, v3))
         except queue.Full:
             # If main thread gets stuck, drop visual frames rather than blocking or OOM
             pass
         self.buf1[self.ptr] = v1
+        self.buf2[self.ptr] = v2
+        self.buf3[self.ptr] = v3
         self.ptr = (self.ptr + 1) % self.plot_len
 
     def log(self, s):

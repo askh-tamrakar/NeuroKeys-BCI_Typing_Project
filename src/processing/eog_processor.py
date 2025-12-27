@@ -6,7 +6,8 @@ EOG filter processor (Passive)
 """
 
 import numpy as np
-from scipy.signal import butter, lfilter, lfilter_zi
+import numpy as np
+from scipy.signal import butter, sosfilt, iirnotch, tf2sos
 
 class EOGFilterProcessor:
     def __init__(self, config: dict, sr: int = 512, channel_key: str = None):
@@ -17,9 +18,18 @@ class EOGFilterProcessor:
         self._load_params()
         self._design_filters()
         
-        self.zi_lp = lfilter_zi(self.b_lp, self.a_lp) * 0.0
-        self.zi_notch = lfilter_zi(self.b_notch, self.a_notch) * 0.0 if self.notch_enabled else None
-        self.zi_bp = lfilter_zi(self.b_bp, self.a_bp) * 0.0 if self.bp_enabled else None
+        # Initialize state (n_sections, 2)
+        self.zi_lp = np.zeros((self.sos_lp.shape[0], 2))
+        
+        if self.notch_enabled:
+            self.zi_notch = np.zeros((self.sos_notch.shape[0], 2))
+        else:
+            self.zi_notch = None
+
+        if self.bp_enabled:
+            self.zi_bp = np.zeros((self.sos_bp.shape[0], 2))
+        else:
+            self.zi_bp = None
 
     def _load_params(self):
         # 1. Default Global Config
@@ -50,21 +60,23 @@ class EOGFilterProcessor:
         
         # 1. Low Pass
         wn = self.lp_cutoff / nyq
-        self.b_lp, self.a_lp = butter(self.lp_order, wn, btype="low", analog=False)
+        self.sos_lp = butter(self.lp_order, wn, btype="low", output='sos', analog=False)
 
         # 2. Notch
         if self.notch_enabled:
-            from scipy.signal import iirnotch
-            self.b_notch, self.a_notch = iirnotch(self.notch_freq, self.notch_q, fs=self.sr)
+            b_notch, a_notch = iirnotch(self.notch_freq, self.notch_q, fs=self.sr)
+            self.sos_notch = tf2sos(b_notch, a_notch)
 
         # 3. Bandpass
         if self.bp_enabled:
             low = self.bp_low / nyq
             high = self.bp_high / nyq
             if low <= 0 or high >= 1:
-                self.b_bp, self.a_bp = [1.0], [1.0]
+                print(f"[EOG] ⚠️ Invalid Bandpass freq: {self.bp_low}-{self.bp_high} Hz (Nyquist: {nyq}). Disabling.")
+                self.bp_enabled = False
+                self.sos_bp = None
             else:
-                self.b_bp, self.a_bp = butter(self.bp_order, [low, high], btype="bandpass", analog=False)
+                self.sos_bp = butter(self.bp_order, [low, high], btype="bandpass", output='sos', analog=False)
 
     def update_config(self, config: dict, sr: int):
         """Update filter parameters if config changed."""
@@ -78,27 +90,37 @@ class EOGFilterProcessor:
         
         if old_state != new_state:
             print(f"[EOG] Config changed -> Redesign filters")
+            
+            # Save old state if possible (shape check needed) Or just reset to 0
+            # For robustness, let's reset to 0 on major config change
             self._design_filters()
-            # Reset state
-            self.zi_lp = lfilter_zi(self.b_lp, self.a_lp) * 0.0
-            self.zi_notch = lfilter_zi(self.b_notch, self.a_notch) * 0.0 if self.notch_enabled else None
-            self.zi_bp = lfilter_zi(self.b_bp, self.a_bp) * 0.0 if self.bp_enabled else None
+
+            self.zi_lp = np.zeros((self.sos_lp.shape[0], 2))
+            
+            if self.notch_enabled:
+                self.zi_notch = np.zeros((self.sos_notch.shape[0], 2))
+            else:
+                self.zi_notch = None
+
+            if self.bp_enabled:
+                self.zi_bp = np.zeros((self.sos_bp.shape[0], 2))
+            else:
+                self.zi_bp = None
 
     def process_sample(self, val: float) -> float:
         """Process a single sample value."""
+        # sosfilt input must be array-like
+        
         # 1. Low Pass (Standard EOG)
-        out, self.zi_lp = lfilter(self.b_lp, self.a_lp, [val], zi=self.zi_lp)
-        out = out[0]
+        out, self.zi_lp = sosfilt(self.sos_lp, [val], zi=self.zi_lp)
         
         # 2. Notch
         if self.notch_enabled and self.zi_notch is not None:
-             filtered, self.zi_notch = lfilter(self.b_notch, self.a_notch, [out], zi=self.zi_notch)
-             out = filtered[0]
+             out, self.zi_notch = sosfilt(self.sos_notch, out, zi=self.zi_notch)
              
         # 3. Bandpass
         if self.bp_enabled and self.zi_bp is not None:
-             filtered, self.zi_bp = lfilter(self.b_bp, self.a_bp, [out], zi=self.zi_bp)
-             out = filtered[0]
+             out, self.zi_bp = sosfilt(self.sos_bp, out, zi=self.zi_bp)
 
-        return float(out)
+        return float(out[0])
 

@@ -4,9 +4,10 @@ import { useWebSocket } from '../../hooks/useWebSocket'
 import LiveDashboard from '../views/LiveDashboard'
 import DinoView from '../views/DinoView'
 import SSVEPView from '../views/SSVEPView'
-import TestView from '../views/TestView'
 import RPSGame from '../views/RPSGame'
 import CalibrationView from '../views/CalibrationView'
+import MLTrainingView from '../views/MLTrainingView'
+import SettingsView from '../views/SettingsView'
 
 import '../../styles/App.css';
 import themePresets from '../themes/presets';
@@ -92,12 +93,13 @@ export default function Dashboard() {
 
 
   const navItems = React.useMemo(() => [
-    { label: 'Live', onClick: () => setCurrentPage('live'), href: '#live' },
+    { label: 'GRAPHS', onClick: () => setCurrentPage('live'), href: '#live' },
     { label: 'Dino', onClick: () => setCurrentPage('dino'), href: '#dino' },
     { label: 'SSVEP', onClick: () => setCurrentPage('ssvep'), href: '#ssvep' },
     { label: 'RPS', onClick: () => setCurrentPage('rps'), href: '#rps' },
+    { label: 'M. L.', onClick: () => setCurrentPage('ml_training'), href: '#ml_training' },
     { label: 'Calibration', onClick: () => setCurrentPage('calibration'), href: '#calibration' },
-    { label: 'Test', onClick: () => setCurrentPage('test'), href: '#test' },
+    { label: 'Settings', onClick: () => setCurrentPage('settings'), href: '#settings' },
     {
       label: 'Theme',
       type: 'pill',
@@ -196,13 +198,15 @@ export default function Dashboard() {
       </div>
 
       {/* Main Content Area */}
-      <div className="container" style={{ flex: 1, padding: '0px 0px', overflowY: 'auto' }}>
+      <div className="[&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']" style={{ flex: 1, padding: '0px 0px', overflowY: 'auto' }}>
         {currentPage === 'live' && <LiveDashboard wsData={lastMessage} wsConfig={lastConfig} wsEvent={lastEvent} sendMessage={sendMessage} />}
         {currentPage === 'dino' && <DinoView wsData={lastMessage} wsEvent={lastEvent} isPaused={false} />}
         {currentPage === 'ssvep' && <SSVEPView />}
         {currentPage === 'test' && <TestView wsData={lastMessage} wsEvent={lastEvent} config={lastConfig} />}
         {currentPage === 'rps' && <RPSGame wsEvent={lastEvent} />}
         {currentPage === 'calibration' && <CalibrationView wsData={lastMessage} wsEvent={lastEvent} config={lastConfig} />}
+        {currentPage === 'ml_training' && <MLTrainingView />}
+        {currentPage === 'settings' && <SettingsView />}
       </div>
 
       {/* Footer */}

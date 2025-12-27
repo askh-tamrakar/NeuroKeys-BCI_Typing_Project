@@ -17,7 +17,7 @@ const WIN_CONDITIONS = {
 
 const RPSGame = ({ wsEvent }) => {
     // Game State
-    const [gameState, setGameState] = useState('waiting'); // 'waiting', 'revealed', 'resetting'
+    const [gameState, setGameState] = useState('idle'); // 'idle', 'waiting', 'revealed', 'resetting'
     const [playerMove, setPlayerMove] = useState(null);
     const [computerMove, setComputerMove] = useState(null);
     const [result, setResult] = useState(null);
@@ -59,7 +59,7 @@ const RPSGame = ({ wsEvent }) => {
     }, [difficulty]);
 
     const resetGame = useCallback(() => {
-        setGameState('waiting');
+        setGameState('idle');
         setPlayerMove(null);
         setResult(null);
         processingRef.current = false;
@@ -186,6 +186,11 @@ const RPSGame = ({ wsEvent }) => {
         );
     };
 
+    const handlePlay = () => {
+        setGameState('waiting');
+        pickComputerMove();
+    };
+
     return (
         <div className="rps-container">
             <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -208,13 +213,21 @@ const RPSGame = ({ wsEvent }) => {
                 </div>
             </div>
 
-            <div className="status-text">
+            <div className="status-text" style={{ minHeight: '60px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {gameState === 'idle' && (
+                    <button
+                        onClick={handlePlay}
+                        className="px-8 py-2 bg-primary text-primary-contrast rounded-xl font-bold text-lg shadow-lg hover:scale-105 transition-transform animate-in zoom-in duration-300"
+                    >
+                        PLAY
+                    </button>
+                )}
                 {gameState === 'waiting' && !manualMode && <span className="pulse">Waiting for Player Gesture...</span>}
                 {gameState === 'waiting' && manualMode && <span className="pulse">Manual Mode: press <strong>R</strong>/<strong>P</strong>/<strong>S</strong></span>}
-                {gameState !== 'waiting' && <span>Result Received</span>}
+                {gameState !== 'waiting' && gameState !== 'idle' && <span>Result Received</span>}
             </div>
 
-            
+
 
             <div className="cards-row">
                 {renderCard('player', playerMove, !!playerMove)}
@@ -236,7 +249,7 @@ const RPSGame = ({ wsEvent }) => {
                 </div>
             )}
 
-            
+
             {/* bottom controls removed — mode selector moved to top */}
         </div>
     );

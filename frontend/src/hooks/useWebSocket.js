@@ -103,8 +103,14 @@ export function useWebSocket(url = 'http://localhost:5000') {
       })
 
       // === DATA EVENTS ===
+      let lastUpdate = 0
       socketRef.current.on('bio_data_update', (data) => {
         try {
+          // Throttle updates to ~30Hz (33ms) to prevent main thread saturation
+          const now = Date.now()
+          if (now - lastUpdate < 33) return
+          lastUpdate = now
+
           // Handle NEW LSL format (from fixed web_server.py)
           if (data.stream_name && data.channels && typeof data.channels === 'object') {
             const channels = data.channels

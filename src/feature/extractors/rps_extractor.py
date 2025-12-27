@@ -13,8 +13,11 @@ class RPSExtractor:
         self.sr = sr
         
         # Window settings
-        # Window size 512 samples (~1s at 512Hz)
-        self.buffer_size = 512 
+        # Window size matches Calibration View default (1500ms)
+        # 1.5s * 512Hz = 768 samples
+        self.window_duration = 1.5
+        self.buffer_size = int(sr * self.window_duration)
+        
         # Stride 64 samples (~125ms update rate) for responsiveness
         self.stride = 64 
         
@@ -108,5 +111,4 @@ class RPSExtractor:
         return features
 
     def update_config(self, config: dict):
-        # Currently no dynamic config needed for extractor, but defined for interface consistency
         pass

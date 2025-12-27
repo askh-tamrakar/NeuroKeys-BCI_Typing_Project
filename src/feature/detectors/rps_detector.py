@@ -49,7 +49,7 @@ class RPSDetector:
                 scores[gesture] = score
                 match_details[gesture] = f"{match_count}/{total_features} matches: {matches}"
 
-        # Print match report
+        # #Print match report
         # print(f"[RPSDetector] --- Match Report ---")
         # for gesture, detail in match_details.items():
         #     print(f"  {gesture:10}: {detail} (Score: {scores[gesture]:.2f})")
@@ -64,9 +64,10 @@ class RPSDetector:
         
         if scores[best_gesture] >= CONSENSUS_THRESHOLD:
             print(f"[RPSDetector] [OK] Detected: {best_gesture.upper()}")
+            print(f"[RPSDetector] [OK] Score: {scores[best_gesture]:.2f}")
             return best_gesture.upper()
                 
-        # print(f"[RPSDetector] [SKIP] No consensus (Best: {best_gesture} @ {scores[best_gesture]:.2f})")
+        print(f"[RPSDetector] [SKIP] No consensus (Best: {best_gesture} @ {scores[best_gesture]:.2f})")
         return None
 
     def update_config(self, config: dict):

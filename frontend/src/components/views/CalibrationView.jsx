@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import TimeSeriesZoomChart from '../charts/TimeSeriesZoomChart';
 import WindowListPanel from '../calibration/WindowListPanel';
 import ConfigPanel from '../calibration/ConfigPanel';
+import TestPanel from '../calibration/TestPanel';
 import { CalibrationApi } from '../../services/calibrationApi';
 
 /**
@@ -12,7 +13,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     // Top-level states
     const [activeSensor, setActiveSensor] = useState('EMG'); // 'EMG' | 'EOG' | 'EEG'
     const [activeChannelIndex, setActiveChannelIndex] = useState(0); // Explicitly selected channel index
-    const [mode, setMode] = useState('realtime'); // 'realtime' | 'recording'
+    const [mode, setMode] = useState('realtime'); // 'realtime' | 'recording' | 'collection'
     const [config, setConfig] = useState(initialConfig || {});
     const [isCalibrating, setIsCalibrating] = useState(false);
     const [runInProgress, setRunInProgress] = useState(false);
@@ -142,7 +143,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     // Zoom state (Y-axis) similar to LiveView
     const [zoom, setZoom] = useState(1);
     const [manualYRange, setManualYRange] = useState("");
-    const BASE_AMPLITUDE = 500;
+    const BASE_AMPLITUDE = 1500;
 
     const currentYDomain = React.useMemo(() => {
         if (manualYRange && !isNaN(parseFloat(manualYRange))) {
@@ -270,8 +271,8 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                     setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'saved' } }));
 
                     // Determine prediction result
-                    const detected = resp.detected === true;
-                    const predicted = detected ? labelForWindow : 'Rest';
+                    // "detected" is now the action string (or null), "predicted_label" is the same.
+                    const predicted = resp.predicted_label || 'Rest';
                     const isCorrect = predicted === labelForWindow;
 
                     // Update the window in the list (don't add new one)
@@ -346,8 +347,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'saved' } }));
 
             // Determine prediction result
-            const detected = resp.detected === true;
-            const predicted = detected ? targetLabel : 'Rest';
+            const predicted = resp.predicted_label || 'Rest';
             const isCorrect = predicted === targetLabel;
 
             // Update in place
@@ -385,6 +385,100 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
     const markMissed = (id) => {
         setMarkedWindows(prev => prev.map(w => w.id === id ? { ...w, isMissedActual: !w.isMissedActual } : w));
+    };
+
+    // Test Mode Handler: Spawns a window, waits, extracts, sends, returns prediction.
+    const handleTestRecord = async (targetGestureLabel) => {
+        console.log("[Test] Spawning window for:", targetGestureLabel);
+        return new Promise((resolve, reject) => {
+            const currentTw = timeWindowRef.current;
+            const currentDur = windowDurationRef.current;
+
+            // Spawn window IMMEDIATELY at center (time=now) to ensure visibility
+            // Window is [Now, Now+Dur]. Center is reference.
+            // visual X = center - (now - t).
+            // t=now => X=center. t=now+dur => X=center+dur.
+            // If scanner is at center, this means it starts at scanner and grows right?
+            // Actually, we want it to start at scanner and travel left? 
+            // "Realtime" chart moves data Left to Right? 
+            // No, standard is Newest at Right?
+            // "Sweeep" chart: Newest at Center. Old is Left. Future is Right.
+            // So Future window should be at Right of Center.
+            // If data moves Left, Window should move Left with it.
+            // So we spawn it at Center?
+            const delayToCenter = 0;
+            const start = Date.now() + delayToCenter;
+            const end = start + currentDur;
+
+            console.log(`[Test] Window Spawn: Start=${start} End=${end} (Now=${Date.now()})`);
+
+            const newWindow = {
+                id: Math.random().toString(36).substr(2, 9),
+                sensor: activeSensor,
+                mode: 'test',
+                startTime: start,
+                endTime: end,
+                label: targetGestureLabel, // "Rock" etc.
+                channel: activeChannelIndex,
+                status: 'pending'
+            };
+
+            // Add to list so user sees it coming
+            setMarkedWindows(prev => [...prev, newWindow].slice(-MAX_WINDOWS));
+            setActiveWindow(newWindow);
+            setRunInProgress(true); // Locks UI slightly
+
+            // Wait for window to pass center
+            setTimeout(async () => {
+                try {
+                    const currentData = chartDataRef.current;
+                    const samplesPoints = currentData.filter(p => p.time >= start && p.time <= end);
+                    const samples = samplesPoints.map(p => p.value);
+                    const timestamps = samplesPoints.map(p => p.time);
+
+                    if (samples.length === 0) throw new Error("No data collected");
+
+                    setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'saving' } }));
+
+                    // Send to backend with action="Test" or similar to imply we want a blind prediction if possible
+                    // Actually we can pass the real label so backend can ALSO check 'detected'
+                    // But we want the blind label too.
+                    const resp = await CalibrationApi.sendWindow(activeSensor, {
+                        action: targetGestureLabel,
+                        channel: activeChannelIndex,
+                        samples,
+                        timestamps
+                    });
+
+                    // Update UI status
+                    const isCorrect = resp.predicted_label === targetGestureLabel;
+                    setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'saved' } }));
+
+                    setMarkedWindows(prev => prev.map(w => {
+                        if (w.id === newWindow.id) {
+                            return {
+                                ...w,
+                                predictedLabel: resp.predicted_label,
+                                status: isCorrect ? 'correct' : 'incorrect',
+                                features: resp.features
+                            };
+                        }
+                        return w;
+                    }));
+
+                    // Resolve promise for TestPanel
+                    resolve({ detected: resp.detected, predicted_label: resp.predicted_label });
+
+                } catch (e) {
+                    console.error("Test record failed:", e);
+                    setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'error' } }));
+                    reject(e);
+                } finally {
+                    setRunInProgress(false);
+                    setActiveWindow(null);
+                }
+            }, delayToCenter + currentDur + 200); // +200ms buffer
+        });
     };
 
     // Run calibration logic
@@ -473,7 +567,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
     // Update chart data from WS or Mock
     useEffect(() => {
-        if (mode === 'realtime' && wsData) {
+        if ((mode === 'realtime' || mode === 'test') && wsData) {
             // Process incoming LSL/WS data for the active sensor
             const payload = wsData.raw || wsData;
             if (payload?.channels) {
@@ -551,7 +645,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
         const w = timeWindow;
         const center = Math.round(w / 2);
 
-        return markedWindows.map(win => {
+        const mapped = markedWindows.map(win => {
             const ageStart = now - win.startTime;
             const ageEnd = now - win.endTime;
 
@@ -564,6 +658,12 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                 endTime: x1
             };
         });
+
+        if (markedWindows.length > 0 && Math.random() < 0.05) {
+            console.log("[CalibrationView] Mapped:", mapped.length, "First:", mapped[0]);
+        }
+
+        return mapped;
     }, [markedWindows, timeWindow, frameTime]); // Depend on frameTime
 
     // Active/Pending Window
@@ -604,7 +704,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     }, []);
 
     return (
-        <div className="flex flex-col gap-2 h-[100dvh] p-2 bg-bg text-text animate-in fade-in duration-500 overflow-hidden">
+        <div className="flex flex-col gap-2 h-[100dvh] p-2 bg-bg text-text animate-in fade-in duration-500 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
             {/* Header / Tabs */}
             <div className="flex-none flex flex-col lg:flex-row lg:items-center justify-between gap-4 card bg-surface border border-border p-4 rounded-2xl shadow-card">
                 <div className="flex items-center gap-3">
@@ -653,7 +753,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                     <div className="w-[1px] h-6 bg-border mx-1"></div>
 
                     <div className="flex bg-bg/50 p-1 rounded-xl border border-border">
-                        {['realtime', 'recording'].map(m => (
+                        {['realtime', 'recording', 'test'].map(m => (
                             <button
                                 key={m}
                                 onClick={() => setMode(m)}
@@ -665,14 +765,18 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                         ))}
                     </div>
                 </div>
+
             </div>
 
             {/* Main Workspace: Flex Column */}
             <div className="flex-none flex flex-col gap-2">
 
-                {/* Graph Area: Compact */}
+
+
+                {/* Graph Area */}
                 <div className="flex-none flex flex-col">
                     <div className="card bg-surface border border-border p-4 rounded-2xl shadow-card flex flex-col gap-2">
+
                         <div className="flex-none flex flex-col lg:flex-row lg:justify-between lg:items-center gap-2">
                             <div className="flex items-center gap-2">
                                 <div className="text-[10px] font-bold text-muted uppercase">Zoom:</div>
@@ -832,7 +936,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                         </div>
                     </div>
 
-                    {/* Calibration Control Card (Moved from WindowListPanel) */}
+                    {/* Calibration Control Card */}
                     <div className="card bg-surface border border-border p-4 rounded-xl flex flex-col justify-center gap-3 flex-grow h-2/3">
                         {(() => {
                             const recommendedSamples = { 'EOG': 20, 'EMG': 30, 'EEG': 25 }[activeSensor] || 20;
@@ -895,7 +999,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                                 </>
                             );
                         })()}
-                    </div >
+                    </div>
                 </div>
 
                 {/* Windows List (right) */}
@@ -915,3 +1019,5 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
         </div>
     );
 }
+
+

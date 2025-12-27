@@ -33,17 +33,20 @@ export default function LiveDashboard({ wsData, wsConfig, wsEvent, sendMessage }
     }, [wsConfig])
 
     // Auto-save removed. Manual save only.
-    const handleManualSave = () => {
-        if (!config) return
+    const handleManualSave = (updatedConfig) => {
+        // Use updatedConfig if provided (and not an event object), otherwise fallback to state config
+        const configToSave = (updatedConfig && !updatedConfig.type) ? updatedConfig : config
+
+        if (!configToSave) return
 
         // Persist locally + Backend
-        ConfigService.saveConfig(config)
+        ConfigService.saveConfig(configToSave)
 
         // Sync to Backend via WS
         if (sendMessage) {
             sendMessage({
                 type: 'SAVE_CONFIG',
-                config: config
+                config: configToSave
             })
         }
         // alert("Configuration saved and synced!")
@@ -52,7 +55,7 @@ export default function LiveDashboard({ wsData, wsConfig, wsEvent, sendMessage }
     if (loading) return <div className="flex items-center justify-center h-screen bg-bg text-text">Loading Config...</div>
 
     return (
-        <div className="flex h-screen w-full bg-bg overflow-hidden relative">
+        <div className="flex h-screen w-full bg-bg overflow-hidden relative [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
             {/* Fixed Sidebar */}
             <Sidebar
                 config={config}

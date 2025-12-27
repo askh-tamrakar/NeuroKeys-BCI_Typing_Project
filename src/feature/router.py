@@ -19,6 +19,7 @@ except Exception:
 import time
 import json
 import threading
+import hashlib
 from pathlib import Path
 try:
     import pylsl
@@ -64,6 +65,59 @@ class FeatureRouter:
         self.pipeline = {} 
         self.channel_labels = []
 
+        self._config_lock = threading.Lock()
+        self._start_config_watcher()
+
+    def get_config_hash(self, cfg: dict) -> str:
+        try:
+            return hashlib.md5(json.dumps(cfg, sort_keys=True).encode()).hexdigest()
+        except:
+            return ""
+
+    def _start_config_watcher(self):
+        t = threading.Thread(target=self._config_watcher, daemon=True)
+        t.start()
+        
+    def _config_watcher(self):
+        """Monitor config file for changes and update pipeline."""
+        last_feat_hash = ""
+        last_map_hash = ""
+        
+        while True:
+            try:
+                new_cfg = load_config()
+                feat_hash = self.get_config_hash(new_cfg.get("features", {}))
+                map_hash = self.get_config_hash(new_cfg.get("channel_mapping", {}))
+                
+                with self._config_lock:
+                    # 1. Mapping changed? Reconfigure everything
+                    if map_hash != last_map_hash and last_map_hash != "":
+                        print("[FeatureRouter] [CONFIG] Channel mapping changed - reconfiguring...")
+                        self.config = new_cfg
+                        self.configure_pipeline()
+                        last_map_hash = map_hash
+                        last_feat_hash = feat_hash 
+                    
+                    # 2. Features changed? Update existing components
+                    elif feat_hash != last_feat_hash:
+                        if last_feat_hash != "": 
+                             print("[FeatureRouter] [CONFIG] Features updated - updating detectors...")
+                        
+                        self.config = new_cfg
+                        for ch_idx, (extractor, detector, _) in self.pipeline.items():
+                            if hasattr(extractor, 'update_config'):
+                                extractor.update_config(self.config)
+                            if hasattr(detector, 'update_config'):
+                                detector.update_config(self.config)
+                        
+                        last_feat_hash = feat_hash
+                        if last_map_hash == "": last_map_hash = map_hash
+                
+                time.sleep(2.0)
+            except Exception as e:
+                print(f"[FeatureRouter] ⚠️ Config watcher error: {e}")
+                time.sleep(2.0)
+
     def resolve_stream(self):
         if not LSL_AVAILABLE:
             print("[FeatureRouter] ❌ pylsl not installed")
@@ -108,6 +162,7 @@ class FeatureRouter:
         Instantiate extractors for channels based on config.
         """
         self.extractors = {}
+        self.pipeline = {} # Clear existing pipeline!
         mapping = self.config.get("channel_mapping", {})
         
         print(f"[FeatureRouter] [CONFIG] Configuring features for {self.num_channels} channels...")
@@ -141,14 +196,27 @@ class FeatureRouter:
         self.running = True
         print("[FeatureRouter] [START] Loop started")
         
+        last_blink_time = 0.0
+        
         while self.running:
             try:
-                # Pull chunk for better performance? For low latency events, sample by sample is okay or small chunks
-                # pull_sample blocks
+                # Pull chunk for better performance features like timestamp precision
                 sample, ts = self.inlet.pull_sample(timeout=1.0)
                 
                 if sample:
-                    # Route to pipeline
+                    current_time = time.time()
+                    
+                    # 1. Processing Loop
+                    # We need to process all channels first, then handle events?
+                    # Actually, processing is sequential here.
+                    # Ideally, if EOG is Ch1 and EMG is Ch0, Ch0 computes first.
+                    # If Ch0 detects Rock (Artifact), we verify it.
+                    # But we don't know if a blink is coming in Ch1 yet!
+                    # BUT, usually Blinks are detected at the END of the wave (post-peak).
+                    # The artifact on EMG (spike) is simultaneous.
+                    # This simple inhibition only blocks EMG *after* a blink is detected.
+                    # Better than nothing: Prevents "Double triggering" or trailing artifacts.
+                    
                     for ch_idx, val in enumerate(sample):
                         if ch_idx in self.pipeline:
                             extractor, detector, sensor_type = self.pipeline[ch_idx]
@@ -158,6 +226,20 @@ class FeatureRouter:
                                 detection_result = detector.detect(features)
                                 
                                 if detection_result:
+                                    # --- Global Inhibition Logic ---
+                                    # Update Blink Time
+                                    if sensor_type == "EOG" and "Blink" in detection_result:
+                                        last_blink_time = current_time
+                                        # Pass through the blink event
+                                    
+                                    # Block EMG if recent blink
+                                    if sensor_type == "EMG":
+                                        # If blink happened in last 600ms, ignore EMG
+                                        if current_time - last_blink_time < 0.6:
+                                            print(f"[FeatureRouter] 🛡️ Inhibited EMG {detection_result} (Recent Blink)")
+                                            continue
+                                    # --------------------------------
+
                                     # Determine event name
                                     if sensor_type == "EOG":
                                         event_name = detection_result # "SingleBlink" or "DoubleBlink"
@@ -176,7 +258,6 @@ class FeatureRouter:
                                         "features": features
                                     }
                                     formatted_event = json.dumps(event_data)
-                                    print(f"[FeatureRouter] [EVENT] {formatted_event}")
                                     self.outlet.push_sample([formatted_event])
 
             except Exception as e:

@@ -59,6 +59,27 @@ export default function Sidebar({
         return config.filters?.[sensorType] || {}
     }
 
+    const handleChannelToggle = (chKey, enabled) => {
+        // Calculate new config based on current prop to avoid stale state issues
+        const newConfig = {
+            ...config,
+            channel_mapping: {
+                ...config.channel_mapping,
+                [chKey]: {
+                    ...config.channel_mapping?.[chKey],
+                    enabled: enabled
+                }
+            }
+        }
+
+        setConfig(newConfig)
+
+        // Auto-save the change immediately
+        if (onSave) {
+            onSave(newConfig)
+        }
+    }
+
     return (
         <aside className={`w-80 bg-surface border-r border-border h-full flex flex-col overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] ${className}`}>
             <div className="p-6 border-b border-border">
@@ -113,11 +134,23 @@ export default function Sidebar({
 
                     {/* Channel 0 */}
                     <div className="mb-3">
-                        <label className="text-xs font-medium text-text block mb-1">Graph 1</label>
+                        <div className="flex justify-between items-center mb-1">
+                            <label className="text-xs font-medium text-text">Graph 1</label>
+                            <label className="text-[10px] text-muted flex items-center gap-1 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={config.channel_mapping?.ch0?.enabled !== false}
+                                    onChange={(e) => handleChannelToggle('ch0', e.target.checked)}
+                                    className="accent-primary"
+                                />
+                                Enable
+                            </label>
+                        </div>
                         <select
                             value={getSensorTypeForChannel('ch0')}
                             onChange={(e) => handleChannelMapping('ch0', e.target.value)}
-                            className="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm outline-none focus:border-primary/50"
+                            disabled={config.channel_mapping?.ch0?.enabled === false}
+                            className={`w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm outline-none focus:border-primary/50 ${config.channel_mapping?.ch0?.enabled === false ? 'opacity-50' : ''}`}
                         >
                             <option value="EMG">EMG</option>
                             <option value="EOG">EOG</option>
@@ -127,11 +160,75 @@ export default function Sidebar({
 
                     {/* Channel 1 */}
                     <div className="mb-4">
-                        <label className="text-xs font-medium text-text block mb-1">Graph 2</label>
+                        <div className="flex justify-between items-center mb-1">
+                            <label className="text-xs font-medium text-text">Graph 2</label>
+                            <label className="text-[10px] text-muted flex items-center gap-1 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={config.channel_mapping?.ch1?.enabled !== false}
+                                    onChange={(e) => handleChannelToggle('ch1', e.target.checked)}
+                                    className="accent-primary"
+                                />
+                                Enable
+                            </label>
+                        </div>
                         <select
                             value={getSensorTypeForChannel('ch1')}
                             onChange={(e) => handleChannelMapping('ch1', e.target.value)}
-                            className="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm outline-none focus:border-primary/50"
+                            disabled={config.channel_mapping?.ch1?.enabled === false}
+                            className={`w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm outline-none focus:border-primary/50 ${config.channel_mapping?.ch1?.enabled === false ? 'opacity-50' : ''}`}
+                        >
+                            <option value="EMG">EMG</option>
+                            <option value="EOG">EOG</option>
+                            <option value="EEG">EEG</option>
+                        </select>
+                    </div>
+
+                    {/* Channel 2 */}
+                    <div className="mb-4">
+                        <div className="flex justify-between items-center mb-1">
+                            <label className="text-xs font-medium text-text">Graph 3</label>
+                            <label className="text-[10px] text-muted flex items-center gap-1 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={config.channel_mapping?.ch2?.enabled !== false}
+                                    onChange={(e) => handleChannelToggle('ch2', e.target.checked)}
+                                    className="accent-primary"
+                                />
+                                Enable
+                            </label>
+                        </div>
+                        <select
+                            value={getSensorTypeForChannel('ch2')}
+                            onChange={(e) => handleChannelMapping('ch2', e.target.value)}
+                            disabled={config.channel_mapping?.ch2?.enabled === false}
+                            className={`w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm outline-none focus:border-primary/50 ${config.channel_mapping?.ch2?.enabled === false ? 'opacity-50' : ''}`}
+                        >
+                            <option value="EMG">EMG</option>
+                            <option value="EOG">EOG</option>
+                            <option value="EEG">EEG</option>
+                        </select>
+                    </div>
+
+                    {/* Channel 3 */}
+                    <div className="mb-4">
+                        <div className="flex justify-between items-center mb-1">
+                            <label className="text-xs font-medium text-text">Graph 4</label>
+                            <label className="text-[10px] text-muted flex items-center gap-1 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={config.channel_mapping?.ch3?.enabled !== false}
+                                    onChange={(e) => handleChannelToggle('ch3', e.target.checked)}
+                                    className="accent-primary"
+                                />
+                                Enable
+                            </label>
+                        </div>
+                        <select
+                            value={getSensorTypeForChannel('ch3')}
+                            onChange={(e) => handleChannelMapping('ch3', e.target.value)}
+                            disabled={config.channel_mapping?.ch3?.enabled === false}
+                            className={`w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm outline-none focus:border-primary/50 ${config.channel_mapping?.ch3?.enabled === false ? 'opacity-50' : ''}`}
                         >
                             <option value="EMG">EMG</option>
                             <option value="EOG">EOG</option>
@@ -167,6 +264,8 @@ export default function Sidebar({
                         channelsUsingThis={
                             (getSensorTypeForChannel('ch0') === 'EMG' ? ['ch0'] : [])
                                 .concat(getSensorTypeForChannel('ch1') === 'EMG' ? ['ch1'] : [])
+                                .concat(getSensorTypeForChannel('ch2') === 'EMG' ? ['ch2'] : [])
+                                .concat(getSensorTypeForChannel('ch3') === 'EMG' ? ['ch3'] : [])
                         }
                         onSave={onSave}
                     />
@@ -181,6 +280,8 @@ export default function Sidebar({
                         channelsUsingThis={
                             (getSensorTypeForChannel('ch0') === 'EOG' ? ['ch0'] : [])
                                 .concat(getSensorTypeForChannel('ch1') === 'EOG' ? ['ch1'] : [])
+                                .concat(getSensorTypeForChannel('ch2') === 'EOG' ? ['ch2'] : [])
+                                .concat(getSensorTypeForChannel('ch3') === 'EOG' ? ['ch3'] : [])
                         }
                         onSave={onSave}
                     />
@@ -195,6 +296,8 @@ export default function Sidebar({
                         channelsUsingThis={
                             (getSensorTypeForChannel('ch0') === 'EEG' ? ['ch0'] : [])
                                 .concat(getSensorTypeForChannel('ch1') === 'EEG' ? ['ch1'] : [])
+                                .concat(getSensorTypeForChannel('ch2') === 'EEG' ? ['ch2'] : [])
+                                .concat(getSensorTypeForChannel('ch3') === 'EEG' ? ['ch3'] : [])
                         }
                         onSave={onSave}
                     />

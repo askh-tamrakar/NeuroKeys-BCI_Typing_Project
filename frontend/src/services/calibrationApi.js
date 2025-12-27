@@ -206,5 +206,51 @@ export const CalibrationApi = {
             console.error('[CalibrationApi] Error getting recording:', error);
             throw error;
         }
+    },
+
+    /**
+     * Start EMG recording for a specific label.
+     * @param {number} label - 0=Rest, 1=Rock, 2=Paper, 3=Scissors
+     */
+    async startEmgRecording(label) {
+        try {
+            const response = await fetch('/api/emg/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ label })
+            });
+            return response.json();
+        } catch (error) {
+            console.error('[CalibrationApi] Error starting EMG recording:', error);
+            throw error;
+        }
+    },
+
+    /**
+     * Stop EMG recording.
+     */
+    async stopEmgRecording() {
+        try {
+            const response = await fetch('/api/emg/stop', { method: 'POST' });
+            return response.json();
+        } catch (error) {
+            console.error('[CalibrationApi] Error stopping EMG recording:', error);
+            throw error;
+        }
+    },
+
+    /**
+     * Get EMG recording status and counts.
+     */
+    async getEmgStatus() {
+        try {
+            const response = await fetch('/api/emg/status');
+            if (!response.ok) return null;
+            return response.json();
+        } catch (error) {
+            console.error('[CalibrationApi] Error getting EMG status:', error);
+            return null;
+        }
     }
 };
+

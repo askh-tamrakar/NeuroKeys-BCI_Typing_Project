@@ -30,6 +30,10 @@ class BlinkDetector:
         candidates = []
         
         for event_name, profile in self.profiles.items():
+            # Skip non-dict config items (like amp_threshold)
+            if not isinstance(profile, dict):
+                continue
+                
             # if event_name == "Rest": continue - Enabled Rest for calibration detection
                 
             match_count = 0
@@ -52,26 +56,25 @@ class BlinkDetector:
                         mismatches.append(f"{feat_name}={val:.2f} (Expected {range_val})")
             
             # Debug print
-            # print(f"Checking {event_name}: matches={match_count}/{total_features} | Misses: {mismatches}")
+            print(f"[BlinkDetector] Checking {event_name}")
+            print(f"[BlinkDetector] matches={match_count}/{total_features} | Misses: {mismatches}")
 
             # Strict Policy: All configured constraints must pass for a blink
             if total_features > 0:
                 score = match_count / total_features
                 if score == 1.0:
                     candidates.append(event_name)
-                    # print(f"[BlinkDetector] Matched {event_name}")
-                # else:
-                    # print(f"[BlinkDetector] Failed {event_name}: {', '.join(mismatches)}")
+                    print(f"[BlinkDetector] Matched {event_name}")
+                else:
+                    print(f"[BlinkDetector] Failed {event_name}: {', '.join(mismatches)}")
         
-        if len(candidates) == 1:
-            print(f"[BlinkDetector] [OK] Detected: {candidates[0]}")
-            return candidates[0]
-        elif len(candidates) > 1:
-            # Ambiguity: Choose one with "more" features or prioritize specific types?
-            # Or maybe just return the first one (Double usually encompasses Single in amplitude but Duration distinguishes them)
-            # If duration ranges are disjoint, this shouldn't happen often.
-            print(f"[BlinkDetector] [AMBIGUOUS] Matched: {candidates}. Returning {candidates[0]}")
-            return candidates[0]
+        if candidates:
+            # Return the first candidate that passed all checks
+            # Since strict matching requires score == 1.0, any candidate here is valid.
+            # If multiple match (rare with good disjoint configs), taking the first is acceptable.
+            best_candidate = candidates[0]
+            print(f"[BlinkDetector] [OK] Detected: {best_candidate}")
+            return best_candidate
             
         return None
 

@@ -21,7 +21,8 @@ export default function SignalChart({
   annotations = [], // New Prop [{ x: timestamp, y: value, label: string, color: string }]
   channelColors = null, // New Prop { [key]: colorString }
   markedWindows = [],
-  activeWindow = null
+  activeWindow = null,
+  tickCount = 7 // Default to 7
 }) {
   const merged = useMemo(() => {
     if (!byChannel || typeof byChannel !== 'object') {
@@ -162,6 +163,20 @@ export default function SignalChart({
     return 'rgba(156, 163, 175, 0.1)'; // Gray
   };
 
+  // Calculate explicit ticks if tickCount is provided to enforce exact number of lines
+  const ticks = useMemo(() => {
+    if (!tickCount || tickCount < 2) return null
+    const [min, max] = finalYDomain
+    const step = (max - min) / (tickCount - 1)
+    const result = []
+    for (let i = 0; i < tickCount; i++) {
+      result.push(min + (i * step))
+    }
+    // Ensure 0 is included if it's within range (snap nearest tick to 0 if close, or just rely on math)
+    // For symmetric domains like [-500, 500] with 7 ticks, 0 will be perfectly in the middle.
+    return result
+  }, [finalYDomain, tickCount])
+
   return (
     <div className="bg-card surface-panel border border-border shadow-sm rounded-xl overflow-hidden flex flex-col h-full bg-surface">
       <div className="px-5 py-3 border-b border-border bg-bg/50 backdrop-blur-sm flex justify-between items-center">
@@ -195,7 +210,8 @@ export default function SignalChart({
       <div className="relative w-full p-2 flex-grow" style={{ height: height }}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={dataArray}>
-            {showGrid && <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />}
+            {showGrid && <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} vertical={false} />}
+            <ReferenceLine y={0} stroke="var(--border)" strokeOpacity={0.5} />
             {scannerXValue !== null && (
               <ReferenceLine x={scannerXValue} stroke="var(--accent)" strokeOpacity={0.9} strokeWidth={1.5} />
             )}
@@ -261,8 +277,9 @@ export default function SignalChart({
               fontSize={10}
               tickLine={false}
               axisLine={false}
-              tickFormatter={(v) => v.toFixed(1)}
+              tickFormatter={(v) => v.toFixed(0)}
               width={40}
+              ticks={ticks}
             />
             <Tooltip
               contentStyle={{

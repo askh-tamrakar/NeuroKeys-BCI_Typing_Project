@@ -29,6 +29,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         JUMP_DISTANCE: 150,
         ENABLE_TREES: true,
         ENABLE_MANUAL_CONTROLS: false,
+        CONTROL_CHANNEL: 'ch3',
     }
 
     const [settings, setSettings] = useState(() => {
@@ -59,10 +60,10 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
     const velocityRef = useRef(0)
     const obstaclesRef = useRef([])
     const scoreRef = useRef(0)
-    const lastSpawnRef = useRef(0)
+    const lastSpawnTimestampRef = useRef(0)
     const blinkPressTimeRef = useRef(0)
+    const pendingBlinkTimeoutRef = useRef(null) // New ref for double-blink timer
     const leftEyeRef = useRef(null)
-
     const rightEyeRef = useRef(null)
     const distanceRef = useRef(0) // Track distance for parallax
 
@@ -141,13 +142,31 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
     useEffect(() => {
         if (!wsEvent) return;
 
+        // Check channel match (or 'any' bypass)
+        const targetCh = settingsRef.current.CONTROL_CHANNEL
+        if (targetCh !== 'any' && wsEvent.channel !== targetCh) {
+            console.log(`[Dino] Ignored event ${wsEvent.event} from ${wsEvent.channel} (Target: ${targetCh})`);
+            return
+        }
+
         if (wsEvent.event === 'SingleBlink') {
-            logEvent("👁️ Single Blink")
-            handleSinglePress();
+
+            const now = Date.now()
+            const timeSinceLastPress = now - blinkPressTimeRef.current
+
+            if (timeSinceLastPress > 75 && timeSinceLastPress < 400) {
+                logEvent(`👁️ Double Blink Detected (${wsEvent.channel})`)
+                handleDoublePress()
+            } else {
+                logEvent(`👁️ Blink Detected (${wsEvent.channel})`)
+                handleSinglePress()
+            }
+            blinkPressTimeRef.current = now
         }
         else if (wsEvent.event === 'DoubleBlink') {
-            logEvent("👁️👁️ Double Blink")
-            handleDoublePress();
+            // Legacy support if backend sends DoubleBlink
+            logEvent(`👁️👁️ Double Blink (${wsEvent.channel})`)
+            handleDoublePress()
         }
     }, [wsEvent]);
 
@@ -191,9 +210,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
             dinoYRef.current = 0
             velocityRef.current = 0
             obstaclesRef.current = []
-            velocityRef.current = 0
-            obstaclesRef.current = []
-            lastSpawnRef.current = Date.now()
+            lastSpawnTimestampRef.current = Date.now()
             distanceRef.current = 0
             // Don't reset gameTimeRef to allow day/night to continue or we could reset it. 
             // Let's keep it continuous or reset. Continuous is fine.
@@ -209,8 +226,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
             dinoYRef.current = 0
             velocityRef.current = 0
             obstaclesRef.current = []
-            obstaclesRef.current = []
-            lastSpawnRef.current = Date.now()
+            lastSpawnTimestampRef.current = Date.now()
             distanceRef.current = 0
         }
     }
@@ -627,8 +643,8 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                     .filter((o) => o.x > - OBSTACLE_WIDTH - 20)
 
                 // Spawn new obstacle
-                if (now - lastSpawnRef.current > SPAWN_INTERVAL) {
-                    lastSpawnRef.current = now
+                if (now - lastSpawnTimestampRef.current > SPAWN_INTERVAL) {
+                    lastSpawnTimestampRef.current = now
                     const height = OBSTACLE_MIN_HEIGHT + Math.random() * (OBSTACLE_MAX_HEIGHT - OBSTACLE_MIN_HEIGHT)
                     obstaclesRef.current.push({
                         x: CANVAS_WIDTH,
@@ -804,7 +820,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
     const handleSettingChange = (key, value) => {
         setSettings(prev => ({
             ...prev,
-            [key]: typeof value === 'boolean' ? value : parseFloat(value)
+            [key]: typeof value === 'string' ? value : (typeof value === 'boolean' ? value : parseFloat(value))
         }))
     }
 
@@ -893,7 +909,20 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                             </div>
                         </div>
 
-                        <div className="mt-4 pt-3 border-t border-border">
+                        <div className="mt-4 pt-3 border-t border-border space-y-3">
+                            <SettingSelect
+                                label="Control Channel"
+                                value={settings.CONTROL_CHANNEL}
+                                options={[
+                                    { label: 'Any Channel', value: 'any' },
+                                    { label: 'Channel 0', value: 'ch0' },
+                                    { label: 'Channel 1', value: 'ch1' },
+                                    { label: 'Channel 2', value: 'ch2' },
+                                    { label: 'Channel 3', value: 'ch3' },
+                                ]}
+                                onChange={(v) => handleSettingChange('CONTROL_CHANNEL', v)}
+                            />
+
                             <div className="flex justify-between items-center text-xs">
                                 <span className="text-muted font-medium uppercase tracking-wider">Input Status</span>
                                 <span className={`font-bold ${wsData ? 'text-green-500' : 'text-red-500'}`}>
@@ -951,7 +980,11 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
 
                             <div className="space-y-6">
                                 <div className="space-y-3">
-                                    <h4 className="text-xs font-bold text-primary border-b border-border pb-1">Physics</h4>
+                                    <h4 className="text-xs font-bold text-primary border-b border-border pb-1">Controls</h4>
+
+                                    <SettingToggle label="Manual Controls (Space)" value={settings.ENABLE_MANUAL_CONTROLS} onChange={(v) => handleSettingChange('ENABLE_MANUAL_CONTROLS', v)} />
+
+                                    <h4 className="text-xs font-bold text-primary border-b border-border pb-1 mt-4">Physics</h4>
                                     <SettingInput label="Gravity" value={settings.GRAVITY} onChange={(v) => handleSettingChange('GRAVITY', v)} min="0.1" max="2.0" step="0.05" />
                                     <SettingInput label="Jump Strength (Y)" value={settings.JUMP_STRENGTH} onChange={(v) => handleSettingChange('JUMP_STRENGTH', v)} min="-20" max="-5" step="0.5" />
                                     <SettingInput label="Jump Distance (X)" value={settings.JUMP_DISTANCE} onChange={(v) => handleSettingChange('JUMP_DISTANCE', v)} min="100" max="600" step="10" />
@@ -976,7 +1009,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                                 <div className="space-y-3">
                                     <h4 className="text-xs font-bold text-primary border-b border-border pb-1">Environment</h4>
                                     <SettingToggle label="Enable Trees" value={settings.ENABLE_TREES} onChange={(v) => handleSettingChange('ENABLE_TREES', v)} />
-                                    <SettingToggle label="Manual Controls (Space)" value={settings.ENABLE_MANUAL_CONTROLS} onChange={(v) => handleSettingChange('ENABLE_MANUAL_CONTROLS', v)} />
+                                    <SettingToggle label="Enable Trees" value={settings.ENABLE_TREES} onChange={(v) => handleSettingChange('ENABLE_TREES', v)} />
                                     <SettingInput label="Day Cycle (s)" value={settings.CYCLE_DURATION} onChange={(v) => handleSettingChange('CYCLE_DURATION', v)} min="10" max="300" step="5" />
                                 </div>
                             </div>
@@ -1039,5 +1072,20 @@ const SettingToggle = ({ label, value, onChange }) => (
         >
             <div className={`w-3 h-3 bg-white rounded-full absolute top-0.5 transition-transform ${value ? 'translate-x-4' : 'translate-x-1'}`} />
         </button>
+    </div>
+)
+
+const SettingSelect = ({ label, value, options, onChange }) => (
+    <div className="flex justify-between items-center py-1">
+        <span className="text-xs text-muted">{label}</span>
+        <select
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className="text-xs bg-bg border border-border rounded px-2 py-1 text-text focus:outline-none focus:border-primary"
+        >
+            {options.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+        </select>
     </div>
 )

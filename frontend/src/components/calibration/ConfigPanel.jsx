@@ -95,8 +95,8 @@ export default function ConfigPanel({ config, sensor, onSave }) {
 
     return (
         <div className="flex flex-col h-full bg-surface border border-border rounded-xl overflow-hidden shadow-card animate-in fade-in duration-300">
-            <div className="px-5 py-4 border-b border-border bg-bg/50 flex justify-between items-center">
-                <h3 className="font-bold text-text flex items-center gap-2 uppercase tracking-wider text-xs">
+            <div className="px-5 py-4 border-b border-border bg-bg/50 flex justify-between items-center ">
+                <h3 className="font-bold text-text flex items-center gap-2 uppercase tracking-wider text-xs ">
                     <span className="w-2 h-4 bg-accent rounded-sm"></span>
                     {sensor} Configuration
                 </h3>
@@ -105,7 +105,7 @@ export default function ConfigPanel({ config, sensor, onSave }) {
                 </span>
             </div>
 
-            <div className="flex-grow min-h-0 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-border hover:scrollbar-thumb-primary/50">
+            <div className="flex-grow min-h-0 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-border hover:scrollbar-thumb-primary/50 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
                 {Object.keys(sensorFeatures).length > 0 ? (
                     renderConfigNode(sensorFeatures)
                 ) : (

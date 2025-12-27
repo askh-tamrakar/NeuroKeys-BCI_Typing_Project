@@ -32,11 +32,21 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 import numpy as np
 # scipy imports removed as they are now handled in calibration_manager
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
+# Database and Extractor
+try:
+    from database.db_manager import db_manager
+    from feature.extractors.rps_extractor import RPSExtractor
+except ImportError:
+    import sys
+    sys.path.append(str(PROJECT_ROOT / "src"))
+    from database.db_manager import db_manager
+    from feature.extractors.rps_extractor import RPSExtractor
+
+
 
 # ========== Configuration ==========
-
-
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 CONFIG_PATH = PROJECT_ROOT / "config" / "sensor_config.json"
 TEMPLATES_DIR = PROJECT_ROOT / "src" / "web" / "templates"
 DEFAULT_SR = 512
@@ -79,6 +89,16 @@ class WebServerState:
         self.sr = DEFAULT_SR
         self.num_channels = 0
         self.config = {}
+        
+        # Recording State
+        self.recording = {
+            "active": False,
+            "label": 0,
+            "session_id": None,
+            "start_time": 0,
+            "extractor": None
+        }
+
 
 state = WebServerState()
 
@@ -275,10 +295,9 @@ def broadcast_events():
                 # LSL Markers are usually strings or lists of strings
                 # The router sends a JSON string inside a list: ['{"event": "BLINK", ...}']
                 raw_event = sample[0]
-                print(f"[WebServer] ⚡ Event Received: {raw_event}")
-                
                 try:
                     event_data = json.loads(raw_event)
+                    print(f"[WebServer] ⚡ Event Received: {event_data.get('event')}")
                     # Broadcast to socket
                     socketio.emit('bio_event', event_data)
                 except json.JSONDecodeError:
@@ -302,6 +321,48 @@ def broadcast_data():
 
         try:
             sample, ts = state.inlet.pull_sample(timeout=1.0)
+            
+            # --- RECORDING LOGIC ---
+            if state.recording["active"] and sample:
+                try:
+                    # Initialize extractor if needed
+                    if state.recording["extractor"] is None:
+                        # Determine correct channel for recording (look for "EMG" in mapping)
+                        target_channel = 0
+                        for idx, info in state.channel_mapping.items():
+                             if info.get("type", "").upper() == "EMG":
+                                 target_channel = idx
+                                 break
+                        
+                        state.recording["extractor"] = RPSExtractor(
+                            channel_index=target_channel, 
+                            config={}, 
+                            sr=state.sr
+                        )
+                    
+                    # Process sample - this handles buffering and windowing internally
+                    # Use the determined target channel
+                    target_ch = state.recording["extractor"].channel_index
+                    if target_ch < len(sample):
+                        val = sample[target_ch] 
+                    else:
+                        val = 0 # Safety fallback
+                    
+                    features = state.recording["extractor"].process(val)
+                    
+                    if features:
+                        # Save to DB
+                        db_manager.insert_window(
+                            features, 
+                            state.recording["label"], 
+                            state.recording["session_id"]
+                        )
+                        # Optional: Broadcast update to UI (maybe throttle this)
+                        # socketio.emit('recording_progress', ...)
+                        
+                except Exception as rec_e:
+                    print(f"[WebServer] ⚠️ Recording Error: {rec_e}")
+            # -----------------------
 
             if sample is not None and len(sample) == state.num_channels:
                 state.sample_count += 1
@@ -310,6 +371,11 @@ def broadcast_data():
                 channels_data = {}
                 for ch_idx in range(state.num_channels):
                     ch_mapping = state.channel_mapping.get(ch_idx, {})
+                    
+                    # Check if channel is explicitly disabled
+                    if not ch_mapping.get("enabled", True):
+                        continue
+
                     channels_data[ch_idx] = {
                         "label": ch_mapping.get("label", f"ch{ch_idx}"),
                         "type": ch_mapping.get("type", "UNKNOWN"),
@@ -591,6 +657,95 @@ def api_calibrate():
     except Exception as e:
         print(f"[WebServer] ❌ Calibration error: {e}")
         return jsonify({"error": str(e)}), 500
+
+
+# ========== TRAINING ENDPOINTS ==========
+
+@app.route('/api/train-emg-rf', methods=['POST'])
+def api_train_emg():
+    """Train Random Forest Model."""
+    try:
+        data = request.get_json() or {}
+        n_estimators = data.get('n_estimators', 100)
+        max_depth = data.get('max_depth', None)
+        test_size = data.get('test_size', 0.2)
+        
+        # Import here to avoid circular dependencies if any
+        try:
+            from learning.emg_trainer import train_emg_model
+        except ImportError:
+             import sys
+             sys.path.append(str(PROJECT_ROOT / "src"))
+             from learning.emg_trainer import train_emg_model
+
+        result = train_emg_model(n_estimators=n_estimators, max_depth=max_depth, test_size=test_size)
+        
+        if "error" in result:
+             return jsonify(result), 400
+             
+        return jsonify(result)
+        
+    except Exception as e:
+        print(f"[WebServer] ❌ Training error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ========== EMG DATA COLLECTION ENDPOINTS ==========
+
+
+@app.route('/api/emg/start', methods=['POST'])
+def api_start_emg_recording():
+    """Start recording EMG data for a specific label."""
+    try:
+        data = request.get_json()
+        label = data.get('label')
+        
+        if label is None:
+            return jsonify({"error": "Label is required"}), 400
+            
+        label = int(label)
+        session_id = f"sess_{int(time.time())}"
+        
+        # Reset extractor to clear old buffer
+        state.recording["extractor"] = None
+        
+        state.recording.update({
+            "active": True,
+            "label": label,
+            "session_id": session_id,
+            "start_time": time.time()
+        })
+        
+        print(f"[WebServer] 🔴 Started EMG Recording: Label {label}, Session {session_id}")
+        return jsonify({"status": "started", "session_id": session_id})
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/emg/stop', methods=['POST'])
+def api_stop_emg_recording():
+    """Stop EMG recording."""
+    try:
+        state.recording["active"] = False
+        print(f"[WebServer] ⏹️  Stopped EMG Recording")
+        return jsonify({"status": "stopped"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/emg/status', methods=['GET'])
+def api_emg_status():
+    """Get recording status and database counts."""
+    from database.db_manager import db_manager # Ensure import
+    
+    counts = db_manager.get_counts_by_label()
+    
+    return jsonify({
+        "recording": state.recording["active"],
+        "current_label": state.recording["label"],
+        "counts": counts
+    })
 
 
 # ========== SOCKETIO EVENTS ==========

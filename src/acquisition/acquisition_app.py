@@ -88,6 +88,8 @@ class AcquisitionApp:
         
         self.ch0_var = tk.StringVar(value=self.ch0_type)
         self.ch1_var = tk.StringVar(value=self.ch1_type)
+        self.ch2_var = tk.StringVar(value=channel_map.get("ch2", {}).get("sensor", "EEG"))
+        self.ch3_var = tk.StringVar(value=channel_map.get("ch3", {}).get("sensor", "EEG"))
 
          # Data buffers for real-time plotting
         self.window_seconds = (
@@ -99,6 +101,8 @@ class AcquisitionApp:
         
         self.ch0_buffer = np.zeros(self.buffer_size)
         self.ch1_buffer = np.zeros(self.buffer_size)
+        self.ch2_buffer = np.zeros(self.buffer_size)
+        self.ch3_buffer = np.zeros(self.buffer_size)
         self.buffer_ptr = 0
         
         # Time axis
@@ -167,6 +171,16 @@ class AcquisitionApp:
                     "sensor": "EOG",
                     "enabled": True,
                     "label": "EOG Channel 1"
+                },
+                "ch2": {
+                    "sensor": "EEG",
+                    "enabled": True,
+                    "label": "EEG Channel 2"
+                },
+                "ch3": {
+                    "sensor": "EEG",
+                    "enabled": True,
+                    "label": "EEG Channel 3"
                 }
             },
             "adc_settings": {
@@ -215,6 +229,16 @@ class AcquisitionApp:
                 "enabled": True,
                 "label": f"{self.ch1_var.get()} Channel 1"
             }
+            channel_mapping["ch2"] = {
+                "sensor": self.ch2_var.get(),
+                "enabled": True,
+                "label": f"{self.ch2_var.get()} Channel 2"
+            }
+            channel_mapping["ch3"] = {
+                "sensor": self.ch3_var.get(),
+                "enabled": True,
+                "label": f"{self.ch3_var.get()} Channel 3"
+            }
             sensor_config["channel_mapping"] = channel_mapping
             
             # Update other settings (merge if they exist)
@@ -243,6 +267,22 @@ class AcquisitionApp:
             }
             calibration_config["ch1"] = {
                 "sensor": self.ch1_var.get(),
+                "enabled": True,
+                "offset": 0.0,
+                "gain": 1.0,
+                "calibration_date": datetime.now().strftime("%Y-%m-%d"),
+                "calibrated": True
+            }
+            calibration_config["ch2"] = {
+                "sensor": self.ch2_var.get(),
+                "enabled": True,
+                "offset": 0.0,
+                "gain": 1.0,
+                "calibration_date": datetime.now().strftime("%Y-%m-%d"),
+                "calibrated": True
+            }
+            calibration_config["ch3"] = {
+                "sensor": self.ch3_var.get(),
                 "enabled": True,
                 "offset": 0.0,
                 "gain": 1.0,
@@ -412,6 +452,18 @@ class AcquisitionApp:
         ttk.Combobox(
             map_frame, textvariable=self.ch1_var, values=['EMG', 'EOG', 'EEG'], state="readonly"
         ).pack(fill="x", pady=2)
+
+        ttk.Label(map_frame, text="Channel 2:").pack(anchor="w")
+        self.ch2_var = tk.StringVar(value="EEG")
+        ttk.Combobox(
+            map_frame, textvariable=self.ch2_var, values=['EMG', 'EOG', 'EEG'], state="readonly"
+        ).pack(fill="x", pady=2)
+
+        ttk.Label(map_frame, text="Channel 3:").pack(anchor="w")
+        self.ch3_var = tk.StringVar(value="EEG")
+        ttk.Combobox(
+            map_frame, textvariable=self.ch3_var, values=['EMG', 'EOG', 'EEG'], state="readonly"
+        ).pack(fill="x", pady=2)
         
         # CONTROL BUTTONS
         btn_frame = ttk.LabelFrame(parent, text="⚙️ Control", padding=10)
@@ -488,7 +540,7 @@ class AcquisitionApp:
         fig.subplots_adjust(left=0.06, right=0.98, top=0.96, bottom=0.08, hspace=0.35)
         
         # Subplot 1: Channel 0
-        self.ax0 = fig.add_subplot(211)
+        self.ax0 = fig.add_subplot(411)
         # Use position to move title up and away from bottom subplot
         self.ax0.set_title("📍 Channel 0 (EMG)", fontsize=12, fontweight='bold', pad=10)
         self.ax0.set_xlabel("Time (seconds)")
@@ -502,7 +554,7 @@ class AcquisitionApp:
         self.ax0.legend(loc='upper right', fontsize=9)
         
         # Subplot 2: Channel 1
-        self.ax1 = fig.add_subplot(212)
+        self.ax1 = fig.add_subplot(412)
         # Use position to move title down and away from top subplot
         self.ax1.set_title("📍 Channel 1 (EOG)", fontsize=12, fontweight='bold', pad=10)
         self.ax1.set_xlabel("Time (seconds)")
@@ -513,6 +565,27 @@ class AcquisitionApp:
         self.line1, = self.ax1.plot(self.time_axis, self.ch1_buffer,
                                     color='blue', linewidth=1.5, label='CH1')
         self.ax1.legend(loc='upper right', fontsize=9)
+
+        # Subplot 3: Channel 2
+        self.ax2 = fig.add_subplot(413)
+        self.ax2.set_title("📍 Channel 2", fontsize=10, fontweight='bold', pad=5)
+        self.ax2.set_ylabel("Amplitude (µV)")
+        self.ax2.grid(True, alpha=0.3)
+        self.ax2.set_ylim(y_limits[0], y_limits[1])
+        self.ax2.set_xlim(0, self.window_seconds)
+        self.line2, = self.ax2.plot(self.time_axis, self.ch2_buffer, color='green', linewidth=1.5, label='CH2')
+        self.ax2.legend(loc='upper right', fontsize=9)
+
+        # Subplot 4: Channel 3
+        self.ax3 = fig.add_subplot(414)
+        self.ax3.set_title("📍 Channel 3", fontsize=10, fontweight='bold', pad=5)
+        self.ax3.set_xlabel("Time (seconds)")
+        self.ax3.set_ylabel("Amplitude (µV)")
+        self.ax3.grid(True, alpha=0.3)
+        self.ax3.set_ylim(y_limits[0], y_limits[1])
+        self.ax3.set_xlim(0, self.window_seconds)
+        self.line3, = self.ax3.plot(self.time_axis, self.ch3_buffer, color='purple', linewidth=1.5, label='CH3')
+        self.ax3.legend(loc='upper right', fontsize=9)
         
         # Create canvas
         self.canvas = FigureCanvasTkAgg(fig, master=parent)
@@ -541,7 +614,7 @@ class AcquisitionApp:
         port = self.port_var.get().split(" ")[0]
         
         # Create serial reader
-        self.serial_reader = SerialPacketReader(port=port)
+        self.serial_reader = SerialPacketReader(port=port, packet_len=12)
         if not self.serial_reader.connect():
             messagebox.showerror("Error", f"Failed to connect to {port}")
             return
@@ -561,13 +634,13 @@ class AcquisitionApp:
         
         # Create LSL outlets if available
         if LSL_AVAILABLE:
-            ch_types = [self.ch0_type, self.ch1_type]
-            ch_labels = [f"{self.ch0_type}_0", f"{self.ch1_type}_1"]
+            ch_types = [self.ch0_type, self.ch1_type, self.ch2_var.get(), self.ch3_var.get()]
+            ch_labels = [f"{self.ch0_type}_0", f"{self.ch1_type}_1", f"{self.ch2_var.get()}_2", f"{self.ch3_var.get()}_3"]
             self.lsl_raw_uV = LSLStreamer(
                 "BioSignals-Raw-uV",
                 channel_types=ch_types,
                 channel_labels=ch_labels,
-                channel_count=2,
+                channel_count=4,
                 nominal_srate=float(self.config.get("sampling_rate", 512))
             )
         
@@ -603,6 +676,8 @@ class AcquisitionApp:
         # Clear buffers
         self.ch0_buffer.fill(0)
         self.ch1_buffer.fill(0)
+        self.ch2_buffer.fill(0)
+        self.ch3_buffer.fill(0)
         self.buffer_ptr = 0
         
         # Update UI
@@ -715,15 +790,17 @@ class AcquisitionApp:
                 
                 if batch_raw:
                     # 2. Batch parse
-                    ctrs, r0, r1 = self.packet_parser.parse_batch(batch_raw)
+                    ctrs, r0, r1, r2, r3 = self.packet_parser.parse_batch(batch_raw)
                     
                     # 3. Convert to uV
                     u0 = adc_to_uv(r0)
                     u1 = adc_to_uv(r1)
+                    u2 = adc_to_uv(r2)
+                    u3 = adc_to_uv(r3)
                     
                     # 4. Push to LSL in chunk
                     if LSL_AVAILABLE and self.lsl_raw_uV:
-                        chunk = np.column_stack((u0, u1)).tolist()
+                        chunk = np.column_stack((u0, u1, u2, u3)).tolist()
                         self.lsl_raw_uV.push_chunk(chunk)
                     
                     # 5. Update buffers efficiently
@@ -736,6 +813,8 @@ class AcquisitionApp:
                         
                         self.ch0_buffer[self.buffer_ptr] = u0[i]
                         self.ch1_buffer[self.buffer_ptr] = u1[i]
+                        self.ch2_buffer[self.buffer_ptr] = u2[i]
+                        self.ch3_buffer[self.buffer_ptr] = u3[i]
                         self.buffer_ptr = (self.buffer_ptr + 1) % self.buffer_size
                         
                         if self.is_recording:
@@ -744,8 +823,12 @@ class AcquisitionApp:
                                 "packet_seq": int(ctrs[i]),
                                 "ch0_raw_adc": int(r0[i]),
                                 "ch1_raw_adc": int(r1[i]),
+                                "ch2_raw_adc": int(r2[i]),
+                                "ch3_raw_adc": int(r3[i]),
                                 "ch0_uv": float(u0[i]),
-                                "ch1_uv": float(u1[i])
+                                "ch1_uv": float(u1[i]),
+                                "ch2_uv": float(u2[i]),
+                                "ch3_uv": float(u3[i])
                             })
                         
                         self.packet_count += 1
@@ -772,10 +855,14 @@ class AcquisitionApp:
             # Rotate buffers so latest data is on the right
             ch0_rotated = np.roll(self.ch0_buffer, -self.buffer_ptr)
             ch1_rotated = np.roll(self.ch1_buffer, -self.buffer_ptr)
+            ch2_rotated = np.roll(self.ch2_buffer, -self.buffer_ptr)
+            ch3_rotated = np.roll(self.ch3_buffer, -self.buffer_ptr)
             
             # Update line data
             self.line0.set_ydata(ch0_rotated)
             self.line1.set_ydata(ch1_rotated)
+            self.line2.set_ydata(ch2_rotated)
+            self.line3.set_ydata(ch3_rotated)
             
             # Redraw only when needed
             self.canvas.draw_idle()
