@@ -143,8 +143,8 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         const now = Date.now()
         const timeSinceLastPress = now - blinkPressTimeRef.current
 
-        if ( 75 < timeSinceLastPress && timeSinceLastPress < 400) {
-            handleDoublePress()
+        if (75 < timeSinceLastPress && timeSinceLastPress < 400) {
+            //handleDoublePress()
         } else {
             handleSinglePress()
         }

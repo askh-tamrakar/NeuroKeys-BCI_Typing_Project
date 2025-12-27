@@ -1,14 +1,12 @@
 {
-  "baud": 230400,
-  "binary": true,
   "channel_mapping": {
     "ch0": {
-      "enabled": true,
-      "sensor": "EOG"
+      "sensor": "EOG",
+      "enabled": true
     },
     "ch1": {
-      "enabled": true,
-      "sensor": "EMG"
+      "sensor": "EOG",
+      "enabled": true
     }
   },
   "display": {
@@ -17,13 +15,139 @@
     "timeWindowMs": 30000
   },
   "features": {
+    "EEG": {
+      "profiles": {
+        "Concentration": {
+          "alpha_power": [
+            0.5,
+            1.5
+          ],
+          "beta_power": [
+            1,
+            3
+          ]
+        },
+        "Relaxation": {
+          "alpha_power": [
+            2,
+            5
+          ],
+          "theta_power": [
+            1,
+            5
+          ]
+        },
+        "Rest": {}
+      }
+    },
     "EMG": {
+      "Paper": {
+        "mav": [
+          2,
+          5
+        ],
+        "rms": [
+          2,
+          5
+        ]
+      },
       "Rest": {},
-      "Rock": {}
+      "Rock": {
+        "mav": [
+          0.3,
+          2
+        ],
+        "rms": [
+          0.3,
+          2
+        ]
+      },
+      "Scissors": {
+        "mav": [
+          0.5,
+          1.5
+        ],
+        "zc": [
+          10,
+          50
+        ]
+      }
     },
     "EOG": {
-      "Rest": {},
-      "blink": {}
+      "DoubleBlink": {
+        "amplitude": [
+          1.5853,
+          3.0725
+        ],
+        "asymmetry": [
+          -0.0355,
+          3.5487
+        ],
+        "duration_ms": [
+          39.6484,
+          56.0547
+        ],
+        "fall_time_ms": [
+          16.9922,
+          47.4609
+        ],
+        "kurtosis": [
+          -1.0181,
+          2.817
+        ],
+        "peak_count": [
+          0.9,
+          1.1
+        ],
+        "rise_time_ms": [
+          7.6172,
+          33.3984
+        ],
+        "skewness": [
+          -1.8499,
+          0.7774
+        ]
+      },
+      "Rest": {
+        "amplitude": [
+          0,
+          0.5
+        ]
+      },
+      "SingleBlink": {
+        "amplitude": [
+          -0.0559,
+          2.9937
+        ],
+        "asymmetry": [
+          0.1935,
+          1.4006
+        ],
+        "duration_ms": [
+          37.3047,
+          58.3984
+        ],
+        "fall_time_ms": [
+          17.5781,
+          41.0156
+        ],
+        "kurtosis": [
+          -1.2458,
+          3.9363
+        ],
+        "peak_count": [
+          0.9,
+          1.1
+        ],
+        "rise_time_ms": [
+          7.8125,
+          31.25
+        ],
+        "skewness": [
+          -2.082,
+          0.8403
+        ]
+      }
     }
   },
   "filters": {
@@ -43,14 +167,24 @@
       ]
     },
     "EMG": {
-      "cutoff": 70,
+      "cutoff": 75.1,
       "order": 4,
       "type": "high_pass"
     },
     "EOG": {
-      "cutoff": 10,
-      "order": 4,
-      "type": "low_pass"
+      "bandpass_enabled": true,
+      "cutoff": 123.1,
+      "high": 10,
+      "low": 0.5,
+      "notch_enabled": true,
+      "order": 5,
+      "type": "bandpass"
+    },
+    "bandpass": {
+      "enabled": true
+    },
+    "notch": {
+      "enabled": false
     }
   },
   "num_channels": 2,
