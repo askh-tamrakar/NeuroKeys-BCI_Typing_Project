@@ -1,75 +1,105 @@
+import joblib
+import pandas as pd
+import numpy as np
+import os
+from pathlib import Path
+
 class RPSDetector:
     """
     Classifies EMG features into Rock, Paper, or Scissors gestures.
-    Uses configurable thresholds.
+    Uses a pre-trained Random Forest model.
     """
     
     def __init__(self, config: dict):
         self.config = config
-        self._load_config()
+        self.model = None
+        self.scaler = None
+        self.feature_cols = ['rms', 'mav', 'zcr', 'var', 'wl', 'peak', 'range', 'iemg', 'entropy', 'energy']
+        self._load_model()
         
-    def _load_config(self):
-        self.profiles = self.config.get("features", {}).get("EMG", {})
-        
+    def _load_model(self):
+        """
+        Load the trained model and scaler.
+        """
+        try:
+            # Path relative to this file: src/feature/detectors/ -> data/models
+            # This file: .../src/feature/detectors/rps_detector.py
+            # Root: .../
+            project_root = Path(__file__).resolve().parent.parent.parent.parent
+            models_dir = project_root / "data" / "models"
+            
+            model_path = models_dir / "emg_rf.joblib"
+            scaler_path = models_dir / "emg_scaler.joblib"
+            
+            if model_path.exists() and scaler_path.exists():
+                self.model = joblib.load(model_path)
+                self.scaler = joblib.load(scaler_path)
+                print(f"[RPSDetector] ✅ Loaded Random Forest Model from {model_path}")
+            else:
+                print(f"[RPSDetector] ⚠️ Model not found at {model_path}. Detection disabled until trained.")
+        except Exception as e:
+            print(f"[RPSDetector] ❌ Error loading model: {e}")
+
     def detect(self, features: dict) -> str | None:
         """
-        Classify gesture based on multi-feature profiles and log values.
+        Classify gesture based on ML model.
         """
-        if not features or not self.profiles:
+        if not features:
             return None
             
-        # 1. Print all extracted values for the user
-        # print(f"\n[RPSDetector] --- Features Extracted ---")
-        # for feat, val in features.items():
-        #     if feat != "timestamp":
-        #         print(f"  > {feat:8}: {val:.4f}")
-        
-        scores = {}
-        match_details = {}
-        
-        for gesture, profile in self.profiles.items():
-            if gesture == "Rest":
-                continue
-                
-            match_count = 0
-            total_features = 0
-            matches = []
-            
-            for feat_name, range_val in profile.items():
-                if feat_name in features and isinstance(range_val, list) and len(range_val) == 2:
-                    total_features += 1
-                    val = features[feat_name]
-                    is_match = range_val[0] <= val <= range_val[1]
-                    if is_match:
-                        match_count += 1
-                        matches.append(feat_name)
-            
-            if total_features > 0:
-                score = match_count / total_features
-                scores[gesture] = score
-                match_details[gesture] = f"{match_count}/{total_features} matches: {matches}"
+        if self.model is None or self.scaler is None:
+            # Try to reload if missing (maybe trained recently)
+            self._load_model()
+            if self.model is None:
+                return None
 
-        # #Print match report
-        # print(f"[RPSDetector] --- Match Report ---")
-        # for gesture, detail in match_details.items():
-        #     print(f"  {gesture:10}: {detail} (Score: {scores[gesture]:.2f})")
+        try:
+            # 1. Prepare feature vector in correct order
+            # Ensure all features exist, default to 0.0
+            feature_vector = []
+            for col in self.feature_cols:
+                val = features.get(col, 0.0)
+                # Handle potential rename like 'rng' -> 'range' if extraction used different key
+                if col == 'range' and 'range' not in features and 'rng' in features:
+                   val = features['rng']
+                feature_vector.append(val)
+            
+            # 2. Reshape for sklearn (DataFrame to preserve feature names)
+            X = pd.DataFrame([feature_vector], columns=self.feature_cols)
+            
+            # 3. Scale
+            X_scaled = self.scaler.transform(X)
+            
+            # 4. Predict
+            # Determine class probabilities for confidence thresholding
+            probs = self.model.predict_proba(X_scaled)[0]
+            pred_class_idx = np.argmax(probs)
+            confidence = probs[pred_class_idx]
+            
+            # Map index to label (0=Rest, 1=Rock, 2=Paper, 3=Scissors, or however trained)
+            # IMPORTANT: Matches the order in seed_data.py / training data
+            label_map = {0: "Rest", 1: "Rock", 2: "Paper", 3: "Scissors"}
+            
+            predicted_label = label_map.get(pred_class_idx, "Unknown")
+            
+            # Confidence threshold
+            CONFIDENCE_THRESHOLD = 0.6
+            
+            if confidence >= CONFIDENCE_THRESHOLD:
+                if predicted_label != "Rest":
+                    print(f"[RPSDetector] 🤖 Detected: {predicted_label} ({confidence:.2f})")
+                    return predicted_label
+            else:
+                # print(f"[RPSDetector] Low confidence: {predicted_label} ({confidence:.2f})")
+                pass
 
-        # Threshold for detection (consensus)
-        CONSENSUS_THRESHOLD = 0.6
-        
-        if not scores:
             return None
-            
-        best_gesture = max(scores, key=scores.get)
-        
-        if scores[best_gesture] >= CONSENSUS_THRESHOLD:
-            print(f"[RPSDetector] [OK] Detected: {best_gesture.upper()}")
-            print(f"[RPSDetector] [OK] Score: {scores[best_gesture]:.2f}")
-            return best_gesture.upper()
-                
-        print(f"[RPSDetector] [SKIP] No consensus (Best: {best_gesture} @ {scores[best_gesture]:.2f})")
-        return None
+
+        except Exception as e:
+            print(f"[RPSDetector] Prediction error: {e}")
+            return None
 
     def update_config(self, config: dict):
         self.config = config
-        self._load_config()
+        # Re-load model if needed, or if config contained model paths (not currently true)
+        pass

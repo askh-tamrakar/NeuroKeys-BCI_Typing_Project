@@ -16,7 +16,7 @@
     "calibrated": true
   },
   "ch2": {
-    "sensor": "EOG",
+    "sensor": "EEG",
     "enabled": true,
     "offset": 0.0,
     "gain": 1.0,
@@ -24,7 +24,7 @@
     "calibrated": true
   },
   "ch3": {
-    "sensor": "EOG",
+    "sensor": "EEG",
     "enabled": true,
     "offset": 0.0,
     "gain": 1.0,

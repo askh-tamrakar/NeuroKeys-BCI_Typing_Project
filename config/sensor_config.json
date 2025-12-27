@@ -2,24 +2,24 @@
   "sampling_rate": 512,
   "channel_mapping": {
     "ch0": {
+      "sensor": "EMG",
       "enabled": true,
-      "label": "Channel 0",
-      "sensor": "EEG"
+      "label": "EEG Channel 0"
     },
     "ch1": {
+      "sensor": "EOG",
       "enabled": true,
-      "label": "Channel 1",
-      "sensor": "EEG"
+      "label": "EEG Channel 1"
     },
     "ch2": {
-      "enabled": false,
-      "label": "Channel 2",
-      "sensor": "EEG"
+      "sensor": "EEG",
+      "enabled": true,
+      "label": "EEG Channel 2"
     },
     "ch3": {
+      "sensor": "EEG",
       "enabled": true,
-      "label": "Channel 3",
-      "sensor": "EOG"
+      "label": "EEG Channel 3"
     }
   },
   "num_channels": 4,

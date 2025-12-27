@@ -36,7 +36,7 @@ export default function MLTrainingView() {
 
             if (!response.ok) {
                 const errData = await response.json();
-                throw new Error(errData.detail || 'Training failed');
+                throw new Error(errData.detail || errData.error || 'Training failed');
             }
 
             const data = await response.json();

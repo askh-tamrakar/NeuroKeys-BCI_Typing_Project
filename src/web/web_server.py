@@ -579,8 +579,26 @@ def api_get_recording(filename):
 
 # ========== WINDOW SAVING & FEATURE EXTRACTION ==========
 
+def extract_eog_features(samples: list, sr: int = 512) -> dict:
+    """
+    Extract EOG features using BlinkExtractor.
+    Restored for compatibility with master logic.
+    """
+    try:
+        from feature.extractors.blink_extractor import BlinkExtractor
+        return BlinkExtractor.extract_features(samples, sr)
+    except ImportError:
+        # Fallback if imports fail (circular dependency risk)
+        return {}
 
-# ========== REMOVED OLD EXTRACTORS AND DETECTORS ==========
+def detect_for_sensor(sensor: str, action: str, features: dict, config: dict) -> bool:
+    """
+    Detect signal using CalibrationManager's unified pipeline.
+    Restored for compatibility with master logic.
+    """
+    detected = calibration_manager.detect_signal(sensor, action, features, config)
+    return detected == action or (detected and detected == action)
+
 # Logic moved to CalibrationManager
 
 

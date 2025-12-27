@@ -197,12 +197,12 @@
   "EOG": {
     "SingleBlink": {
       "amplitude": [
-        50.0,
-        2000.0
+        50,
+        2000
       ],
       "asymmetry": [
-        -5.0,
-        5.0
+        -5,
+        5
       ],
       "duration_ms": [
         30,
@@ -213,8 +213,8 @@
         500
       ],
       "kurtosis": [
-        -5.0,
-        20.0
+        -5,
+        20
       ],
       "peak_count": [
         0.5,
@@ -225,10 +225,10 @@
         500
       ],
       "skewness": [
-        -5.0,
-        5.0
+        -5,
+        5
       ]
     },
-    "amp_threshold": 5.0
+    "amp_threshold": 5
   }
 }

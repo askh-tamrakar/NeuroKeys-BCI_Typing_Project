@@ -1,84 +1,56 @@
 class BlinkDetector:
     """
-    Classifies EOG events (SingleBlink, DoubleBlink, Rest) based on configurable profiles.
+    Classifies an event as a blink based on extracted features.
     """
     
     def __init__(self, config: dict):
-        self.config = config
-        self._load_config()
+        eog_cfg = config.get("features", {}).get("EOG", {})
+        if not eog_cfg:
+             eog_cfg = config.get("EOG", {})
         
-    def _load_config(self):
-        # Expecting structure: {"EOG": {"SingleBlink": {...}, "DoubleBlink": {...}}}
-        # Config merger puts feature_config content under 'features' key if using facade
-        features = self.config.get("features", {})
-        self.profiles = features.get("EOG", {})
-        if not self.profiles:
-            # Fallback for direct feature config usage
-            self.profiles = self.config.get("EOG", {})
+        # Classification thresholds
+        self.min_duration = eog_cfg.get("min_duration_ms", 100.0)
+        self.max_duration = eog_cfg.get("max_duration_ms", 600.0)
+        self.min_asymmetry = eog_cfg.get("min_asymmetry", 0.05) 
+        self.max_asymmetry = eog_cfg.get("max_asymmetry", 2.5) 
+        self.min_kurtosis = eog_cfg.get("min_kurtosis", -3.0) 
         
     def detect(self, features: dict) -> str | None:
         """
-        Classify event based on multi-feature profiles (SingleBlink vs DoubleBlink).
+        Decision logic based on features.
         """
-        if not features or not self.profiles:
+        if not features:
             return None
             
-        scores = {}
-        # Threshold for validation (all ranges must match for a strict detector, or high % match)
-        # For blinks, we usually want strict compliance with key metrics (duration, amplitude)
+        dur = features.get("duration_ms", 0)
+        asym = features.get("asymmetry", 0)
+        kurt = features.get("kurtosis", 0)
         
-        candidates = []
-        
-        for event_name, profile in self.profiles.items():
-            # Skip non-dict config items (like amp_threshold)
-            if not isinstance(profile, dict):
-                continue
-                
-            # if event_name == "Rest": continue - Enabled Rest for calibration detection
-                
-            match_count = 0
-            total_features = 0
-            mismatches = []
-            
-            for feat_name, range_val in profile.items():
-                if feat_name in features and isinstance(range_val, list) and len(range_val) == 2:
-                    total_features += 1
-                    val = features[feat_name]
-                    
-                    # Handle None or NaN features if any
-                    if val is None:
-                        continue
-                        
-                    is_match = range_val[0] <= val <= range_val[1]
-                    if is_match:
-                        match_count += 1
-                    else:
-                        mismatches.append(f"{feat_name}={val:.2f} (Expected {range_val})")
-            
-            # Debug print
-            print(f"[BlinkDetector] Checking {event_name}")
-            print(f"[BlinkDetector] matches={match_count}/{total_features} | Misses: {mismatches}")
+        # Rule-based classification
+        is_valid_duration = self.min_duration <= dur <= self.max_duration
+        is_valid_asymmetry = self.min_asymmetry <= asym <= self.max_asymmetry
+        is_valid_shape = kurt >= self.min_kurtosis
 
-            # Strict Policy: All configured constraints must pass for a blink
-            if total_features > 0:
-                score = match_count / total_features
-                if score == 1.0:
-                    candidates.append(event_name)
-                    print(f"[BlinkDetector] Matched {event_name}")
-                else:
-                    print(f"[BlinkDetector] Failed {event_name}: {', '.join(mismatches)}")
+        # Debug Logs (Recieved vs Expected)
+        status = "MATCH" if (is_valid_duration and is_valid_asymmetry and is_valid_shape) else "REJECT"
         
-        if candidates:
-            # Return the first candidate that passed all checks
-            # Since strict matching requires score == 1.0, any candidate here is valid.
-            # If multiple match (rare with good disjoint configs), taking the first is acceptable.
-            best_candidate = candidates[0]
-            print(f"[BlinkDetector] [OK] Detected: {best_candidate}")
-            return best_candidate
+        print(f"[BlinkDetector] [{status}]")
+        print(f"  Duration : {dur:.2f} ms  (Expected: {self.min_duration}-{self.max_duration}) [{'OK' if is_valid_duration else 'FAIL'}]")
+        print(f"  Asym     : {asym:.2f}     (Expected: {self.min_asymmetry}-{self.max_asymmetry}) [{'OK' if is_valid_asymmetry else 'FAIL'}]")
+        print(f"  Kurtosis : {kurt:.2f}     (Expected: > {self.min_kurtosis}) [{'OK' if is_valid_shape else 'FAIL'}]")
+        
+        if is_valid_duration and is_valid_asymmetry and is_valid_shape:
+            return "SingleBlink"
             
         return None
 
     def update_config(self, config: dict):
-        self.config = config
-        self._load_config()
-
+        eog_cfg = config.get("features", {}).get("EOG", {})
+        if not eog_cfg:
+             eog_cfg = config.get("EOG", {})
+             
+        self.min_duration = eog_cfg.get("min_duration_ms", self.min_duration)
+        self.max_duration = eog_cfg.get("max_duration_ms", self.max_duration)
+        self.min_asymmetry = eog_cfg.get("min_asymmetry", self.min_asymmetry)
+        self.max_asymmetry = eog_cfg.get("max_asymmetry", self.max_asymmetry)
+        self.min_kurtosis = eog_cfg.get("min_kurtosis", self.min_kurtosis)

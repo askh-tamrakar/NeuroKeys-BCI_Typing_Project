@@ -145,30 +145,29 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         // Check channel match (or 'any' bypass)
         const targetCh = settingsRef.current.CONTROL_CHANNEL
         if (targetCh !== 'any' && wsEvent.channel !== targetCh) {
-            console.log(`[Dino] Ignored event ${wsEvent.event} from ${wsEvent.channel} (Target: ${targetCh})`);
+            // console.log(`[Dino] Ignored event ${wsEvent.event} from ${wsEvent.channel} (Target: ${targetCh})`);
             return
         }
 
-        if (wsEvent.event === 'SingleBlink') {
-
-            const now = Date.now()
-            const timeSinceLastPress = now - blinkPressTimeRef.current
-
-            if (timeSinceLastPress > 75 && timeSinceLastPress < 400) {
-                logEvent(`👁️ Double Blink Detected (${wsEvent.channel})`)
-                handleDoublePress()
-            } else {
-                logEvent(`👁️ Blink Detected (${wsEvent.channel})`)
-                handleSinglePress()
-            }
-            blinkPressTimeRef.current = now
-        }
-        else if (wsEvent.event === 'DoubleBlink') {
-            // Legacy support if backend sends DoubleBlink
-            logEvent(`👁️👁️ Double Blink (${wsEvent.channel})`)
-            handleDoublePress()
+        if (wsEvent.event === 'BLINK' || wsEvent.event === 'SingleBlink') {
+            console.log("🦖 Dino: Blink Event Received via Logic Pipeline!");
+            handleEOGBlink();
         }
     }, [wsEvent]);
+
+    // Handle EOG blink detection
+    const handleEOGBlink = () => {
+        const now = Date.now()
+        const timeSinceLastPress = now - blinkPressTimeRef.current
+
+        if (75 < timeSinceLastPress && timeSinceLastPress < 400) {
+            handleDoublePress()
+        } else {
+            handleSinglePress()
+        }
+
+        blinkPressTimeRef.current = now
+    }
 
     // Keyboard controls (hidden from UI but functional if enabled)
     useEffect(() => {
@@ -245,25 +244,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         }
     }
 
-    // Eye blink animations 
-    // Single blink
-    const triggerSingleBlink = () => {
-        setEyeState('blink')
-        if (leftEyeRef.current && rightEyeRef.current) {
-            leftEyeRef.current.classList.remove('blink', 'double-blink')
-            rightEyeRef.current.classList.remove('blink', 'double-blink')
-            void leftEyeRef.current.offsetWidth // Force reflow
-            leftEyeRef.current.classList.add('blink')
-            rightEyeRef.current.classList.add('blink')
-        }
-        setTimeout(() => {
-            setEyeState('open')
-            if (leftEyeRef.current && rightEyeRef.current) {
-                leftEyeRef.current.classList.remove('blink')
-                rightEyeRef.current.classList.remove('blink')
-            }
-        }, 300)
-    }
+
 
     // Double blink
     const triggerDoubleBlink = () => {
