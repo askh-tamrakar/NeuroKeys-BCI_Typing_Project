@@ -210,6 +210,22 @@ class CalibrationManager:
                     logger.info(f"[Calibration] Saved to separate DB: {action} (ID: {int_label})")
                 except Exception as db_err:
                     logger.error(f"[Calibration] DB Save Error: {db_err}")
+
+            # 4c. Save to SQLite DB (for EOG)
+            if valid_samples and features and sensor == 'EOG':
+                try:
+                    # EOG Label Map: Rest=0, SingleBlink=1, DoubleBlink=2
+                    label_map = {"Rest": 0, "SingleBlink": 1, "DoubleBlink": 2}
+                    int_label = label_map.get(action, 0)
+                    
+                    db_manager.insert_eog_window(
+                        features,
+                        label=int_label,
+                        session_id=str(int(ts))
+                    )
+                    logger.info(f"[Calibration] Saved to EOG DB: {action} (ID: {int_label})")
+                except Exception as db_err:
+                    logger.error(f"[Calibration] EOG DB Save Error: {db_err}")
         
         # 5. Check Detection & Prediction
         # detect_signal now returns string or None

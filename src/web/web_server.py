@@ -98,6 +98,13 @@ class WebServerState:
             "start_time": 0,
             "extractor": None
         }
+        
+        self.prediction = {
+            "active": False,
+            "mode": "EOG", 
+            "extractor": None,
+            "detector": None
+        }
 
 
 state = WebServerState()
@@ -310,9 +317,36 @@ def broadcast_events():
                  state.event_inlet = None
              time.sleep(0.01)
 
+        # Recording State
+        self.recording = {
+            "active": False,
+            "mode": "EMG", # "EMG" or "EOG"
+            "label": 0,
+            "session_id": None,
+            "start_time": 0,
+            "extractor": None
+        }
+        
+        # Prediction State
+        self.prediction = {
+            "active": False,
+            "mode": "EOG",
+            "extractor": None,
+            "detector": None
+        }
+
+
 def broadcast_data():
-    """Broadcast stream data to all connected clients."""
-    print("[WebServer] 📡 Starting broadcast thread...")
+    """
+    Broadcast stream data to all connected clients.
+    Optimized: Batches samples to ~30Hz (33ms) to prevent frontend overload.
+    """
+    print("[WebServer] 📡 Starting broadcast thread (BATCHED)...")
+    
+    # Batch settings
+    BATCH_INTERVAL = 0.033  # 33ms target (approx 30Hz)
+    last_batch_time = time.time()
+    batch_buffer = []
 
     while state.running:
         if state.inlet is None:
@@ -320,6 +354,7 @@ def broadcast_data():
             continue
 
         try:
+            # Pull sample with short timeout (was 1.0, shorter is fine for loop responsiveness)
             sample, ts = state.inlet.pull_sample(timeout=1.0)
             
             # --- RECORDING LOGIC ---
@@ -327,21 +362,44 @@ def broadcast_data():
                 try:
                     # Initialize extractor if needed
                     if state.recording["extractor"] is None:
-                        # Determine correct channel for recording (look for "EMG" in mapping)
-                        target_channel = 0
-                        for idx, info in state.channel_mapping.items():
-                             if info.get("type", "").upper() == "EMG":
-                                 target_channel = idx
-                                 break
+                        mode = state.recording.get("mode", "EMG")
+                        target_type = "EMG" if mode == "EMG" else "EOG"
                         
-                        state.recording["extractor"] = RPSExtractor(
-                            channel_index=target_channel, 
-                            config={}, 
-                            sr=state.sr
-                        )
+                        # Determine correct channel
+                        requested_idx = state.recording.get("channel_index")
+                        target_channel = 0
+                        
+                        if requested_idx is not None:
+                             target_channel = requested_idx
+                        else:
+                            # Auto-find
+                            found = False
+                            for idx, info in state.channel_mapping.items():
+                                 if info.get("type", "").upper() == target_type:
+                                     target_channel = idx
+                                     found = True
+                                     break
+                                     
+                            # Fallback if specific sensor not found (use ch0)
+                            if not found and mode == "EOG":
+                                target_channel = 0
+
+                        if mode == "EMG":
+                            state.recording["extractor"] = RPSExtractor(
+                                channel_index=target_channel, 
+                                config={}, 
+                                sr=state.sr
+                            )
+                        else: # EOG
+                            # Import here to ensure availability
+                            from feature.extractors.blink_extractor import BlinkExtractor
+                            state.recording["extractor"] = BlinkExtractor(
+                                channel_index=target_channel,
+                                config=config_manager.get_all_configs(), # Needs config for thresholds
+                                sr=state.sr
+                            )
                     
                     # Process sample - this handles buffering and windowing internally
-                    # Use the determined target channel
                     target_ch = state.recording["extractor"].channel_index
                     if target_ch < len(sample):
                         val = sample[target_ch] 
@@ -352,51 +410,99 @@ def broadcast_data():
                     
                     if features:
                         # Save to DB
-                        db_manager.insert_window(
-                            features, 
-                            state.recording["label"], 
-                            state.recording["session_id"]
-                        )
-                        # Optional: Broadcast update to UI (maybe throttle this)
-                        # socketio.emit('recording_progress', ...)
-                        
+                        if state.recording["mode"] == "EMG":
+                            db_manager.insert_window(
+                                features, 
+                                state.recording["label"], 
+                                state.recording["session_id"]
+                            )
+                        else: # EOG
+                            db_manager.insert_eog_window(
+                                features,
+                                state.recording["label"],
+                                state.recording["session_id"]
+                            )
+
                 except Exception as rec_e:
                     print(f"[WebServer] ⚠️ Recording Error: {rec_e}")
+            
+            # --- PREDICTION LOGIC ---
+            if state.prediction["active"] and sample:
+                try:
+                    if state.prediction["extractor"] is None:
+                        from feature.extractors.blink_extractor import BlinkExtractor
+                        from feature.detectors.blink_detector import BlinkDetector
+                        
+                        target_channel = 0
+                        requested_idx = state.prediction.get("channel_index")
+                        if requested_idx is not None:
+                            target_channel = requested_idx
+                        else:
+                            for idx, info in state.channel_mapping.items():
+                                 if info.get("type", "").upper() == "EOG":
+                                     target_channel = idx
+                                     break
+                        
+                        cfg = config_manager.get_all_configs()
+                        state.prediction["extractor"] = BlinkExtractor(channel_index=target_channel, config=cfg, sr=state.sr)
+                        state.prediction["detector"] = BlinkDetector(config=cfg)
+                        print(f"[WebServer] 🔮 Prediction Init on Ch {target_channel}")
+
+                    target_ch = state.prediction["extractor"].channel_index
+                    val = sample[target_ch] if target_ch < len(sample) else 0
+                    features = state.prediction["extractor"].process(val)
+                    
+                    if features:
+                        label = state.prediction["detector"].detect(features)
+                        if label:
+                            # Use bio_event to utilize existing frontend hooks
+                            socketio.emit('bio_event', {
+                                'event': 'prediction',
+                                'type': 'EOG', 
+                                'label': label, 
+                                'timestamp': ts
+                            })
+                            print(f"[WebServer] 🔮 Prediction: {label}")
+
+                except Exception as pred_e:
+                    print(f"[WebServer] ⚠️ Prediction Error: {pred_e}")
             # -----------------------
 
             if sample is not None and len(sample) == state.num_channels:
                 state.sample_count += 1
-
-                # Format data for broadcasting
+                
+                # ... (rest of broadcast logic unchanged, abbreviated for replacement)
                 channels_data = {}
                 for ch_idx in range(state.num_channels):
                     ch_mapping = state.channel_mapping.get(ch_idx, {})
-                    
-                    # Check if channel is explicitly disabled
-                    if not ch_mapping.get("enabled", True):
-                        continue
-
+                    if not ch_mapping.get("enabled", True): continue
                     channels_data[ch_idx] = {
                         "label": ch_mapping.get("label", f"ch{ch_idx}"),
                         "type": ch_mapping.get("type", "UNKNOWN"),
                         "value": float(sample[ch_idx]),
                         "timestamp": ts
                     }
-
-                data = {
-                    "stream_name": RAW_STREAM_NAME,
+                batch_buffer.append({
                     "channels": channels_data,
-                    "channel_count": state.num_channels,
-                    "sample_rate": state.sr,
-                    "sample_count": state.sample_count,
-                    "timestamp": ts
-                }
+                    "timestamp": ts,
+                    "sample_count": state.sample_count
+                })
 
-                socketio.emit('bio_data_update', data)
-
-                # Log progress every 512 samples
-                if state.sample_count % 512 == 0:
-                    print(f"[WebServer] ✅ {state.sample_count} samples broadcast")
+                now = time.time()
+                if now - last_batch_time >= BATCH_INTERVAL and len(batch_buffer) > 0:
+                    batch_payload = {
+                        "stream_name": RAW_STREAM_NAME,
+                        "type": "batch",
+                        "samples": batch_buffer,
+                        "sample_rate": state.sr,
+                        "batch_size": len(batch_buffer),
+                        "timestamp": now
+                    }
+                    socketio.emit('bio_data_batch', batch_payload)
+                    batch_buffer = []
+                    last_batch_time = now
+                    if state.sample_count % 512 == 0:
+                         print(f"[WebServer] ✅ {state.sample_count} samples broadcast")
 
         except Exception as e:
             if "timeout" not in str(e).lower():
@@ -708,6 +814,29 @@ def api_train_emg():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/api/model/evaluate', methods=['POST'])
+def api_evaluate_emg():
+    """Evaluate Saved Model on Full Database."""
+    try:
+         # Import locally
+        try:
+            from learning.emg_trainer import evaluate_saved_model
+        except ImportError:
+             import sys
+             sys.path.append(str(PROJECT_ROOT / "src"))
+             from learning.emg_trainer import evaluate_saved_model
+
+        result = evaluate_saved_model()
+        
+        if "error" in result:
+             return jsonify(result), 400
+             
+        return jsonify(result)
+    except Exception as e:
+        print(f"[WebServer] ❌ Evaluation error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 # ========== EMG DATA COLLECTION ENDPOINTS ==========
 
 
@@ -764,6 +893,145 @@ def api_emg_status():
         "current_label": state.recording["label"],
         "counts": counts
     })
+
+
+# ========== EOG ENDPOINTS ==========
+
+@app.route('/api/train-eog-rf', methods=['POST'])
+def api_train_eog():
+    """Train EOG Random Forest Model."""
+    try:
+        data = request.get_json() or {}
+        n_estimators = data.get('n_estimators', 100)
+        max_depth = data.get('max_depth', None)
+        test_size = data.get('test_size', 0.2)
+        
+        try:
+            from learning.eog_trainer import train_eog_model
+        except ImportError:
+             import sys
+             sys.path.append(str(PROJECT_ROOT / "src"))
+             from learning.eog_trainer import train_eog_model
+
+        result = train_eog_model(n_estimators=n_estimators, max_depth=max_depth, test_size=test_size)
+        
+        if "error" in result:
+             return jsonify(result), 400
+             
+        return jsonify(result)
+        
+    except Exception as e:
+        print(f"[WebServer] ❌ EOG Training error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/model/evaluate/eog', methods=['POST'])
+def api_evaluate_eog():
+    """Evaluate Saved EOG Model."""
+    try:
+        try:
+            from learning.eog_trainer import evaluate_saved_eog_model
+        except ImportError:
+             import sys
+             sys.path.append(str(PROJECT_ROOT / "src"))
+             from learning.eog_trainer import evaluate_saved_eog_model
+
+        result = evaluate_saved_eog_model()
+        if "error" in result:
+             return jsonify(result), 400
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/eog/data', methods=['DELETE'])
+def api_clear_eog_data():
+    """Clear all EOG data."""
+    try:
+        from database.db_manager import db_manager
+        result = db_manager.clear_eog_data()
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/eog/start', methods=['POST'])
+def api_start_eog_recording():
+    """Start recording EOG data."""
+    try:
+        data = request.get_json()
+        label = data.get('label')
+        channel = data.get('channel')
+        
+        if label is None: return jsonify({"error": "Label required"}), 400
+            
+        label = int(label)
+        session_id = f"sess_eog_{int(time.time())}"
+        
+        state.recording["extractor"] = None # Reset
+        state.recording.update({
+            "active": True,
+            "mode": "EOG",
+            "label": label,
+            "channel_index": int(channel) if channel is not None else None,
+            "session_id": session_id,
+            "start_time": time.time()
+        })
+        
+        print(f"[WebServer] 👁️ Started EOG Recording: Label {label} (Ch {channel})")
+        return jsonify({"status": "started", "session_id": session_id})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/eog/stop', methods=['POST'])
+def api_stop_eog_recording():
+    """Stop EOG recording."""
+    try:
+        state.recording["active"] = False
+        print(f"[WebServer] ⏹️  Stopped EOG Recording")
+        return jsonify({"status": "stopped"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/eog/status', methods=['GET'])
+def api_eog_status():
+    """Get EOG recording status and counts."""
+    from database.db_manager import db_manager
+    counts = db_manager.get_eog_counts()
+    return jsonify({
+        "recording": state.recording["active"] and state.recording.get("mode") == "EOG",
+        "current_label": state.recording["label"],
+        "channel_index": state.recording.get("channel_index"),
+        "counts": counts
+    })
+
+
+@app.route('/api/eog/predict/start', methods=['POST'])
+def api_start_eog_predict():
+    """Start live EOG prediction."""
+    try:
+        data = request.get_json() or {}
+        channel = data.get('channel')
+        
+        state.prediction["extractor"] = None # Reset
+        state.prediction["detector"] = None  # Reset to force model reload
+        state.prediction.update({
+            "active": True,
+            "mode": "EOG",
+            "channel_index": int(channel) if channel is not None else None
+        })
+        print(f"[WebServer] 🔮 Started EOG Prediction Mode (Ch {channel}) - Model Reload Triggered")
+        return jsonify({"status": "started"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/eog/predict/stop', methods=['POST'])
+def api_stop_eog_predict():
+    """Stop live EOG prediction."""
+    try:
+        state.prediction["active"] = False
+        print(f"[WebServer] ⏹️  Stopped EOG Prediction Mode")
+        return jsonify({"status": "stopped"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # ========== SOCKETIO EVENTS ==========

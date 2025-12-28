@@ -103,7 +103,19 @@ class AcquisitionApp:
         self.ch1_buffer = np.zeros(self.buffer_size)
         self.ch2_buffer = np.zeros(self.buffer_size)
         self.ch3_buffer = np.zeros(self.buffer_size)
+        
+        # Processed (Filtered) Buffers
+        self.ch0_processed = np.zeros(self.buffer_size)
+        self.ch1_processed = np.zeros(self.buffer_size)
+        self.ch2_processed = np.zeros(self.buffer_size)
+        self.ch3_processed = np.zeros(self.buffer_size)
+        
         self.buffer_ptr = 0
+        
+        # View State
+        self.show_processed = tk.BooleanVar(value=True)
+        self.filters = {}
+        self.filter_state = {} # for sosfilt_zi
         
         # Time axis
         self.time_axis = np.linspace(0, self.window_seconds, self.buffer_size)
@@ -146,10 +158,11 @@ class AcquisitionApp:
         
         # 2. Fall back to file-based config using config_manager
         try:
-            sensor_cfg = config_manager.sensor_config.get_all()
-            if sensor_cfg:
-                print("[App] ✅ Loaded config from sensor_config.json")
-                return sensor_cfg
+            # Load UNIFIED config (Sensor + Filters + Calibration)
+            unified_cfg = config_manager.get_all_configs()
+            if unified_cfg:
+                print("[App] ✅ Loaded unified config (Sensor+Filters)")
+                return unified_cfg
         except Exception as e:
             print(f"[App] ⚠️ File load failed: {e}")
         
@@ -429,6 +442,11 @@ class AcquisitionApp:
         conn_frame = ttk.LabelFrame(parent, text="🔌 Connection", padding=10)
         conn_frame.pack(fill="x", pady=5)
         
+        # graph view toggle
+        view_frame = ttk.LabelFrame(parent, text="👁️ Graph View", padding=10)
+        view_frame.pack(fill="x", pady=5)
+        ttk.Checkbutton(view_frame, text="Show Processed/Smoothed", variable=self.show_processed).pack(anchor="w")
+        
         ttk.Label(conn_frame, text="COM Port:").pack(anchor="w")
         self.port_var = tk.StringVar()
         self.port_combo = ttk.Combobox(
@@ -537,7 +555,8 @@ class AcquisitionApp:
     def _build_graph_panel(self, parent):
         """Build right graph panel - FIXED: No overlapping labels"""
         fig = Figure(figsize=(12, 8), dpi=100)
-        fig.subplots_adjust(left=0.06, right=0.98, top=0.96, bottom=0.08, hspace=0.35)
+        # Increased hspace from 0.35 to 0.5 to prevent title/label overlap
+        fig.subplots_adjust(left=0.08, right=0.98, top=0.96, bottom=0.08, hspace=0.5)
         
         # Subplot 1: Channel 0
         self.ax0 = fig.add_subplot(411)
@@ -643,6 +662,18 @@ class AcquisitionApp:
                 channel_count=4,
                 nominal_srate=float(self.config.get("sampling_rate", 512))
             )
+            
+            # Create Processed Stream
+            self.lsl_processed = LSLStreamer(
+                "BioSignals-Processed",
+                channel_types=ch_types,
+                channel_labels=ch_labels,
+                channel_count=4,
+                nominal_srate=float(self.config.get("sampling_rate", 512))
+            )
+            
+            # Reset filter states on connect
+            self._init_filters()
         
     def disconnect_device(self):
         """Disconnect from Arduino"""
@@ -798,76 +829,189 @@ class AcquisitionApp:
                     u2 = adc_to_uv(r2)
                     u3 = adc_to_uv(r3)
                     
-                    # 4. Push to LSL in chunk
-                    if LSL_AVAILABLE and self.lsl_raw_uV:
-                        chunk = np.column_stack((u0, u1, u2, u3)).tolist()
-                        self.lsl_raw_uV.push_chunk(chunk)
+                    # 4. Filter Data (if enabled)
+                    # We process point-by-point or in small chunks. 
+                    # If using SOS filters, we need state.
                     
-                    # 5. Update buffers efficiently
-                    n = len(u0)
-                    for i in range(n):
-                        # Simple duplicate check (last counter)
-                        if self.last_packet_counter == ctrs[i]:
-                            continue
-                        self.last_packet_counter = ctrs[i]
+                    p0, p1, p2, p3 = self._apply_filters_batch(u0, u1, u2, u3)
+                    
+                    # 5. Push to LSL
+                    if self.lsl_raw_uV:
+                        # Raw stream
+                        chunk_raw = []
+                        for i in range(len(u0)):
+                            chunk_raw.append([u0[i], u1[i], u2[i], u3[i]])
+                        self.lsl_raw_uV.push_chunk(chunk_raw)
                         
-                        self.ch0_buffer[self.buffer_ptr] = u0[i]
-                        self.ch1_buffer[self.buffer_ptr] = u1[i]
-                        self.ch2_buffer[self.buffer_ptr] = u2[i]
-                        self.ch3_buffer[self.buffer_ptr] = u3[i]
-                        self.buffer_ptr = (self.buffer_ptr + 1) % self.buffer_size
+                    if self.lsl_processed:
+                        # Processed stream
+                        chunk_proc = []
+                        for i in range(len(p0)):
+                            chunk_proc.append([p0[i], p1[i], p2[i], p3[i]])
+                        self.lsl_processed.push_chunk(chunk_proc)
+                    
+                    # 6. Update Buffers (Circular)
+                    count = len(u0)
+                    if count > 0:
+                        self.session_data.extend([
+                            {"ts": time.time(), "ch0": v0, "ch1": v1, "ch2": v2, "ch3": v3}
+                            for v0, v1, v2, v3 in zip(u0, u1, u2, u3)
+                        ])
                         
-                        if self.is_recording:
-                            # Still using dict for now, but batching parser already saved time
-                            self.session_data.append({
-                                "packet_seq": int(ctrs[i]),
-                                "ch0_raw_adc": int(r0[i]),
-                                "ch1_raw_adc": int(r1[i]),
-                                "ch2_raw_adc": int(r2[i]),
-                                "ch3_raw_adc": int(r3[i]),
-                                "ch0_uv": float(u0[i]),
-                                "ch1_uv": float(u1[i]),
-                                "ch2_uv": float(u2[i]),
-                                "ch3_uv": float(u3[i])
-                            })
+                        self.packet_count += count
                         
-                        self.packet_count += 1
+                        # Handle buffer wrap-around
+                        # Simple implementation: roll or slice
+                        # Efficient circular buffer fill
+                        
+                        # Determine what to display based on toggle
+                        d0 = p0 if self.show_processed.get() else u0
+                        d1 = p1 if self.show_processed.get() else u1
+                        d2 = p2 if self.show_processed.get() else u2
+                        d3 = p3 if self.show_processed.get() else u3
+                        
+                        # We also update the specific processed buffers in case we needed them separately
+                        # But for drawing, we just need to update the display buffers
+                        # Let's keep separate buffers for clarity in case we switch modes mid-stream
+                        
+                        # Update Raw Buffers
+                        self.ch0_buffer = np.roll(self.ch0_buffer, -count)
+                        self.ch0_buffer[-count:] = u0
+                        
+                        self.ch1_buffer = np.roll(self.ch1_buffer, -count)
+                        self.ch1_buffer[-count:] = u1
+                        
+                        self.ch2_buffer = np.roll(self.ch2_buffer, -count)
+                        self.ch2_buffer[-count:] = u2
+                        
+                        self.ch3_buffer = np.roll(self.ch3_buffer, -count)
+                        self.ch3_buffer[-count:] = u3
 
-            # Update UI labels
-            self.packet_label.config(text=str(self.packet_count))
-            
-            # Update plots (every 30ms call, but update_plots itself is faster now)
-            self.update_plots()
-        
+                        # Update Processed Buffers
+                        self.ch0_processed = np.roll(self.ch0_processed, -count)
+                        self.ch0_processed[-count:] = p0
+                        
+                        self.ch1_processed = np.roll(self.ch1_processed, -count)
+                        self.ch1_processed[-count:] = p1
+                        
+                        self.ch2_processed = np.roll(self.ch2_processed, -count)
+                        self.ch2_processed[-count:] = p2
+                        
+                        self.ch3_processed = np.roll(self.ch3_processed, -count)
+                        self.ch3_processed[-count:] = p3
+                        
+                        # 7. Update Plots
+                        # Decide which source to plot
+                        src0 = self.ch0_processed if self.show_processed.get() else self.ch0_buffer
+                        src1 = self.ch1_processed if self.show_processed.get() else self.ch1_buffer
+                        src2 = self.ch2_processed if self.show_processed.get() else self.ch2_buffer
+                        src3 = self.ch3_processed if self.show_processed.get() else self.ch3_buffer
+                        
+                        self.line0.set_data(self.time_axis, src0)
+                        self.line1.set_data(self.time_axis, src1)
+                        self.line2.set_data(self.time_axis, src2)
+                        self.line3.set_data(self.time_axis, src3)
+                        
+                        self.canvas.draw_idle()
+                        
+                        # Update labels
+                        self.packet_label.config(text=str(self.packet_count))
+                        
         except Exception as e:
-            print(f"Main loop error: {e}")
+            print(f"Error in main loop: {e}")
+            # messagebox.showerror("Error", f"Acquisition Loop Error: {e}") # disable popup spam
+            # self.stop_acquisition()
         
         # Schedule next update
         if self.root.winfo_exists():
-            self.root.after(30, self.main_loop)
-
-    def update_plots(self):
-        """Update the plot lines (Optimized)"""
-        try:
-            if not self.is_acquiring or self.is_paused:
-                return
-
-            # Rotate buffers so latest data is on the right
-            ch0_rotated = np.roll(self.ch0_buffer, -self.buffer_ptr)
-            ch1_rotated = np.roll(self.ch1_buffer, -self.buffer_ptr)
-            ch2_rotated = np.roll(self.ch2_buffer, -self.buffer_ptr)
-            ch3_rotated = np.roll(self.ch3_buffer, -self.buffer_ptr)
+            self.root.after(20, self.main_loop)
             
-            # Update line data
-            self.line0.set_ydata(ch0_rotated)
-            self.line1.set_ydata(ch1_rotated)
-            self.line2.set_ydata(ch2_rotated)
-            self.line3.set_ydata(ch3_rotated)
+    def _init_filters(self):
+        """Initialize filter coefficients and state"""
+        if not SCIPY_AVAILABLE:
+            print("[App] Scipy not available - filtering disabled")
+            return
+
+        self.filters = {}
+        self.filter_state = {}
+        
+        # Load filter configs from sensor_config
+        # Expecting 'filters' key in config
+        filter_cfg = self.config.get("filters", {})
+        
+        # We need to map global channel indices (0-3) to their sensors types (EMG, EOG, EEG)
+        # to find the right filter profile.
+        
+        channels = [self.ch0_type, self.ch1_type, self.ch2_var.get(), self.ch3_var.get()]
+        fs = self.config.get("sampling_rate", 512)
+        
+        for i, sensor_type in enumerate(channels):
+             # 1. Look for channel-specific config first (e.g. "ch0")
+            ch_key = f"ch{i}"
+            cfg = filter_cfg.get(ch_key)
             
-            # Redraw only when needed
-            self.canvas.draw_idle()
-        except Exception as e:
-            print(f"Plot update error: {e}")
+            # 2. Fallback to sensor type config (e.g. "EMG")
+            if not cfg and sensor_type:
+                cfg = filter_cfg.get(sensor_type)
+            
+            if cfg:
+                try:
+                    # Construct SOS filter
+                    # This is a simplified version - assumes one main filter or a cascade
+                    # Let's handle 'cutoff' and 'type' for High/Low/Band pass
+                    
+                    f_type = cfg.get("type", "high_pass")
+                    order = cfg.get("order", 4)
+                    
+                    sos = None
+                    
+                    if f_type == "high_pass":
+                         cutoff = cfg.get("cutoff", 1.0)
+                         sos = butter(order, cutoff, btype='highpass', fs=fs, output='sos')
+                    elif f_type == "low_pass":
+                         cutoff = cfg.get("cutoff", 50.0)
+                         sos = butter(order, cutoff, btype='lowpass', fs=fs, output='sos')
+                    elif f_type == "bandpass":
+                         low = cfg.get("low", 0.5)
+                         high = cfg.get("high", 45.0)
+                         # Handle different config keys if present
+                         if "bandpass_low" in cfg: low = cfg["bandpass_low"]
+                         if "bandpass_high" in cfg: high = cfg["bandpass_high"]
+                         
+                         sos = butter(order, [low, high], btype='bandpass', fs=fs, output='sos')
+                    
+                    if sos is not None:
+                        self.filters[i] = sos
+                        # Initialize state
+                        self.filter_state[i] = sosfilt_zi(sos)
+                        print(f"[App] initialized filter for CH{i} ({sensor_type}): {f_type}")
+                        
+                except Exception as e:
+                    print(f"[App] Failed to init filter for CH{i}: {e}")
+
+    def _apply_filters_batch(self, u0, u1, u2, u3):
+        """Apply filters to a batch of data using continuous state"""
+        if not SCIPY_AVAILABLE or not self.filters:
+             return u0, u1, u2, u3
+        
+        # Helper to process one channel
+        def process_ch(data, ch_idx):
+            if ch_idx in self.filters:
+                sos = self.filters[ch_idx]
+                zi = self.filter_state[ch_idx]
+                filtered, zi_new = sosfilt(sos, data, zi=zi)
+                self.filter_state[ch_idx] = zi_new
+                return filtered
+            return data
+            
+        p0 = process_ch(u0, 0)
+        p1 = process_ch(u1, 1)
+        p2 = process_ch(u2, 2)
+        p3 = process_ch(u3, 3)
+        
+        return p0, p1, p2, p3
+                    
+
 
     def on_closing(self):
         """Handle window closing"""

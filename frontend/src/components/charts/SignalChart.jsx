@@ -22,7 +22,8 @@ export default function SignalChart({
   channelColors = null, // New Prop { [key]: colorString }
   markedWindows = [],
   activeWindow = null,
-  tickCount = 7 // Default to 7
+  tickCount = 7, // Default to 7
+  curveType = "monotone" // Default to monotone (smooth)
 }) {
   const merged = useMemo(() => {
     if (!byChannel || typeof byChannel !== 'object') {
@@ -300,7 +301,7 @@ export default function SignalChart({
               channelKeys.map((k, idx) => (
                 <Line
                   key={`ch-${k}`}
-                  type="monotone"
+                  type={curveType}
                   dataKey={`ch${k}`}
                   name={`${channelLabelPrefix ?? 'Ch'} ${k}`}
                   stroke={channelColors?.[k] || DEFAULT_PALETTE[idx % DEFAULT_PALETTE.length]}
@@ -312,13 +313,14 @@ export default function SignalChart({
               ))
             ) : (
               <Line
-                type="monotone"
+                type={curveType}
                 dataKey="value"
                 name="Signal"
                 stroke={color}
                 dot={false}
                 strokeWidth={2}
                 isAnimationActive={false}
+                connectNulls={false}
               />
             )}
           </LineChart>

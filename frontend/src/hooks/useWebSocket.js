@@ -103,6 +103,36 @@ export function useWebSocket(url = 'http://localhost:5000') {
       })
 
       // === DATA EVENTS ===
+      // === DATA EVENTS ===
+
+      // Batch Listener (Restored)
+      socketRef.current.on('bio_data_batch', (batchData) => {
+        try {
+          if (!batchData || !batchData.samples || batchData.samples.length === 0) return
+
+          // compatibility: use last sample for simple views
+          const lastSample = batchData.samples[batchData.samples.length - 1]
+
+          const rawPayload = {
+            stream_name: batchData.stream_name,
+            channels: lastSample.channels,
+            sample_rate: batchData.sample_rate,
+            sample_count: lastSample.sample_count,
+            timestamp: lastSample.timestamp,
+            // Attach FULL BATCH for LiveView
+            _batch: batchData.samples
+          }
+
+          setLastMessage({
+            data: JSON.stringify(rawPayload),
+            timestamp: Date.now(),
+            raw: rawPayload
+          })
+        } catch (e) {
+          console.warn('⚠️ Failed to parse bio_data_batch:', e)
+        }
+      })
+
       let lastUpdate = 0
       socketRef.current.on('bio_data_update', (data) => {
         try {

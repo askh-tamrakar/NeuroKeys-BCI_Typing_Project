@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-import sqlite3
 import joblib
 from pathlib import Path
 from sklearn.ensemble import RandomForestClassifier
@@ -23,22 +22,30 @@ from src.database.db_manager import db_manager
 MODELS_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "models"
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
-MODEL_PATH = MODELS_DIR / "emg_rf.joblib"
-SCALER_PATH = MODELS_DIR / "emg_scaler.joblib"
+MODEL_PATH = MODELS_DIR / "eog_rf.joblib"
+SCALER_PATH = MODELS_DIR / "eog_scaler.joblib"
 
-def train_emg_model(n_estimators=100, max_depth=None, test_size=0.2):
+EOG_FEATURES = [
+    'amplitude', 'duration_ms', 'rise_time_ms', 'fall_time_ms',
+    'asymmetry', 'peak_count', 'kurtosis', 'skewness'
+]
+
+def train_eog_model(n_estimators=100, max_depth=None, test_size=0.2):
     """
-    Trains a Random Forest classifier on EMG data from the database.
-    
-    Returns:
-        dict: Training results including accuracy, confusion matrix, and tree structure.
+    Trains a Random Forest classifier on EOG data from the database.
     """
     conn = db_manager.connect()
     
     # Load data from DB
-    # Note: Using 'range' column as per DB schema, and new columns entropy/energy
     try:
-        df = pd.read_sql_query("SELECT * FROM emg_windows", conn)
+        # Check if table exists first prevents crash if called before any EOG data collection
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='eog_windows'")
+        if not cursor.fetchone():
+             conn.close()
+             return {"error": "EOG table does not exist. Collect data first."}
+
+        df = pd.read_sql_query("SELECT * FROM eog_windows", conn)
     except Exception as e:
         conn.close()
         return {"error": f"Database read error: {str(e)}"}
@@ -46,29 +53,22 @@ def train_emg_model(n_estimators=100, max_depth=None, test_size=0.2):
     conn.close()
 
     if df.empty:
-        return {"error": "Database is empty. Collect data first."}
+        return {"error": "EOG Database is empty. Collect data first."}
 
     # Prepare Features and Labels
-    # DB Columns: rms, mav, zcr, var, wl, peak, range, iemg, entropy, energy
-    feature_cols = ['rms', 'mav', 'zcr', 'var', 'wl', 'peak', 'range', 'iemg', 'entropy', 'energy']
-    
-    # Check if columns exist (handle legacy naming if necessary)
-    missing_cols = [c for c in feature_cols if c not in df.columns]
-    if missing_cols:
-         # Try to be robust: if 'range' is missing but 'rng' exists (legacy), rename it
-         if 'range' in missing_cols and 'rng' in df.columns:
-             df.rename(columns={'rng': 'range'}, inplace=True)
-         
-         # If entropy/energy missing, fill 0 (less ideal but prevents crash)
-         for col in ['entropy', 'energy']:
-             if col not in df.columns:
-                 df[col] = 0.0
+    # Check completeness
+    missing = [c for c in EOG_FEATURES if c not in df.columns]
+    if missing:
+        return {"error": f"Missing columns in DB: {missing}"}
 
-    X = df[feature_cols]
+    X = df[EOG_FEATURES]
     y = df['label']
 
     # Test/Train Split
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, stratify=y, random_state=42)
+    try:
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, stratify=y, random_state=42)
+    except ValueError as e:
+         return {"error": f"Split error (not enough data per class?): {str(e)}"}
 
     # Scale Features
     scaler = StandardScaler()
@@ -85,15 +85,15 @@ def train_emg_model(n_estimators=100, max_depth=None, test_size=0.2):
     cm = confusion_matrix(y_test, y_pred).tolist()
     
     # Feature Importance
-    importances = dict(zip(feature_cols, rf.feature_importances_.tolist()))
+    importances = dict(zip(EOG_FEATURES, rf.feature_importances_.tolist()))
 
     # Save Model
     joblib.dump(rf, MODEL_PATH)
     joblib.dump(scaler, SCALER_PATH)
-    print(f"Model saved to {MODEL_PATH}")
+    print(f"EOG Model saved to {MODEL_PATH}")
 
     # Tree Visualization (First Estimator)
-    tree_struct = tree_to_json(rf.estimators_[0], feature_cols)
+    tree_struct = tree_to_json(rf.estimators_[0], EOG_FEATURES)
 
     return {
         "status": "success",
@@ -105,44 +105,31 @@ def train_emg_model(n_estimators=100, max_depth=None, test_size=0.2):
         "model_path": str(MODEL_PATH)
     }
 
-def evaluate_saved_model():
+def evaluate_saved_eog_model():
     """
-    Evaluates the currently saved model against the FULL database.
-    Used to verify how well the persisted model performs on all available data.
+    Evaluates the currently saved EOG model against the FULL database.
     """
     if not MODEL_PATH.exists() or not SCALER_PATH.exists():
-        return {"error": "Model not found. Train a model first."}
+        return {"error": "EOG Model not found. Train one first."}
 
     try:
         model = joblib.load(MODEL_PATH)
         scaler = joblib.load(SCALER_PATH)
     except Exception as e:
-        return {"error": f"Failed to load model: {str(e)}"}
+        return {"error": f"Failed to load EOG model: {str(e)}"}
 
     conn = db_manager.connect()
     try:
-        df = pd.read_sql_query("SELECT * FROM emg_windows", conn)
+        df = pd.read_sql_query("SELECT * FROM eog_windows", conn)
     except Exception as e:
         conn.close()
         return {"error": f"Database read error: {str(e)}"}
     conn.close()
 
     if df.empty:
-        return {"error": "Database is empty."}
+        return {"error": "EOG Database is empty."}
 
-    # Prepare Features
-    feature_cols = ['rms', 'mav', 'zcr', 'var', 'wl', 'peak', 'range', 'iemg', 'entropy', 'energy']
-    
-    # Check/Fix columns
-    missing_cols = [c for c in feature_cols if c not in df.columns]
-    if missing_cols:
-         if 'range' in missing_cols and 'rng' in df.columns:
-             df.rename(columns={'rng': 'range'}, inplace=True)
-         for col in ['entropy', 'energy']:
-             if col not in df.columns:
-                 df[col] = 0.0
-
-    X = df[feature_cols]
+    X = df[EOG_FEATURES]
     y = df['label']
 
     # Inference on FULL dataset
@@ -165,7 +152,4 @@ def evaluate_saved_model():
 
 if __name__ == "__main__":
     # Test run
-    # result = train_emg_model()
-    # print(result)
-    print("Testing Evaluation...")
-    print(evaluate_saved_model())
+    print(train_eog_model())
