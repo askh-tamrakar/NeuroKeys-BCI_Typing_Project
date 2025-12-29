@@ -14,7 +14,7 @@ import themePresets from '../themes/presets';
 import ScrollStack, { ScrollStackItem } from '../ui/ScrollStack';
 import PillNav from '../ui/PillNav';
 import Pill from '../ui/Pill';
-import { ConnectionButton } from '../ui/connection_btn';
+import { ConnectionButton } from '../ui/ConnectionButton';
 
 export default function Dashboard() {
   const { user, logout } = useAuth()
@@ -28,7 +28,7 @@ export default function Dashboard() {
   const [wsModalOpen, setWsModalOpen] = useState(false)
   const [localWs, setLocalWs] = useState(import.meta.env.VITE_WS_URL || 'ws://localhost:5000')
   const [ngrokWs, setNgrokWs] = useState('')
-  const [theme, setTheme] = React.useState(() => localStorage.getItem('theme') || 'theme-violet');
+  const [theme, setTheme] = React.useState(() => localStorage.getItem('theme') || 'theme-yellow-dark');
   const [navColors, setNavColors] = React.useState({ base: '#000000', pill: '#ffffff', pillText: '#000000', hoverText: '#ffffff' });
   const [authView, setAuthView] = useState(null);
   const isAuthenticated = !!user;
@@ -139,7 +139,7 @@ export default function Dashboard() {
           <div className="flex items-center gap-3">
             <div className="relative group">
               <div className="absolute inset-0 bg-primary/20 blur-lg rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-              <video muted autoPlay loop playsInline preload="auto" aria-label="logo animation" className="w-10 h-10 relative z-10 rounded-lg border border-border bg-black object-cover">
+              <video muted autoPlay loop playsInline preload="auto" aria-label="logo animation" className="w-16 h-16 relative z-10 rounded-lg border border-border bg-black object-cover">
                 <source src="/Resources/brain_animation.mp4" type="video/mp4" />
               </video>
             </div>
@@ -173,7 +173,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <nav className="nav">
+          <nav className="nav shrink-0">
             <div className="backdrop-blur-sm bg-surface/50 border border-white/5 rounded-full p-1">
               <PillNav
                 items={navItems}
@@ -188,17 +188,19 @@ export default function Dashboard() {
               />
             </div>
           </nav>
-          <ConnectionButton
-            status={status}
-            latency={latency}
-            connect={connect}
-            disconnect={disconnect}
-          />
+          <div className="w-[180px] flex justify-end shrink-0">
+            <ConnectionButton
+              status={status}
+              latency={latency}
+              connect={connect}
+              disconnect={disconnect}
+            />
+          </div>
         </div>
       </div>
 
       {/* Main Content Area */}
-      <div className="[&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']" style={{ flex: 1, padding: '0px 0px', overflowY: 'auto' }}>
+      <div className="scrollbar-thin scrollbar-thumb-border hover:scrollbar-thumb-primary/50 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']" style={{ flex: 1, padding: '0px 0px', overflowY: 'auto' }}>
         {currentPage === 'live' && <LiveDashboard wsData={lastMessage} wsConfig={lastConfig} wsEvent={lastEvent} sendMessage={sendMessage} />}
         {currentPage === 'dino' && <DinoView wsData={lastMessage} wsEvent={lastEvent} isPaused={false} />}
         {currentPage === 'ssvep' && <SSVEPView />}
@@ -210,21 +212,21 @@ export default function Dashboard() {
       </div>
 
       {/* Footer */}
-      {/* <div className="footer">
-        NeuroKeys: BCI Typing Project •{' '}
+      <div className="footer">
+        NeuroTECH - A BCI Project •{' '}
         <a onClick={() => setAuthView('signup')} className="muted" href="#signup" rel="noreferrer">
           Sign Up
         </a>
-        {' '} •{' '}
+        {' '}•{' '}
         <a
           className="muted"
-          href="https://github.com/askh-tamrakar/NeuroKeys-BCI_Typing_Project"
+          href="https://github.com/askh-tamrakar/NeuroTECH-BCI"
           target="_blank"
           rel="noreferrer"
         >
           GitHub
         </a>
-      </div> */}
+      </div>
     </div>
   );
 }

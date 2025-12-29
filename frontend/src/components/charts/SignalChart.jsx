@@ -1,6 +1,7 @@
 // SignalChart.jsx
 import React, { useMemo } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceDot, ReferenceArea } from 'recharts'
+import '../../styles/live/SignalChart.css'
 
 const DEFAULT_PALETTE = [
   '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
@@ -8,6 +9,7 @@ const DEFAULT_PALETTE = [
 ]
 
 export default function SignalChart({
+  graphNo,
   title,
   data = [],
   byChannel = null,
@@ -23,7 +25,12 @@ export default function SignalChart({
   markedWindows = [],
   activeWindow = null,
   tickCount = 7, // Default to 7
-  curveType = "monotone" // Default to monotone (smooth)
+  curveType = "monotone", // Default to monotone (smooth)
+  // New props for controls
+  currentZoom = 1,
+  currentManual = "",
+  onZoomChange = null,
+  onRangeChange = null
 }) {
   const merged = useMemo(() => {
     if (!byChannel || typeof byChannel !== 'object') {
@@ -179,36 +186,75 @@ export default function SignalChart({
   }, [finalYDomain, tickCount])
 
   return (
-    <div className="bg-card surface-panel border border-border shadow-sm rounded-xl overflow-hidden flex flex-col h-full bg-surface">
-      <div className="px-5 py-3 border-b border-border bg-bg/50 backdrop-blur-sm flex justify-between items-center">
-        <h3 className="font-bold text-text flex items-center gap-2">
-          <span className="w-2 h-6 rounded-full" style={{ backgroundColor: color }}></span>
+    <div className="signal-chart-container">
+      <div className="chart-header">
+        <h3 className="chart-title">
+          <span className="title-indicator" style={{ backgroundColor: color }}></span>
+          {graphNo}
+          <span className="channel-color-dot" style={{ backgroundColor: color }}></span>
           {title}
         </h3>
 
-        <div className="flex gap-4 text-xs font-mono text-muted">
+        {/* Channel Controls */}
+        <div className="channel-controls">
+          {/* Zoom Buttons */}
+          <div className="zoom-controls">
+            <span className="control-label">ZOOM</span>
+            {[1, 2, 3, 5, 10, 25, 50].map(z => (
+              <button
+                key={z}
+                onClick={() => onZoomChange && onZoomChange(z)}
+                className={`zoom-btn ${currentZoom === z && !currentManual ? 'active' : 'inactive'}`}
+              >
+                {z}x
+              </button>
+            ))}
+          </div>
+
+          <div className="separator-small"></div>
+
+          {/* Manual Range Input */}
+          <div className="range-input-container">
+            <span className="control-label">RANGE</span>
+            <input
+              type="number"
+              placeholder="+/-"
+              value={currentManual}
+              onChange={(e) => onRangeChange && onRangeChange(e.target.value)}
+              className="range-input"
+            />
+          </div>
+
+          <div className="separator-small"></div>
+
+          <div className="range-display">
+            +/-{(Math.abs(finalYDomain[1])).toFixed(0)} uV
+          </div>
+        </div>
+
+        <div className="chart-stats">
           {dataArray.length > 0 && (
             <>
-              <div className="flex flex-col items-end">
-                <span className="opacity-50 text-[10px] uppercase tracking-wider">Min</span>
-                <span className="font-medium text-text">{min.toFixed(2)}</span>
+              <div className="stat-item">
+                <span className="stat-label">Min</span>
+                <span className="stat-value">{min.toFixed(2)}</span>
               </div>
-              <div className="w-[1px] h-6 bg-border/50"></div>
-              <div className="flex flex-col items-end">
-                <span className="opacity-50 text-[10px] uppercase tracking-wider">Max</span>
-                <span className="font-medium text-text">{max.toFixed(2)}</span>
+              <div className="stat-separator"></div>
+              <div className="stat-item">
+                <span className="stat-label">Max</span>
+                <span className="stat-value">{max.toFixed(2)}</span>
               </div>
-              <div className="w-[1px] h-6 bg-border/50"></div>
-              <div className="flex flex-col items-end">
-                <span className="opacity-50 text-[10px] uppercase tracking-wider">Mean</span>
-                <span className="font-medium text-text">{mean.toFixed(2)}</span>
+              <div className="stat-separator"></div>
+              <div className="stat-item">
+                <span className="stat-label">Mean</span>
+                <span className="stat-value">{mean.toFixed(2)}</span>
               </div>
             </>
           )}
         </div>
       </div>
 
-      <div className="relative w-full p-2 flex-grow" style={{ height: height }}>
+      <div className="chart-area" style={{ height: height }}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={dataArray}>
             {showGrid && <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} vertical={false} />}

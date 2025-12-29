@@ -34,6 +34,7 @@ let obstacles = [];
 let lastSpawnTimestamp = 0;
 let distance = 0;
 let gameTime = 0; // 0-1 for day/night cycle
+let lastSentScore = 0;
 
 // Visuals State
 let clouds = [];
@@ -95,6 +96,7 @@ function initVisuals() {
 function resetGame() {
     gameState = 'playing';
     score = 0;
+    lastSentScore = 0;
     dinoY = 0;
     velocity = 0;
     obstacles = [];
@@ -174,6 +176,12 @@ function updatePhysics(deltaTime) {
 
         // Score
         score += 1 * timeFactor; // Score based on distance/time
+
+        const displayScore = Math.floor(score / 10);
+        if (displayScore > lastSentScore) {
+            lastSentScore = displayScore;
+            self.postMessage({ type: 'SCORE_UPDATE', score: score });
+        }
 
         // Collisions
         const groundY = SETTINGS.CANVAS_HEIGHT - SETTINGS.GROUND_OFFSET;
@@ -297,7 +305,13 @@ function drawSky(width, height) {
             if (Math.random() > 0.1) {
                 ctx.globalAlpha = baseOpacity * flicker;
                 const s = Math.ceil(star.size);
-                ctx.fillRect(star.x, star.y, s * 2, s * 2);
+                // Star shape: Cross or Dot
+                if (s > 2) {
+                    ctx.fillRect(star.x - s, star.y, s * 3, s);
+                    ctx.fillRect(star.x, star.y - s, s, s * 3);
+                } else {
+                    ctx.fillRect(star.x, star.y, s * 2, s * 2);
+                }
             }
         });
         ctx.globalAlpha = 1.0;
@@ -389,31 +403,40 @@ function drawDino(x, y) {
 
 function drawCactus(x, y, width, height) {
     ctx.save();
-    ctx.fillStyle = COLORS.primary; // Cactus color (using primary/green-ish usually, but using theme primary here)
+    ctx.fillStyle = COLORS.surface; // Fill with surface color
+    ctx.strokeStyle = COLORS.border; // Outline with border color
+    ctx.lineWidth = 2;
 
+    // Main trunk
     const trunkWidth = Math.floor(width * 0.6);
     const trunkX = Math.floor(x + (width - trunkWidth) / 2);
+    const trunkH = Math.floor(height);
+    const _y = Math.floor(y);
 
-    // Main Trunk
-    ctx.fillRect(trunkX, y, trunkWidth, height);
+    ctx.fillRect(trunkX, _y, trunkWidth, trunkH);
+    ctx.strokeRect(trunkX, _y, trunkWidth, trunkH);
 
-    // Left Arm
-    if (height > 30) {
-        const armY = y + Math.floor(height * 0.4);
-        const armH = Math.floor(height * 0.25);
-        const armW = Math.floor(width * 0.2);
-        ctx.fillRect(trunkX - armW, armY + armH / 2, armW, armH / 2); // connector
-        ctx.fillRect(trunkX - armW, armY, armW, armH); // upright
-    }
+    // Left arm
+    const armHeight = Math.floor(height * 0.4);
+    const armWidth = Math.floor(width * 0.3);
+    const leftArmX = Math.floor(trunkX - armWidth);
+    const leftArmY = Math.floor(y + height * 0.3);
+    const armConnW = Math.floor(trunkWidth * 0.3);
 
-    // Right Arm
-    if (height > 45) {
-        const armY = y + Math.floor(height * 0.2);
-        const armH = Math.floor(height * 0.2);
-        const armW = Math.floor(width * 0.2);
-        ctx.fillRect(trunkX + trunkWidth, armY + armH / 2, armW, armH / 2); // connector
-        ctx.fillRect(trunkX + trunkWidth + armW - armW, armY - armH / 2, armW, armH); // upright
-    }
+    ctx.fillRect(leftArmX, leftArmY, armWidth, armHeight);
+    ctx.strokeRect(leftArmX, leftArmY, armWidth, armHeight);
+    ctx.fillRect(leftArmX + armWidth, leftArmY, armConnW, armWidth);
+    ctx.strokeRect(leftArmX + armWidth, leftArmY, armConnW, armWidth);
+
+    // Right arm
+    const rightArmX = Math.floor(trunkX + trunkWidth);
+    const rightArmY = Math.floor(y + height * 0.5);
+    const rightArmH = Math.floor(armHeight * 0.8);
+
+    ctx.fillRect(rightArmX, rightArmY, armWidth, rightArmH);
+    ctx.strokeRect(rightArmX, rightArmY, armWidth, rightArmH);
+    ctx.fillRect(Math.floor(trunkX + trunkWidth * 0.7), rightArmY, armConnW, armWidth);
+    ctx.strokeRect(Math.floor(trunkX + trunkWidth * 0.7), rightArmY, armConnW, armWidth);
 
     ctx.restore();
 }
@@ -454,12 +477,12 @@ function draw() {
         drawCactus(obs.x, groundY - obs.height, obs.width, obs.height);
     });
 
-    // Score & UI
-    ctx.fillStyle = COLORS.text;
-    ctx.font = 'bold 20px monospace';
-    ctx.textAlign = 'right';
-    ctx.fillText(`Score: ${Math.floor(score / 10)}`, width - 20, 40);
-    ctx.fillText(`HI: ${Math.floor(highScore / 10)}`, width - 20, 70);
+    // Score & UI (Handled by React Overlay now)
+    // ctx.fillStyle = COLORS.text;
+    // ctx.font = 'bold 20px monospace';
+    // ctx.textAlign = 'right';
+    // ctx.fillText(`Score: ${Math.floor(score / 10)}`, width - 15, 15);
+    // ctx.fillText(`Best: ${Math.floor(highScore / 10)}`, width - 15, 40);
 
     if (gameState === 'ready') {
         ctx.textAlign = 'center';

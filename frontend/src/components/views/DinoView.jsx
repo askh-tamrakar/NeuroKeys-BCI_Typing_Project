@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
-import '../../styles/DinoView.css'
+import '../../styles/views/DinoView.css'
 import CameraPanel from '../ui/CameraPanel'
+import Counter from '../ui/Counter'
+import CountUp from '../ui/CountUp'
 
 export default function DinoView({ wsData, wsEvent, isPaused }) {
     // Game state
@@ -221,6 +223,8 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                 } else if (type === 'HIGHSCORE_UPDATE') {
                     setHighScore(newHigh)
                     localStorage.setItem('dino_highscore', newHigh.toString())
+                } else if (type === 'SCORE_UPDATE') {
+                    setScore(score)
                 }
             }
         } catch (err) {
@@ -376,6 +380,25 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
 
                             {/* Canvas */}
                             <div className="bg-bg rounded-xl border-2 border-border overflow-hidden shadow-lg flex-1 min-h-0 relative">
+                                {/* Score Overlay */}
+                                <div className="absolute top-4 right-4 z-10 flex flex-col items-end pointer-events-none font-mono font-bold text-xl text-text leading-tight">
+                                    <div className="flex items-center gap-2">
+                                        <span className="opacity-75">Score:</span>
+                                        <Counter value={Math.floor(score / 10)} fontSize={20} />
+                                    </div>
+                                    <div className="flex items-center gap-2 mt-1">
+                                        <span className="opacity-75">Best:</span>
+                                        <CountUp
+                                            to={Math.floor(highScore / 10)}
+                                            from={0}
+                                            separator=","
+                                            direction="up"
+                                            duration={1}
+                                            className="text-primary"
+                                        />
+                                    </div>
+                                </div>
+
                                 <canvas
                                     key={canvasResetKey}
                                     ref={canvasRef}
@@ -390,7 +413,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                 </div>
 
                 {/* Right Sidebar */}
-                <div className="w-full lg:w-80 space-y-6 h-full overflow-y-auto no-scrollbar pb-6">
+                <div className="w-full lg:w-80 space-y-6 h-full overflow-y-auto no-scrollbar pb-6 scrollbar-thin scrollbar-thumb-border hover:scrollbar-thumb-primary/50 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
                     {/* Camera Panel */}
                     <CameraPanel />
 
@@ -432,7 +455,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                     </div>
 
                     {/* Event Log Panel */}
-                    <div className="card bg-surface border border-border shadow-card rounded-2xl p-4">
+                    <div className="card bg-surface border border-border shadow-card rounded-2xl p-4 ">
                         <div className="flex justify-between items-center mb-2">
                             <h3 className="text-sm font-bold text-text uppercase tracking-wider">Event Log</h3>
                             <button
@@ -442,7 +465,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                                 Clear
                             </button>
                         </div>
-                        <div className="bg-bg/50 rounded-lg p-2 h-32 overflow-y-auto font-mono text-xs space-y-1 border border-border/50">
+                        <div className="bg-bg/50 rounded-lg p-2 h-32 overflow-y-auto font-mono text-xs space-y-1 border border-border/50 scrollbar-thin scrollbar-thumb-border hover:scrollbar-thumb-primary/50 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
                             {eventLogs.length === 0 ? (
                                 <div className="text-muted italic text-center py-4">No events yet...</div>
                             ) : (

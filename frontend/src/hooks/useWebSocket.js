@@ -48,10 +48,8 @@ export function useWebSocket(url = 'http://localhost:5000') {
       }
 
       socketRef.current = io(endpoint, {
-        reconnection: true,
-        reconnectionDelay: 1000,
-        reconnectionDelayMax: 5000,
-        reconnectionAttempts: 5,
+        reconnection: false, // User requested manual retry only
+        timeout: 3000, // Fail after 3 seconds
         transports: ['websocket', 'polling']
       })
 
@@ -88,7 +86,14 @@ export function useWebSocket(url = 'http://localhost:5000') {
       // === ERROR EVENT ===
       socketRef.current.on('error', (error) => {
         console.error('❌ WebSocket error:', error)
-        setStatus('error')
+        // Reset to disconnected on error to allow retry
+        setStatus('disconnected')
+      })
+
+      // === CONNECTION ERROR (Failed to connect) ===
+      socketRef.current.on('connect_error', (err) => {
+        console.warn('⚠️ Connection failed:', err.message)
+        setStatus('disconnected') // Go back to disconnected so user can click again
       })
 
       // === PONG EVENT (latency measurement) ===

@@ -1,0 +1,215 @@
+.live-view-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+  background-color: var(--bg);
+  border-radius: 0.5rem;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.live-view-container::-webkit-scrollbar {
+  display: none;
+}
+
+.controls-container {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  backdrop-filter: blur(4px);
+}
+
+.separator {
+  height: 1rem;
+  width: 1px;
+  background-color: var(--border);
+  margin-left: 0.5rem;
+  margin-right: 0.5rem;
+}
+
+.record-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.record-ch-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.record-ch-label {
+  font-size: 0.85rem; /* Increased from 0.75rem */
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.channel-buttons {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.channel-btn {
+  width: 1.5rem;
+  height: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.25rem;
+  font-size: 11px; /* Increased from 10px */
+  font-weight: 700;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+}
+
+.channel-btn.active {
+  background-color: rgba(var(--primary-rgb), 0.2); /* Assuming primary-rgb or similar, or just use opacity */
+  background-color: color-mix(in srgb, var(--primary) 20%, transparent);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.channel-btn.inactive {
+  background-color: rgba(var(--surface-rgb), 0.5);
+  background-color: color-mix(in srgb, var(--surface) 50%, transparent);
+  border-color: var(--border);
+  color: var(--muted);
+  opacity: 0.5;
+}
+
+.channel-btn.inactive:hover {
+  color: var(--text);
+}
+
+.record-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 1rem;
+  border-radius: 0.5rem;
+  font-weight: 700;
+  font-size: 0.85rem; /* Increased from 0.75rem */
+  transition: all 0.2s;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+.record-btn.recording {
+  background-color: #ef4444;
+  color: white;
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.record-btn.idle {
+  background-color: #10b981;
+  color: var(--emerald-contrast, white);
+}
+
+.record-btn.idle:hover {
+  transform: translateY(-1px);
+}
+
+.record-indicator-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+}
+
+.saving-indicator {
+  font-size: 11px; /* Increased from 10px */
+  color: var(--primary);
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  font-weight: 700;
+}
+
+.mode-indicator {
+  font-size: 11px; /* Increased from 10px */
+  color: var(--muted);
+  margin-left: auto;
+  font-family: monospace;
+  background-color: rgba(var(--bg-rgb), 0.5);
+  background-color: color-mix(in srgb, var(--bg) 50%, transparent);
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--border);
+}
+
+.channel-wrapper {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.channel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: rgba(var(--surface-rgb), 0.5);
+  background-color: color-mix(in srgb, var(--surface) 50%, transparent);
+  padding: 0.25rem;
+  border-radius: 0.25rem;
+  border: 1px solid rgba(var(--border-rgb), 0.5);
+  border: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+}
+
+.channel-title {
+  margin-bottom: 0;
+  font-size: 16px; /* Increased from 15px */
+  font-weight: 550;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.channel-color-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+}
+
+.footer-info {
+  background-color: rgba(var(--surface-rgb), 0.5);
+  background-color: color-mix(in srgb, var(--surface) 50%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  padding: 0.75rem;
+  font-size: 0.85rem; /* Increased from 0.75rem */
+  color: var(--muted);
+  font-family: monospace;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.footer-row {
+  display: flex;
+  justify-content: space-between;
+}
+
+.recording-status {
+  color: #f87171;
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  font-weight: 700;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: .5;
+  }
+}

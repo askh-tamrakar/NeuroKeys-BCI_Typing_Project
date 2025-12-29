@@ -1,7 +1,7 @@
-// LiveView.jsx (updated)
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import SignalChart from '../charts/SignalChart'
 import { DataService } from '../../services/DataService'
+import '../../styles/live/LiveView.css'
 
 export default function LiveView({ wsData, wsEvent, config, isPaused }) {
   const timeWindowMs = config?.display?.timeWindowMs || 10000
@@ -348,26 +348,23 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
   }
 
   return (
-    <div className="w-full h-full flex flex-col gap-4 p-4 bg-bg rounded-lg overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
+    <div className="live-view-container">
       {/* Controls */}
-      <div className="flex flex-wrap items-center gap-4 bg-surface border border-border p-3 rounded-lg backdrop-blur-sm">
-        <div className="h-4 w-[1px] bg-border mx-2"></div>
+      <div className="controls-container">
+        <div className="separator"></div>
         {/* Zoom controls removed from here, moved to per-channel */}
 
         {/* Recording Controls */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <div className="text-xs font-bold text-muted uppercase tracking-wider">Record Ch:</div>
-            <div className="flex gap-1">
+        <div className="record-controls">
+          <div className="record-ch-group">
+            <div className="record-ch-label">Record Ch:</div>
+            <div className="channel-buttons">
               {activeChannels.map(chIdx => (
                 <button
                   key={chIdx}
                   disabled={isRecording}
                   onClick={() => toggleChannelSelection(chIdx)}
-                  className={`w-6 h-6 flex items-center justify-center rounded text-[10px] font-bold border transition-all ${recordingChannels.includes(chIdx)
-                    ? 'bg-primary/20 border-primary text-primary'
-                    : 'bg-surface/50 border-border text-muted hover:text-text opacity-50'
-                    }`}
+                  className={`channel-btn ${recordingChannels.includes(chIdx) ? 'active' : 'inactive'}`}
                 >
                   {chIdx}
                 </button>
@@ -378,19 +375,16 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
           <button
             onClick={toggleRecording}
             disabled={isSaving || (activeChannels.length === 0 && !isRecording)}
-            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg font-bold text-xs transition-all shadow-lg ${isRecording
-              ? 'bg-red-500 text-white animate-pulse'
-              : 'bg-emerald-500 text-emerald-contrast hover:translate-y-[-1px]'
-              }`}
+            className={`record-btn ${isRecording ? 'recording' : 'idle'}`}
           >
-            <div className={`w-2 h-2 rounded-full ${isRecording ? 'bg-white' : 'bg-white/50'}`}></div>
+            <div className={`record-indicator-dot ${isRecording ? 'bg-white' : 'bg-white/50'}`}></div>
             {isRecording ? `STOP (${recordingTime}s)` : 'REC'}
           </button>
 
-          {isSaving && <div className="text-[10px] text-primary animate-pulse font-bold">SAVING...</div>}
+          {isSaving && <div className="saving-indicator">SAVING...</div>}
         </div>
 
-        <div className="text-[10px] text-muted ml-auto font-mono bg-bg/50 px-2 py-1 rounded border border-border">
+        <div className="mode-indicator">
           {/* Global range indicator removed or can be replaced with something else */}
           <span className="text-primary font-bold">MODE:</span> INDEPENDENT SCALING
         </div>
@@ -408,56 +402,9 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
         const chDomain = getChannelYDomain(chIdx)
 
         return (
-          <div key={chIdx} className="shrink-0 flex flex-col gap-1">
-
-            {/* Per-Channel Controls Header */}
-            <div className="flex items-center justify-between bg-surface/50 p-1 rounded border border-border/50">
-              <div className="mb-0 text-sm font-semibold text-muted flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: chColor }}></span>
-                Graph {chIdx + 1}
-              </div>
-
-              <div className="flex items-center gap-4">
-                {/* Zoom Buttons */}
-                <div className="flex gap-1 items-center">
-                  <span className="text-[9px] font-bold text-muted uppercase">ZOOM</span>
-                  {[1, 5, 20, 50].map(z => (
-                    <button
-                      key={z}
-                      onClick={() => { updateChannelConfig(chIdx, 'zoom', z); updateChannelConfig(chIdx, 'manualRange', ""); }}
-                      className={`px-1.5 py-0.5 text-[9px] rounded font-bold transition-all ${currentZoom === z && !currentManual
-                        ? 'bg-primary text-white shadow-sm'
-                        : 'bg-surface hover:bg-white/10 text-muted hover:text-text border border-border'
-                        }`}
-                    >
-                      {z}x
-                    </button>
-                  ))}
-                </div>
-
-                <div className="w-[1px] h-3 bg-border"></div>
-
-                {/* Manual Range Input */}
-                <div className="flex gap-1 items-center">
-                  <span className="text-[9px] font-bold text-muted uppercase">RANGE</span>
-                  <input
-                    type="number"
-                    placeholder="+/-"
-                    value={currentManual}
-                    onChange={(e) => updateChannelConfig(chIdx, 'manualRange', e.target.value)}
-                    className="w-12 bg-bg border border-border rounded px-1 py-0.5 text-[9px] text-text focus:outline-none focus:border-primary"
-                  />
-                </div>
-
-                <div className="w-[1px] h-3 bg-border"></div>
-
-                <div className="text-[9px] font-mono text-muted">
-                  +/-{(Math.abs(chDomain[1])).toFixed(0)} uV
-                </div>
-              </div>
-            </div>
-
+          <div key={chIdx} className="channel-wrapper">
             <SignalChart
+              graphNo={`Graph ${chIdx + 1}`}
               title={`${sensorName}`}
               byChannel={{ active: sweep.active, history: sweep.history }}
               channelColors={{ active: chColor, history: chColorHist }}
@@ -470,16 +417,21 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
               yDomainProp={chDomain}
               tickCount={7}
               curveType="natural"
+              // New props for controls
+              currentZoom={currentZoom}
+              currentManual={currentManual}
+              onZoomChange={(z) => { updateChannelConfig(chIdx, 'zoom', z); updateChannelConfig(chIdx, 'manualRange', ""); }}
+              onRangeChange={(val) => updateChannelConfig(chIdx, 'manualRange', val)}
             />
           </div>
         )
       })}
 
-      <div className="bg-surface/50 border border-border rounded p-3 text-xs text-muted font-mono space-y-1">
+      <div className="footer-info">
         {/* Footer Info */}
-        <div className="flex justify-between">
+        <div className="footer-row">
           <div><span className="text-primary font-bold">MODE:</span> INDEPENDENT SCALING</div>
-          {isRecording && <div className="text-red-400 animate-pulse font-bold">● RECORDING IN PROGRESS</div>}
+          {isRecording && <div className="recording-status">● RECORDING IN PROGRESS</div>}
         </div>
         <div><span className="text-purple-400">Stream</span>: {wsData?.raw?.stream_name || 'Disconnected'}</div>
       </div>

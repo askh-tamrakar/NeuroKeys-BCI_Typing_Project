@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import '../../styles/RPSGame.css';
+import '../../styles/views/RPSGame.css';
 
 const MOVES = ['ROCK', 'PAPER', 'SCISSORS'];
 

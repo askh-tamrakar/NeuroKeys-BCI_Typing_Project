@@ -1,5 +1,9 @@
-import React from 'react'
-
+import React, { useState, useRef, useEffect } from 'react';
+import { ChevronDown, ChevronUp, Minus, Plus } from 'lucide-react';
+import ElectricBorder from './ElectricBorder';
+import ElasticSlider from './ElasticSlider';
+import CustomSelect from './CustomSelect';
+import { soundHandler } from '../../handlers/SoundHandler';
 export default function Sidebar({
     config,
     setConfig,
@@ -8,15 +12,8 @@ export default function Sidebar({
     onSave,
     className = ''
 }) {
-
-    /**
-     * Handle filter changes for a SENSOR TYPE (not channel)
-     * 
-     * OLD (WRONG): filters.ch0, filters.ch1 (per-channel)
-     * NEW (CORRECT): filters.EMG, filters.EOG, filters.EEG (per-sensor)
-     * 
-     * When ch0=EMG and ch1=EMG, BOTH use filters.EMG
-     */
+    // Safety check to prevent crash if config is not yet loaded
+    if (!config) return null;
     const handleSensorFilterChange = (sensorType, field, value) => {
         setConfig(prev => ({
             ...prev,
@@ -44,9 +41,9 @@ export default function Sidebar({
     }
 
     /*
-     * Get the sensor type for a given channel
-     * E.g., getSensorTypeForChannel('ch0') returns 'EMG'
-     */
+    * Get the sensor type for a given channel
+    * E.g., getSensorTypeForChannel('ch0') returns 'EMG'
+    */
     const getSensorTypeForChannel = (chKey) => {
         return config.channel_mapping?.[chKey]?.sensor || 'EMG'
     }
@@ -81,51 +78,58 @@ export default function Sidebar({
     }
 
     return (
-        <aside className={`w-80 bg-surface border-r border-border h-full flex flex-col overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] ${className}`}>
+        <aside className={`w-80 bg-surface border-r border-border h-full flex flex-col overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] ${className}`}>
             <div className="p-6 border-b border-border">
-                <h2 className="text-xl font-bold text-text mb-1">Controls</h2>
-                <p className="text-xs text-muted">LSL Stream Configuration</p>
+                <h2 className="text-3xl font-bold text-text mb-1">Controls</h2>
+                <p className="text-lg text-muted">LSL Stream Configuration</p>
             </div>
 
             <div className="p-6 space-y-8">
 
                 {/* Stream Control */}
-                <section>
-                    <h3 className="text-sm font-bold text-muted uppercase tracking-wider mb-4">Stream Status</h3>
+                <ElectricBorder
+                    color={isPaused ? "#f87171" : "#10b981"}
+                    speed={isPaused ? .5 : 1.1}
+                    chaos={isPaused ? .025 : .035}
+                    thickness={2}
+                    borderRadius={12}
+
+                >
                     <button
-                        onClick={() => setIsPaused(!isPaused)}
-                        className={`w-full py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${isPaused
-                            ? 'bg-accent/10 text-accent border border-accent/20 hover:bg-accent/20'
-                            : 'bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20'
+                        onClick={() => {
+                            soundHandler.playToggle(!isPaused);
+                            setIsPaused(!isPaused);
+                        }}
+                        className={`w-full py-3 font-bold transition-all flex items-center justify-center gap-2 ${isPaused
+                            ? 'bg-accent/10 text-accent hover:bg-accent/20'
+                            : 'bg-primary/10 text-primary hover:bg-primary/20'
                             }`}
                     >
                         <span className={`w-2 h-2 rounded-full ${isPaused ? 'bg-accent' : 'bg-primary animate-pulse'}`}></span>
                         {isPaused ? 'RESUME STREAM' : 'PAUSE STREAM'}
                     </button>
-                </section>
+                </ElectricBorder>
 
                 {/* Time Window */}
                 <section>
                     <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-sm font-bold text-muted uppercase tracking-wider">Time Window</h3>
-                        <span className="text-xs font-mono text-primary bg-primary/10 px-2 py-0.5 rounded">{config.display?.timeWindowMs / 1000}s</span>
+                        <h3 className="text-base font-bold text-muted uppercase tracking-wider">Time Window</h3>
+                        <span className="text-lg font-mono text-primary bg-primary/10 px-2 py-0.5 rounded">{config.display?.timeWindowMs / 1000}s</span>
                     </div>
-                    <input
-                        type="range"
-                        min="1000"
-                        max="30000"
-                        step="1000"
-                        value={config.display?.timeWindowMs || 10000}
-                        onChange={(e) => setConfig(prev => ({
+                    <ElasticSlider
+                        defaultValue={(config.display?.timeWindowMs || 10000) / 1000}
+                        startingValue={1}
+                        maxValue={30}
+                        stepSize={1}
+                        isStepped={true}
+                        onChange={(val) => setConfig(prev => ({
                             ...prev,
-                            display: { ...prev.display, timeWindowMs: Number(e.target.value) }
+                            display: { ...prev.display, timeWindowMs: val * 1000 }
                         }))}
-                        className="w-full accent-primary h-2 bg-bg rounded-lg appearance-none cursor-pointer"
+                        leftIcon={<Minus size={14} className="text-muted" />}
+                        rightIcon={<Plus size={14} className="text-muted" />}
+                        className="w-full"
                     />
-                    <div className="flex justify-between text-[10px] text-muted font-mono mt-2">
-                        <span>1s</span>
-                        <span>30s</span>
-                    </div>
                 </section>
 
                 {/* Channel Mapping */}
@@ -146,16 +150,11 @@ export default function Sidebar({
                                 Enable
                             </label>
                         </div>
-                        <select
+                        <SensorSelector
                             value={getSensorTypeForChannel('ch0')}
-                            onChange={(e) => handleChannelMapping('ch0', e.target.value)}
+                            onChange={(val) => handleChannelMapping('ch0', val)}
                             disabled={config.channel_mapping?.ch0?.enabled === false}
-                            className={`w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm outline-none focus:border-primary/50 ${config.channel_mapping?.ch0?.enabled === false ? 'opacity-50' : ''}`}
-                        >
-                            <option value="EMG">EMG</option>
-                            <option value="EOG">EOG</option>
-                            <option value="EEG">EEG</option>
-                        </select>
+                        />
                     </div>
 
                     {/* Channel 1 */}
@@ -172,16 +171,11 @@ export default function Sidebar({
                                 Enable
                             </label>
                         </div>
-                        <select
+                        <SensorSelector
                             value={getSensorTypeForChannel('ch1')}
-                            onChange={(e) => handleChannelMapping('ch1', e.target.value)}
+                            onChange={(val) => handleChannelMapping('ch1', val)}
                             disabled={config.channel_mapping?.ch1?.enabled === false}
-                            className={`w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm outline-none focus:border-primary/50 ${config.channel_mapping?.ch1?.enabled === false ? 'opacity-50' : ''}`}
-                        >
-                            <option value="EMG">EMG</option>
-                            <option value="EOG">EOG</option>
-                            <option value="EEG">EEG</option>
-                        </select>
+                        />
                     </div>
 
                     {/* Channel 2 */}
@@ -198,16 +192,11 @@ export default function Sidebar({
                                 Enable
                             </label>
                         </div>
-                        <select
+                        <SensorSelector
                             value={getSensorTypeForChannel('ch2')}
-                            onChange={(e) => handleChannelMapping('ch2', e.target.value)}
+                            onChange={(val) => handleChannelMapping('ch2', val)}
                             disabled={config.channel_mapping?.ch2?.enabled === false}
-                            className={`w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm outline-none focus:border-primary/50 ${config.channel_mapping?.ch2?.enabled === false ? 'opacity-50' : ''}`}
-                        >
-                            <option value="EMG">EMG</option>
-                            <option value="EOG">EOG</option>
-                            <option value="EEG">EEG</option>
-                        </select>
+                        />
                     </div>
 
                     {/* Channel 3 */}
@@ -224,20 +213,16 @@ export default function Sidebar({
                                 Enable
                             </label>
                         </div>
-                        <select
+                        <SensorSelector
                             value={getSensorTypeForChannel('ch3')}
-                            onChange={(e) => handleChannelMapping('ch3', e.target.value)}
+                            onChange={(val) => handleChannelMapping('ch3', val)}
                             disabled={config.channel_mapping?.ch3?.enabled === false}
-                            className={`w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm outline-none focus:border-primary/50 ${config.channel_mapping?.ch3?.enabled === false ? 'opacity-50' : ''}`}
-                        >
-                            <option value="EMG">EMG</option>
-                            <option value="EOG">EOG</option>
-                            <option value="EEG">EEG</option>
-                        </select>
+                        />
                     </div>
 
                     <button
                         onClick={() => {
+                            soundHandler.playClick();
                             if (onSave) {
                                 onSave();
                             } else {
@@ -303,8 +288,20 @@ export default function Sidebar({
                     />
                 </section>
             </div>
-        </aside>
+        </aside >
     )
+}
+
+function SensorSelector({ value, onChange, disabled }) {
+    return (
+        <CustomSelect
+            value={value}
+            onChange={onChange}
+            disabled={disabled}
+            options={['EMG', 'EOG', 'EEG']}
+            placeholder="Select Sensor"
+        />
+    );
 }
 
 /**
