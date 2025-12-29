@@ -270,7 +270,11 @@ def resolve_event_stream() -> bool:
         
     try:
         print(f"[WebServer] 🔍 Searching for Event stream: {EVENT_STREAM_NAME}...")
-        streams = pylsl.resolve_stream('name', EVENT_STREAM_NAME)
+        streams = pylsl.resolve_streams()
+        # Filter manually if needed, or use resolve_byprop if available. 
+        # Actually resolve_stream('name', 'foo') works in standard pylsl, but maybe version diff.
+        # Let's try resolve_byprop
+        streams = pylsl.resolve_byprop('name', EVENT_STREAM_NAME)
         
         if streams:
             state.event_inlet = pylsl.StreamInlet(streams[0])
@@ -1134,19 +1138,21 @@ def main():
     print("[WebServer] ✅ Background threads started")
     print()
 
+    port = state.config.get("server_port", 5000)
+
     # Start SocketIO server
     print("[WebServer] 🚀 Starting WebSocket server...")
-    print(f"[WebServer] 📡 WebSocket endpoint: ws://localhost:5000")
-    print(f"[WebServer] 🌐 Dashboard: http://localhost:5000")
-    print(f"[WebServer] 📊 API: http://localhost:5000/api/status")
-    print(f"[WebServer] ⚙️  Config: http://localhost:5000/api/config")
+    print(f"[WebServer] 📡 WebSocket endpoint: ws://localhost:{port}")
+    print(f"[WebServer] 🌐 Dashboard: http://localhost:{port}")
+    print(f"[WebServer] 📊 API: http://localhost:{port}/api/status")
+    print(f"[WebServer] ⚙️  Config: http://localhost:{port}/api/config")
     print()
 
     try:
         socketio.run(
             app,
             host='0.0.0.0',
-            port=5000,
+            port=port,
             debug=False,
             allow_unsafe_werkzeug=True
         )

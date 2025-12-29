@@ -32,7 +32,7 @@
     "bandpass_enabled": true,
     "bandpass_high": 10,
     "bandpass_low": 0.4,
-    "cutoff": 48.1,
+    "cutoff": 191.1,
     "high": 10,
     "low": 0.5,
     "notch_enabled": true,

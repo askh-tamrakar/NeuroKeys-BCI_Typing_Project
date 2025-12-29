@@ -32,7 +32,7 @@ from matplotlib.figure import Figure
 
 # scipy for filtering
 try:
-    from scipy.signal import butter, sosfilt, sosfilt_zi
+    from scipy.signal import butter, sosfilt, sosfilt_zi, iirnotch, tf2sos
     SCIPY_AVAILABLE = True
 except Exception:
     SCIPY_AVAILABLE = False
@@ -141,6 +141,7 @@ class AcquisitionApp:
         2. Fall back to sensor_config.json
         3. Fall back to defaults
         """
+        print("[App] Loading configuration...")
         
         # 1. Try API first (optional)
         try:
@@ -161,7 +162,9 @@ class AcquisitionApp:
             # Load UNIFIED config (Sensor + Filters + Calibration)
             unified_cfg = config_manager.get_all_configs()
             if unified_cfg:
-                print("[App] ✅ Loaded unified config (Sensor+Filters)")
+                print(f"[App] ✅ Loaded unified config (Sensor+Filters). Keys: {list(unified_cfg.keys())}")
+                if "filters" in unified_cfg:
+                    print(f"[App] Filters found: {list(unified_cfg['filters'].keys())}")
                 return unified_cfg
         except Exception as e:
             print(f"[App] ⚠️ File load failed: {e}")
@@ -327,7 +330,8 @@ class AcquisitionApp:
                 # Let's construct the facade object to push
                 facade = config_manager.get_all_configs()
                 
-                url = "http://localhost:5000/api/config"
+                port = config_manager.sensor_config.get("server_port", 5000)
+                url = f"http://localhost:{port}/api/config"
                 req = urllib.request.Request(
                     url,
                     data=json.dumps(facade).encode('utf-8'),
@@ -363,7 +367,10 @@ class AcquisitionApp:
                     # Don't interrupt if we are actively recording/streaming to avoid jitter
                     # (optional trade-off)
                     
-                    url = "http://localhost:5000/api/config"
+                    # (optional trade-off)
+                    
+                    port = self.config.get("server_port", 5000)
+                    url = f"http://localhost:{port}/api/config"
                     with urllib.request.urlopen(url, timeout=1) as response:
                         if response.status == 200:
                             new_cfg = json.loads(response.read().decode())
@@ -936,17 +943,15 @@ class AcquisitionApp:
         self.filter_state = {}
         
         # Load filter configs from sensor_config
-        # Expecting 'filters' key in config
         filter_cfg = self.config.get("filters", {})
         
-        # We need to map global channel indices (0-3) to their sensors types (EMG, EOG, EEG)
-        # to find the right filter profile.
-        
-        channels = [self.ch0_type, self.ch1_type, self.ch2_var.get(), self.ch3_var.get()]
+        channels = [self.ch0_var.get(), self.ch1_var.get(), self.ch2_var.get(), self.ch3_var.get()]
         fs = self.config.get("sampling_rate", 512)
         
+        print(f"[App] initializing filters for channels: {channels}")
+        
         for i, sensor_type in enumerate(channels):
-             # 1. Look for channel-specific config first (e.g. "ch0")
+            # 1. Look for channel-specific config first (e.g. "ch0")
             ch_key = f"ch{i}"
             cfg = filter_cfg.get(ch_key)
             
@@ -956,35 +961,55 @@ class AcquisitionApp:
             
             if cfg:
                 try:
-                    # Construct SOS filter
-                    # This is a simplified version - assumes one main filter or a cascade
-                    # Let's handle 'cutoff' and 'type' for High/Low/Band pass
+                    sos_chain = []
                     
-                    f_type = cfg.get("type", "high_pass")
-                    order = cfg.get("order", 4)
-                    
-                    sos = None
-                    
-                    if f_type == "high_pass":
-                         cutoff = cfg.get("cutoff", 1.0)
-                         sos = butter(order, cutoff, btype='highpass', fs=fs, output='sos')
-                    elif f_type == "low_pass":
-                         cutoff = cfg.get("cutoff", 50.0)
-                         sos = butter(order, cutoff, btype='lowpass', fs=fs, output='sos')
-                    elif f_type == "bandpass":
-                         low = cfg.get("low", 0.5)
-                         high = cfg.get("high", 45.0)
-                         # Handle different config keys if present
-                         if "bandpass_low" in cfg: low = cfg["bandpass_low"]
-                         if "bandpass_high" in cfg: high = cfg["bandpass_high"]
+                    # Helper to generate SOS for one definition
+                    def create_sos(f_cfg):
+                         f_type = f_cfg.get("type", "high_pass")
+                         order = f_cfg.get("order", 4)
                          
-                         sos = butter(order, [low, high], btype='bandpass', fs=fs, output='sos')
+                         if f_type == "high_pass":
+                             cutoff = f_cfg.get("cutoff", 1.0)
+                             return butter(order, cutoff, btype='highpass', fs=fs, output='sos')
+                         elif f_type == "low_pass":
+                             cutoff = f_cfg.get("cutoff", 50.0)
+                             return butter(order, cutoff, btype='lowpass', fs=fs, output='sos')
+                         elif f_type == "bandpass":
+                             low = f_cfg.get("low", 0.5)
+                             high = f_cfg.get("high", 45.0)
+                             # Handle aliases
+                             if "bandpass_low" in f_cfg: low = f_cfg["bandpass_low"]
+                             if "bandpass_high" in f_cfg: high = f_cfg["bandpass_high"]
+                             return butter(order, [low, high], btype='bandpass', fs=fs, output='sos')
+                         elif f_type == "notch":
+                             freq = f_cfg.get("freq", 50.0)
+                             # Notch freq alias
+                             if "notch_freq" in f_cfg: freq = f_cfg["notch_freq"] 
+                             q = f_cfg.get("Q", 30.0)
+                             b, a = iirnotch(freq, q, fs=fs)
+                             return tf2sos(b, a)
+                         return None
+
+                    # Check for 'filters' list (new style)
+                    if "filters" in cfg:
+                        for sub_cfg in cfg["filters"]:
+                            s = create_sos(sub_cfg)
+                            if s is not None:
+                                sos_chain.append(s)
                     
-                    if sos is not None:
-                        self.filters[i] = sos
-                        # Initialize state
-                        self.filter_state[i] = sosfilt_zi(sos)
-                        print(f"[App] initialized filter for CH{i} ({sensor_type}): {f_type}")
+                    # Check for top-level config (old style / simple style)
+                    # Use 'type' to distinguish if it's a filter def
+                    if "type" in cfg:
+                        s = create_sos(cfg)
+                        if s is not None:
+                            sos_chain.append(s)
+                            
+                    # Combine all SOS sections
+                    if sos_chain:
+                        combined_sos = np.vstack(sos_chain)
+                        self.filters[i] = combined_sos
+                        self.filter_state[i] = sosfilt_zi(combined_sos)
+                        print(f"[App] initialized filter chain for CH{i} ({sensor_type}): {len(sos_chain)} stages")
                         
                 except Exception as e:
                     print(f"[App] Failed to init filter for CH{i}: {e}")
