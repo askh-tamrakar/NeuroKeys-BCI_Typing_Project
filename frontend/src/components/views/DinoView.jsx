@@ -4,6 +4,7 @@ import CameraPanel from '../ui/CameraPanel'
 import CustomSelect from '../ui/CustomSelect'
 import Counter from '../ui/Counter'
 import CountUp from '../ui/CountUp'
+import { ScanEye, SlidersHorizontal, ArrowUp, Pause, Play, Trash2, Wifi, WifiOff, Save, Skull, Trophy, Keyboard, Eye } from 'lucide-react'
 
 export default function DinoView({ wsData, wsEvent, isPaused }) {
     // Game state
@@ -17,24 +18,41 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
 
     // Game settings (easy mode default)
     const DEFAULT_SETTINGS = {
-        GRAVITY: 0.4,
-        JUMP_STRENGTH: -10,
+        GRAVITY: 1,
+        JUMP_STRENGTH: -16,
         GROUND_OFFSET: 60,
         DINO_WIDTH: 62,
         DINO_HEIGHT: 66,
         OBSTACLE_WIDTH: 28,
         OBSTACLE_MIN_HEIGHT: 56,
         OBSTACLE_MAX_HEIGHT: 84,
-        GAME_SPEED: 1.8,
-        SPAWN_INTERVAL: 1150,
+        GAME_SPEED: 9.4,
+        SPAWN_INTERVAL: 1100,
         CANVAS_WIDTH: 800,
         CANVAS_HEIGHT: 376,
         CYCLE_DURATION: 100,
-        JUMP_DISTANCE: 150,
+        JUMP_DISTANCE: 300,
         ENABLE_TREES: true,
         ENABLE_MANUAL_CONTROLS: true,
-        CONTROL_CHANNEL: 'ch3',
-        OBSTACLE_BONUS_FACTOR: 0.025,
+        CONTROL_CHANNEL: 'any',
+        OBSTACLE_BONUS_FACTOR: 0.015,
+
+        // Visual Customization
+        TREES_DENSITY: 0.7,
+        TREES_SIZE: 1.2,
+        TREES_LAYERS: 10,
+
+        CLOUDS_DENSITY: 2,
+        CLOUDS_SIZE: 0.9,
+        CLOUDS_LAYERS: 10,
+
+        STARS_DENSITY: 1,
+        STARS_SIZE: 1.1,
+        STARS_LAYERS: 10,
+
+        BUSHES_DENSITY: 0.8,
+        BUSHES_SIZE: 0.7,
+        BUSHES_LAYERS: 5
     }
 
     const [settings, setSettings] = useState(() => {
@@ -50,11 +68,17 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
     })
     const [savedMessage, setSavedMessage] = useState('')
 
+
     // --- Event Logging System ---
     const [eventLogs, setEventLogs] = useState([])
-    const logEvent = (msg) => {
+    const logEvent = (msg, type = 'info') => {
         const time = new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
-        setEventLogs(prev => [`[${time}] ${msg}`, ...prev].slice(0, 50))
+        setEventLogs(prev => [{
+            id: Date.now() + Math.random(),
+            time,
+            text: msg,
+            type
+        }, ...prev].slice(0, 50))
     }
 
     // Refs for game state (to avoid stale closures)
@@ -145,14 +169,14 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
     }, [settings])
 
     // Handle EOG blink detection
-    const handleEOGBlink = () => {
+    const handleEOGBlink = (source = 'blink') => {
         const now = Date.now()
         const timeSinceLastPress = now - blinkPressTimeRef.current
 
         if (timeSinceLastPress < 400 && timeSinceLastPress > 75) {
-            handleDoublePress()
+            handleDoublePress(source)
         } else {
-            handleSinglePress()
+            handleSinglePress(source)
         }
 
         blinkPressTimeRef.current = now
@@ -175,105 +199,177 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         }
     }, [wsEvent]);
 
+    // Track Connection Status Logging
+    useEffect(() => {
+        if (wsData) {
+            logEvent("Sensor Connected", 'connection')
+        } else {
+            logEvent("Sensor Disconnected", 'disconnect')
+        }
+    }, [!!wsData]) // Only trigger on boolean flip
+
     // --- Worker Bridge ---
     const workerRef = useRef(null)
+    const observerRef = useRef(null)
+    const workerCleanupTimerRef = useRef(null)
+
     const [canvasResetKey, setCanvasResetKey] = useState(0)
 
     // Initialize Worker
     useEffect(() => {
         if (!canvasRef.current) return
 
-        let worker = null
-        try {
-            // Create worker
-            worker = new Worker(new URL('../../workers/game.worker.js', import.meta.url))
-            workerRef.current = worker
+        // Cancel any pending cleanup (StrictMode handling)
+        if (workerCleanupTimerRef.current) {
+            clearTimeout(workerCleanupTimerRef.current)
+            workerCleanupTimerRef.current = null
+        }
 
-            // Get OffscreenCanvas
-            const offscreen = canvasRef.current.transferControlToOffscreen()
+        let worker = workerRef.current
 
-            // Get theme colors
-            const styles = getComputedStyle(document.documentElement)
-            const theme = {
-                bg: styles.getPropertyValue('--bg').trim(),
-                surface: styles.getPropertyValue('--surface').trim(),
-                text: styles.getPropertyValue('--text').trim(),
-                primary: styles.getPropertyValue('--primary').trim(),
-                border: styles.getPropertyValue('--border').trim(),
-                muted: styles.getPropertyValue('--muted').trim(),
-                accent: styles.getPropertyValue('--accent').trim()
-            }
+        if (!worker) {
+            try {
+                // Create worker
+                worker = new Worker(new URL('../../workers/game.worker.js', import.meta.url))
+                workerRef.current = worker
 
-            // Load 8 Bush Variants
-            const loadBush = (i) => new Promise((resolve, reject) => {
-                const img = new Image();
-                img.src = `/Resources/Dino/bush_${i}.png`;
-                img.onload = () => createImageBitmap(img).then(resolve).catch(reject);
-                img.onerror = reject;
-            });
+                // Get OffscreenCanvas
+                const offscreen = canvasRef.current.transferControlToOffscreen()
 
-            Promise.all(Array.from({ length: 8 }, (_, i) => loadBush(i + 1)))
-                .then(bushSprites => {
-                    // Init Worker with Sprites
-                    const width = containerRef.current ? containerRef.current.clientWidth : settingsRef.current.CANVAS_WIDTH;
-                    const height = containerRef.current ? containerRef.current.clientHeight : settingsRef.current.CANVAS_HEIGHT;
+                // Get theme colors
+                const styles = getComputedStyle(document.documentElement)
+                const theme = {
+                    bg: styles.getPropertyValue('--bg').trim(),
+                    surface: styles.getPropertyValue('--surface').trim(),
+                    text: styles.getPropertyValue('--text').trim(),
+                    primary: styles.getPropertyValue('--primary').trim(),
+                    border: styles.getPropertyValue('--border').trim(),
+                    muted: styles.getPropertyValue('--muted').trim(),
+                    accent: styles.getPropertyValue('--accent').trim()
+                }
 
-                    worker.postMessage({
-                        type: 'INIT',
-                        payload: {
-                            canvas: offscreen,
-                            settings: {
-                                ...settingsRef.current,
-                                CANVAS_WIDTH: width,
-                                CANVAS_HEIGHT: height
-                            },
-                            highScore: highScore,
-                            theme: theme,
-                            bushSprites: bushSprites // Pass array
-                        }
-                    }, [offscreen, ...bushSprites]); // Transfer all bitmaps
-                })
-                .catch(err => {
-                    console.warn("Failed to load bush sprites", err);
-                    const width = containerRef.current ? containerRef.current.clientWidth : settingsRef.current.CANVAS_WIDTH;
-                    const height = containerRef.current ? containerRef.current.clientHeight : settingsRef.current.CANVAS_HEIGHT;
-
-                    // Init without sprites
-                    worker.postMessage({
-                        type: 'INIT',
-                        payload: {
-                            canvas: offscreen,
-                            settings: {
-                                ...settingsRef.current,
-                                CANVAS_WIDTH: width,
-                                CANVAS_HEIGHT: height
-                            },
-                            highScore: highScore,
-                            theme: theme
-                        }
-                    }, [offscreen]);
+                // Load 8 Bush Variants
+                const loadBush = (i) => new Promise((resolve, reject) => {
+                    const img = new Image();
+                    img.src = `/Resources/Dino/bush_${i}.png`;
+                    img.onload = () => createImageBitmap(img).then(resolve).catch(reject);
+                    img.onerror = reject;
                 });
 
-            // Listen to worker
+                Promise.all(Array.from({ length: 8 }, (_, i) => loadBush(i + 1)))
+                    .then(bushSprites => {
+                        // Init Worker with Sprites
+                        const width = containerRef.current ? containerRef.current.clientWidth : settingsRef.current.CANVAS_WIDTH;
+                        const height = containerRef.current ? containerRef.current.clientHeight : settingsRef.current.CANVAS_HEIGHT;
+
+                        worker.postMessage({
+                            type: 'INIT',
+                            payload: {
+                                canvas: offscreen,
+                                settings: {
+                                    ...settingsRef.current,
+                                    CANVAS_WIDTH: width,
+                                    CANVAS_HEIGHT: height
+                                },
+                                highScore: highScore,
+                                theme: theme,
+                                bushSprites: bushSprites
+                            }
+                        }, [offscreen, ...bushSprites]);
+                    })
+                    .catch(err => {
+                        console.warn("Failed to load bush sprites", err);
+                        const width = containerRef.current ? containerRef.current.clientWidth : settingsRef.current.CANVAS_WIDTH;
+                        const height = containerRef.current ? containerRef.current.clientHeight : settingsRef.current.CANVAS_HEIGHT;
+
+                        // Init without sprites
+                        worker.postMessage({
+                            type: 'INIT',
+                            payload: {
+                                canvas: offscreen,
+                                settings: {
+                                    ...settingsRef.current,
+                                    CANVAS_WIDTH: width,
+                                    CANVAS_HEIGHT: height
+                                },
+                                highScore: highScore,
+                                theme: theme,
+                                bushSprites: []
+                            }
+                        }, [offscreen]);
+                    });
+
+                // --- Setup Resize Observer ---
+                if (containerRef.current) {
+                    observerRef.current = new ResizeObserver(entries => {
+                        for (let entry of entries) {
+                            const { width, height } = entry.contentRect;
+                            if (width > 0 && height > 0 && workerRef.current) {
+                                workerRef.current.postMessage({
+                                    type: 'RESIZE',
+                                    payload: { width, height }
+                                });
+                            }
+                        }
+                    });
+                    observerRef.current.observe(containerRef.current);
+                }
+            } catch (err) {
+                console.warn("Canvas transfer failed or Worker init error:", err)
+            }
+        } else {
+            // Worker already exists (reused). Just re-attach ResizeObserver if missing?
+            if (containerRef.current && !observerRef.current) {
+                observerRef.current = new ResizeObserver(entries => {
+                    for (let entry of entries) {
+                        const { width, height } = entry.contentRect;
+                        if (width > 0 && height > 0 && workerRef.current) {
+                            workerRef.current.postMessage({
+                                type: 'RESIZE',
+                                payload: { width, height }
+                            });
+                        }
+                    }
+                });
+                observerRef.current.observe(containerRef.current);
+            }
+        }
+
+        // Always re-bind events because 'worker' instance is stable but closure might not be?
+        if (worker) {
             worker.onmessage = (e) => {
                 const { type, score, highScore: newHigh } = e.data
                 if (type === 'GAME_OVER') {
                     setGameState('gameOver')
-                    if (score !== undefined) scoreRef.current = score
+                    if (score !== undefined) {
+                        scoreRef.current = score
+                        logEvent(`Game Over! Score: ${Math.floor(score / 10)}`, 'gameover')
+                    }
                 } else if (type === 'HIGHSCORE_UPDATE') {
                     setHighScore(newHigh)
                     localStorage.setItem('dino_highscore', newHigh.toString())
+                    logEvent(`New Highscore: ${Math.floor(newHigh / 10)}!`, 'highscore')
                 } else if (type === 'SCORE_UPDATE') {
                     setScore(score)
+                } else if (type === 'STATE_UPDATE') {
+                    setGameState(e.data.payload)
                 }
             }
-        } catch (err) {
-            console.warn("Canvas transfer failed, retrying with fresh DOM node...", err)
-            setCanvasResetKey(prev => prev + 1)
         }
 
+        // Cleanup
         return () => {
-            if (worker) worker.terminate()
+            // Delay cleanup to allow for StrictMode remount re-use
+            workerCleanupTimerRef.current = setTimeout(() => {
+                if (workerRef.current) {
+                    workerRef.current.terminate()
+                    workerRef.current = null
+                }
+                if (observerRef.current) {
+                    observerRef.current.disconnect()
+                    observerRef.current = null
+                }
+            }, 100)
         }
     }, [canvasResetKey])
 
@@ -330,8 +426,15 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
     }, [highScore])
 
     // Bridge Inputs
-    const handleSinglePress = () => {
-        logEvent("🦘 Jump Triggered")
+    const handleSinglePress = (source = 'blink') => {
+        const text = source === 'keyboard' ? "Spacebar (Jump)" : "Blink Detected (Jump)"
+        const type = source === 'keyboard' ? 'keyboard' : 'jump' // 'jump' maps to ArrowUp (which is good for blink too? or use Eye). Let's use 'blink' type for Eye icon.
+        // Actually, user wants "Jump Triggered" vs "Blink Detected". 
+        // Let's be consistent: 
+        // Keyboard: "Spacebar (Jump)" -> Keyboard Icon
+        // Blink: "Blink Detected (Jump)" -> Eye Icon 
+
+        logEvent(text, source === 'keyboard' ? 'keyboard' : 'blink')
         triggerSingleBlink()
 
         if (workerRef.current) {
@@ -347,8 +450,9 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         }
     }
 
-    const handleDoublePress = () => {
-        logEvent("⏯️ Pause/Resume Triggered")
+    const handleDoublePress = (source = 'blink') => {
+        const text = source === 'keyboard' ? "Spacebar x2 (Pause)" : "Double Blink (Pause)"
+        logEvent(text, 'toggle')
         triggerDoubleBlink()
 
         if (workerRef.current) {
@@ -364,7 +468,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                 // Check if manual controls enabled
                 console.log("[DinoView] Spacebar pressed. Manual controls:", settings.ENABLE_MANUAL_CONTROLS)
                 if (settings.ENABLE_MANUAL_CONTROLS) {
-                    handleEOGBlink() // Use the same unified logic for consistency
+                    handleEOGBlink('keyboard') // Use the same unified logic for consistency
                 }
             }
         }
@@ -392,6 +496,29 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
     const handleSaveSettings = () => {
         localStorage.setItem('dino_settings_v6', JSON.stringify(settings))
         setSavedMessage('Saved!')
+        logEvent("Settings Updated", 'settings')
+        setTimeout(() => setSavedMessage(''), 2000)
+    }
+
+    const handleResetSettings = () => {
+        const saved = localStorage.getItem('dino_settings_v6')
+        if (saved) {
+            try {
+                const parsed = JSON.parse(saved)
+                setSettings({ ...DEFAULT_SETTINGS, ...parsed })
+                setSavedMessage('Reverted!')
+                logEvent("Settings Reverted", 'settings')
+            } catch (e) {
+                console.error("Failed to parse saved settings", e)
+                setSettings(DEFAULT_SETTINGS)
+                setSavedMessage('Reset to Default')
+                logEvent("Corrupt Save - Reset to Default", 'settings')
+            }
+        } else {
+            setSettings(DEFAULT_SETTINGS)
+            setSavedMessage('Reset to Default')
+            logEvent("No Save - Reset to Default", 'settings')
+        }
         setTimeout(() => setSavedMessage(''), 2000)
     }
 
@@ -403,14 +530,14 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                     <div className="game-card">
                         <div className="game-header">
                             <h2 className="game-title">
-                                <span className="status-dot"></span>
+                                <span className={`status-eye ${wsData ? 'connected' : 'disconnected'}`}><ScanEye size={32} /></span>
                                 EOG Dino Game
                             </h2>
                             <button
                                 onClick={() => setShowSettings(!showSettings)}
                                 className={`tuner-button ${showSettings ? 'active' : 'inactive'}`}
                             >
-                                ⚙️ Tuner
+                                <SlidersHorizontal /> Tuner
                             </button>
                         </div>
 
@@ -515,7 +642,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                     <CameraPanel />
 
                     {/* Eye Controls Panel */}
-                    <div className="card bg-surface border border-border shadow-card rounded-2xl p-4">
+                    <div className="card bg-surface border border-border shadow-card rounded-2xl p-4" style={{ flexShrink: 0 }}>
                         <h3 className="text-sm font-bold text-text uppercase tracking-wider mb-3">Controls</h3>
                         <div className="space-y-2 text-sm text-text">
                             <div className="flex justify-between">
@@ -552,7 +679,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                     </div>
 
                     {/* Event Log Panel */}
-                    <div className="card bg-surface border border-border shadow-card rounded-2xl p-4 ">
+                    <div className="card bg-surface border border-border shadow-card rounded-2xl p-4" style={{ flexShrink: 0 }}>
                         <div className="flex justify-between items-center mb-2">
                             <h3 className="text-sm font-bold text-text uppercase tracking-wider">Event Log</h3>
                             <button
@@ -566,9 +693,21 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                             {eventLogs.length === 0 ? (
                                 <div className="text-muted italic text-center py-4">No events yet...</div>
                             ) : (
-                                eventLogs.map((log, i) => (
-                                    <div key={i} className="text-muted hover:text-text transition-colors border-b border-border/20 last:border-0 pb-0.5">
-                                        {log}
+                                eventLogs.map((log) => (
+                                    <div key={log.id} className="text-muted hover:text-text transition-colors border-b border-border/20 last:border-0 pb-1 mb-1 flex items-start gap-2">
+                                        <span className="opacity-50 text-[10px] mt-0.5">{log.time}</span>
+                                        <div className="flex-1 flex items-center gap-1.5 break-words min-w-0">
+                                            {log.type === 'jump' && <ArrowUp size={12} className="text-primary shrink-0" />}
+                                            {log.type === 'blink' && <Eye size={12} className="text-primary shrink-0" />}
+                                            {log.type === 'keyboard' && <Keyboard size={12} className="text-muted shrink-0" />}
+                                            {log.type === 'toggle' && <div className="flex shrink-0"><Pause size={12} className="text-yellow-500" /><Play size={12} className="text-green-500 -ml-1" /></div>}
+                                            {log.type === 'connection' && <Wifi size={12} className="text-green-500 shrink-0" />}
+                                            {log.type === 'disconnect' && <WifiOff size={12} className="text-red-500 shrink-0" />}
+                                            {log.type === 'settings' && <Save size={12} className="text-blue-400 shrink-0" />}
+                                            {log.type === 'gameover' && <Skull size={12} className="text-red-500 shrink-0" />}
+                                            {log.type === 'highscore' && <Trophy size={12} className="text-yellow-400 shrink-0" />}
+                                            <span>{log.text}</span>
+                                        </div>
                                     </div>
                                 ))
                             )}
@@ -577,7 +716,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
 
                     {/* Settings Panel (Moved here) */}
                     {showSettings && (
-                        <div className="card bg-surface border border-border shadow-card rounded-2xl p-4 animate-fade-in">
+                        <div className="card bg-surface border border-border shadow-card rounded-2xl p-4 animate-fade-in" style={{ flexShrink: 0 }}>
                             <div className="flex justify-between items-center mb-4">
                                 <h3 className="text-sm font-bold text-text uppercase tracking-wider">Game Constants</h3>
                                 <div className="flex gap-2 items-center">
@@ -589,7 +728,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                                         Save
                                     </button>
                                     <button
-                                        onClick={() => setSettings(DEFAULT_SETTINGS)}
+                                        onClick={handleResetSettings}
                                         className="text-xs text-red-400 hover:text-red-300 underline"
                                     >
                                         Reset Config
@@ -645,8 +784,36 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                                 <div className="space-y-3">
                                     <h4 className="text-xs font-bold text-primary border-b border-border pb-1">Environment</h4>
                                     <SettingToggle label="Enable Trees" value={settings.ENABLE_TREES} onChange={(v) => handleSettingChange('ENABLE_TREES', v)} />
-                                    <SettingInput label="Obstacle Bonus" value={settings.OBSTACLE_BONUS_FACTOR} onChange={(v) => handleSettingChange('OBSTACLE_BONUS_FACTOR', v)} min="0" max="2.0" step="0.005" />
+                                    <SettingInput label="Obstacle Bonus" value={settings.OBSTACLE_BONUS_FACTOR} onChange={(v) => handleSettingChange('OBSTACLE_BONUS_FACTOR', v)} min="0" max="0.5" step="0.005" />
                                     <SettingInput label="Day Cycle (s)" value={settings.CYCLE_DURATION} onChange={(v) => handleSettingChange('CYCLE_DURATION', v)} min="10" max="300" step="5" />
+                                </div>
+
+                                <div className="space-y-3">
+                                    <h4 className="text-xs font-bold text-primary border-b border-border pb-1">Visuals - Trees</h4>
+                                    <SettingInput label="Tree Density" value={settings.TREES_DENSITY} onChange={(v) => handleSettingChange('TREES_DENSITY', v)} min="0.1" max="3.0" step="0.1" />
+                                    <SettingInput label="Tree Size" value={settings.TREES_SIZE} onChange={(v) => handleSettingChange('TREES_SIZE', v)} min="0.5" max="2.0" step="0.1" />
+                                    <SettingInput label="Tree Layers" value={settings.TREES_LAYERS} onChange={(v) => handleSettingChange('TREES_LAYERS', v)} min="1" max="10" step="1" />
+                                </div>
+
+                                <div className="space-y-3">
+                                    <h4 className="text-xs font-bold text-primary border-b border-border pb-1">Visuals - Clouds</h4>
+                                    <SettingInput label="Cloud Density" value={settings.CLOUDS_DENSITY} onChange={(v) => handleSettingChange('CLOUDS_DENSITY', v)} min="0.1" max="3.0" step="0.1" />
+                                    <SettingInput label="Cloud Size" value={settings.CLOUDS_SIZE} onChange={(v) => handleSettingChange('CLOUDS_SIZE', v)} min="0.5" max="2.0" step="0.1" />
+                                    <SettingInput label="Cloud Layers" value={settings.CLOUDS_LAYERS} onChange={(v) => handleSettingChange('CLOUDS_LAYERS', v)} min="1" max="10" step="1" />
+                                </div>
+
+                                <div className="space-y-3">
+                                    <h4 className="text-xs font-bold text-primary border-b border-border pb-1">Visuals - Stars</h4>
+                                    <SettingInput label="Star Density" value={settings.STARS_DENSITY} onChange={(v) => handleSettingChange('STARS_DENSITY', v)} min="0.1" max="3.0" step="0.1" />
+                                    <SettingInput label="Star Size" value={settings.STARS_SIZE} onChange={(v) => handleSettingChange('STARS_SIZE', v)} min="0.5" max="2.0" step="0.1" />
+                                    <SettingInput label="Star Layers" value={settings.STARS_LAYERS} onChange={(v) => handleSettingChange('STARS_LAYERS', v)} min="1" max="10" step="1" />
+                                </div>
+
+                                <div className="space-y-3">
+                                    <h4 className="text-xs font-bold text-primary border-b border-border pb-1">Visuals - Bushes</h4>
+                                    <SettingInput label="Bush Density" value={settings.BUSHES_DENSITY} onChange={(v) => handleSettingChange('BUSHES_DENSITY', v)} min="0.1" max="3.0" step="0.1" />
+                                    <SettingInput label="Bush Size" value={settings.BUSHES_SIZE} onChange={(v) => handleSettingChange('BUSHES_SIZE', v)} min="0.5" max="2.0" step="0.1" />
+                                    <SettingInput label="Bush Layers" value={settings.BUSHES_LAYERS} onChange={(v) => handleSettingChange('BUSHES_LAYERS', v)} min="1" max="7" step="1" />
                                 </div>
                             </div>
                         </div>

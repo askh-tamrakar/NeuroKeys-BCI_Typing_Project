@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import SignalChart from '../charts/SignalChart'
 import { DataService } from '../../services/DataService'
+import { Radio, Square, Settings2, Wifi, Circle } from 'lucide-react'
 import '../../styles/live/LiveView.css'
 
 export default function LiveView({ wsData, wsEvent, config, isPaused }) {
@@ -357,7 +358,7 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
         {/* Recording Controls */}
         <div className="record-controls">
           <div className="record-ch-group">
-            <div className="record-ch-label">Record Ch:</div>
+            <div className="record-ch-label flex items-center gap-1"><Circle size={12} className="fill-current" /> Record Ch:</div>
             <div className="channel-buttons">
               {activeChannels.map(chIdx => (
                 <button
@@ -377,7 +378,7 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
             disabled={isSaving || (activeChannels.length === 0 && !isRecording)}
             className={`record-btn ${isRecording ? 'recording' : 'idle'}`}
           >
-            <div className={`record-indicator-dot ${isRecording ? 'bg-white' : 'bg-white/50'}`}></div>
+            {isRecording ? <Square size={16} fill="currentColor" /> : <Radio size={16} />}
             {isRecording ? `STOP (${recordingTime}s)` : 'REC'}
           </button>
 
@@ -386,7 +387,8 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
 
         <div className="mode-indicator">
           {/* Global range indicator removed or can be replaced with something else */}
-          <span className="text-primary font-bold">MODE:</span> INDEPENDENT SCALING
+          <span className="text-primary font-bold flex items-center gap-2 w-auto"><Settings2 size={16} /> MODE:</span> INDEPENDENT SCALING
+
         </div>
       </div>
 
@@ -433,7 +435,7 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
           <div><span className="text-primary font-bold">MODE:</span> INDEPENDENT SCALING</div>
           {isRecording && <div className="recording-status">● RECORDING IN PROGRESS</div>}
         </div>
-        <div><span className="text-purple-400">Stream</span>: {wsData?.raw?.stream_name || 'Disconnected'}</div>
+        <div className="flex items-center gap-2"><span className="text-purple-400 flex items-center gap-1"><Wifi size={14} /> Stream</span>: {wsData?.raw?.stream_name || 'Disconnected'}</div>
       </div>
     </div>
   )

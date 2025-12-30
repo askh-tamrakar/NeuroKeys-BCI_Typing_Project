@@ -19,6 +19,23 @@ let SETTINGS = {
     JUMP_DISTANCE: 150,
     ENABLE_TREES: true,
     OBSTACLE_BONUS_FACTOR: 0.1,
+
+    // Visual Customization (Defaults)
+    TREES_DENSITY: 1.0,
+    TREES_SIZE: 1.0,
+    TREES_LAYERS: 1,
+
+    CLOUDS_DENSITY: 1.0,
+    CLOUDS_SIZE: 1.0,
+    CLOUDS_LAYERS: 1,
+
+    STARS_DENSITY: 1.0,
+    STARS_SIZE: 1.0,
+    STARS_LAYERS: 1,
+
+    BUSHES_DENSITY: 1.0,
+    BUSHES_SIZE: 1.0,
+    BUSHES_LAYERS: 3,
 };
 
 // Game State
@@ -60,12 +77,20 @@ let eyeStateTimer = null;
 function initVisuals() {
     // Init clouds
     clouds = [];
-    for (let i = 0; i < 15; i++) {
+    const cloudCount = Math.floor(15 * SETTINGS.CLOUDS_DENSITY);
+    const cloudLayers = Math.max(1, SETTINGS.CLOUDS_LAYERS);
+
+    for (let i = 0; i < cloudCount; i++) {
+        // Distribute depth based on layers
+        // If layers=1, all range 0.15-1.0
+        // If layers>1, maybe discreet layers? For now, stick to random spread but multiplied count
         const depth = 0.15 + Math.random() * 0.85;
+        // Optional: Filter depth based on active layers (e.g. only draw far ones if layers > 1 is complex, just sticking to count for density)
+
         clouds.push({
             x: Math.random() * SETTINGS.CANVAS_WIDTH,
             y: Math.random() * 150 + 20,
-            width: (60 + Math.random() * 40) * depth,
+            width: (60 + Math.random() * 40) * depth * SETTINGS.CLOUDS_SIZE,
             speed: (0.1 + Math.random() * 0.1) * depth,
             depth: depth
         });
@@ -74,78 +99,85 @@ function initVisuals() {
 
     // Init trees
     trees = [];
-    const treeCount = Math.floor(SETTINGS.CANVAS_WIDTH / 60) + 5;
-    for (let i = 0; i < treeCount; i++) {
-        const depth = 0.4 + Math.random() * 0.6;
-        const scale = depth;
-        trees.push({
-            x: Math.random() * SETTINGS.CANVAS_WIDTH * 1.2,
-            height: (50 + Math.random() * 70) * scale,
-            width: (25 + Math.random() * 25) * scale,
-            type: Math.random() > 0.5 ? 'round' : 'pine',
-            depth: depth,
-            speedFactor: 0.5 * depth
-        });
+    if (SETTINGS.ENABLE_TREES) {
+        const baseTreeCount = Math.floor(SETTINGS.CANVAS_WIDTH / 60) + 5;
+        const treeCount = Math.floor(baseTreeCount * SETTINGS.TREES_DENSITY);
+
+        for (let i = 0; i < treeCount; i++) {
+            const depth = 0.4 + Math.random() * 0.6;
+            const size = SETTINGS.TREES_SIZE;
+
+            trees.push({
+                x: Math.random() * SETTINGS.CANVAS_WIDTH * 1.2,
+                height: (50 + Math.random() * 70) * depth * size,
+                width: (25 + Math.random() * 25) * depth * size,
+                type: Math.random() > 0.5 ? 'round' : 'pine',
+                depth: depth,
+                speedFactor: 0.5 * depth
+            });
+        }
+        trees.sort((a, b) => a.depth - b.depth);
     }
-    trees.sort((a, b) => a.depth - b.depth);
 
     // Init bushes (Layered Sprites)
     bushes = [];
     if (bushSprites && bushSprites.length > 0) {
+        const userLayers = Math.max(0, Math.min(7, SETTINGS.BUSHES_LAYERS));
 
-        const layers = [
-            { count: 5, scale: 0.6, speed: 0.8, yOff: 5, layer: 0 },
-            { count: 4, scale: 0.9, speed: 1.0, yOff: 15, layer: 1 },
-            { count: 3, scale: 1.2, speed: 1.2, yOff: 25, layer: 2 }
-        ];
+        // Procedurally generate layer configs
+        // We want a nice spread from background (small, slow, high yOff?) to foreground (large, fast, low yoff)
+        // Wait, standard parallax: background is slow, foreground is fast.
+        // BG: Scale 0.6, Speed 0.5. FG: Scale 2.5, Speed 2.0.
 
-        layers.forEach(layerConfig => {
-            const count = Math.floor(SETTINGS.CANVAS_WIDTH / 150) + layerConfig.count;
+        for (let l = 0; l < userLayers; l++) {
+            // Normalized layer position (0 = back, 1 = front)
+            const t = userLayers > 1 ? l / (userLayers - 1) : 0.5;
+
+            // Interpolate params
+            // Scale: 0.5 -> 2.5
+            const baseScale = 0.5 + t * 2.0;
+            // Speed: 0.4 -> 2.5
+            const baseSpeed = 0.4 + t * 2.1;
+            // yOff: BG might be slightly higher or grounded. FG usually lower (yOffset adds to groundY-height). 
+            // Positive yOffset pushes it DOWN (buried). Negative pushes UP (floating).
+            // Usually foreground bushes might be lower on screen (higher y value) to fake perspective if ground is flat?
+            // Actually our ground is flat line.
+            // Let's vary yOff for randomness but generally keep them grounded.
+            // Just use the previous manual tweaks as guide: 
+            // Layer 0: yOff 5. Layer 5: yOff 60 (pushed down).
+            const baseYOff = 5 + t * 55;
+
+            // Count: BG has more, FG has fewer?
+            // 5 -> 1
+            const baseCount = Math.max(1, Math.floor(5 - t * 4));
+
+            const count = Math.floor((Math.floor(SETTINGS.CANVAS_WIDTH / (250 - t * 100)) + baseCount) * SETTINGS.BUSHES_DENSITY);
+
             for (let i = 0; i < count; i++) {
                 bushes.push({
                     x: Math.random() * SETTINGS.CANVAS_WIDTH,
-                    yOffset: layerConfig.yOff,
+                    yOffset: baseYOff,
                     variant: Math.floor(Math.random() * bushSprites.length),
-                    scale: layerConfig.scale * (0.9 + Math.random() * 0.2),
-                    speedFactor: layerConfig.speed,
-                    layer: layerConfig.layer
+                    scale: baseScale * (0.8 + Math.random() * 0.4) * SETTINGS.BUSHES_SIZE,
+                    speedFactor: baseSpeed,
+                    layer: l // 0 is back
                 });
             }
-        });
-
-        // Sort by layer so back draws first
+        }
         bushes.sort((a, b) => a.layer - b.layer);
     }
 
-    // Init Visual Bushes (Layers 3 & 4)
+    // Clear extraBushes as they are now merged into the main bush system
     extraBushes = [];
-    const extraLayers = [
-        { count: 3, scale: 0.5, speed: 0.4, yOff: 0, layer: 3 },
-        { count: 2, scale: 1.8, speed: 1.6, yOff: 45, layer: 4 },
-        { count: 1, scale: 2.2, speed: 1.95, yOff: 60, layer: 5 }
-    ];
-
-    extraLayers.forEach(layerConfig => {
-        const count = Math.floor(SETTINGS.CANVAS_WIDTH / 250) + layerConfig.count;
-        for (let i = 0; i < count; i++) {
-            extraBushes.push({
-                x: Math.random() * SETTINGS.CANVAS_WIDTH,
-                variant: Math.floor(Math.random() * (bushSprites.length || 1)),
-                scale: layerConfig.scale,
-                speedFactor: layerConfig.speed,
-                yOffset: layerConfig.yOff,
-                layer: layerConfig.layer
-            });
-        }
-    });
 
     // Init stars
     stars = [];
-    for (let i = 0; i < 50; i++) {
+    const starCount = Math.floor(50 * SETTINGS.STARS_DENSITY);
+    for (let i = 0; i < starCount; i++) {
         stars.push({
             x: Math.random() * SETTINGS.CANVAS_WIDTH,
             y: Math.random() * SETTINGS.CANVAS_HEIGHT / 2,
-            size: Math.random() * 2 + 1,
+            size: (Math.random() * 2 + 1) * SETTINGS.STARS_SIZE,
             blinkOffset: Math.random() * Math.PI
         });
     }
@@ -191,8 +223,13 @@ function handleInput(action) {
         if (eyeStateTimer) clearTimeout(eyeStateTimer);
         eyeStateTimer = setTimeout(() => { eyeState = 'open'; }, 600);
 
-        if (gameState === 'playing') gameState = 'paused';
-        else if (gameState === 'paused') gameState = 'playing';
+        if (gameState === 'playing') {
+            gameState = 'paused';
+            self.postMessage({ type: 'STATE_UPDATE', payload: 'paused' });
+        } else if (gameState === 'paused') {
+            gameState = 'playing';
+            self.postMessage({ type: 'STATE_UPDATE', payload: 'playing' });
+        }
     }
 }
 
@@ -393,7 +430,7 @@ function drawSky(width, height) {
         const sunAngle = ((gameTime - 0.1) / 0.5) * Math.PI;
         const sunX = centerX - Math.cos(sunAngle) * radius;
         const sunY = centerY - Math.sin(sunAngle) * radius * 0.9;
-        drawBlockyCircle(sunX, sunY, 14, COLORS.primary, 4);
+        drawBlockyCircle(sunX, sunY, 28, COLORS.primary, 2);
     }
 
     // Moon
@@ -403,7 +440,7 @@ function drawSky(width, height) {
         const moonAngle = (moonTime / 0.5) * Math.PI;
         const moonX = centerX - Math.cos(moonAngle) * radius;
         const moonY = centerY - Math.sin(moonAngle) * radius * 0.9;
-        drawBlockyCircle(moonX, moonY, 12, COLORS.text, 4);
+        drawBlockyCircle(moonX, moonY, 24, COLORS.text, 2);
         ctx.fillStyle = COLORS.bg;
         ctx.fillRect(moonX - 12, moonY - 8, 8, 8);
         ctx.fillRect(moonX + 4, moonY + 8, 4, 4);
@@ -458,13 +495,29 @@ function drawTrees(width, groundY) {
     ctx.globalAlpha = 0.5;
     trees.forEach(tree => {
         const tx = Math.floor(tree.x);
-        const ty = Math.floor(groundY - tree.height);
         const tw = Math.floor(tree.width);
         const th = Math.floor(tree.height);
+        // Correct calculation:
+        // ty (top) = groundY - th.
+        // trunkY starts at middle of tree height visually.
+        // We ensure total height reaches bottom.
+        const ty = Math.floor(groundY - th);
 
         if (tx + tw > 0 && tx < width) {
             const trunkW = Math.max(4, Math.floor(tw * 0.3));
-            ctx.fillRect(Math.floor(tx + (tw - trunkW) / 2), ty + Math.floor(th * 0.5), trunkW, Math.floor(th * 0.5));
+
+            const trunkReqH = Math.floor(th * 0.5); // Desired trunk height
+            // But we must ensure it touches groundY exactly.
+            // Top part height = th - trunkReqH
+            // Top part draws at ty
+            // Trunk draws at ty + (th - trunkReqH)
+
+            const topH = th - trunkReqH;
+
+            // Draw Trunk
+            ctx.fillRect(Math.floor(tx + (tw - trunkW) / 2), ty + topH, trunkW, trunkReqH);
+
+            // Draw Leaves (Top)
             if (tree.type === 'pine') {
                 ctx.fillRect(tx, ty + Math.floor(th * 0.2), tw, Math.floor(th * 0.3));
                 ctx.fillRect(Math.floor(tx + tw * 0.1), ty, Math.ceil(tw * 0.8), Math.floor(th * 0.4));
@@ -667,6 +720,20 @@ function draw() {
             ctx.font = 'bold 24px sans-serif';
             ctx.fillStyle = COLORS.text;
             ctx.fillText('Blink to Start!', width / 2, height / 2 - 20);
+        } else if (gameState === 'paused') {
+            // Draw semi-transparent overlay
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+            ctx.fillRect(0, 0, width, height);
+
+            ctx.textAlign = 'center';
+            ctx.font = 'bold 24px sans-serif';
+            ctx.fillStyle = COLORS.primary;
+            ctx.fillText('PAUSED', width / 2, height / 2 - 20);
+
+            ctx.fillStyle = 'white'; // White text on dark overlay looks better
+            ctx.font = '16px sans-serif';
+            ctx.fillText('Double Blink to resume', width / 2, height / 2 + 20);
+
         } else if (gameState === 'gameOver') {
             ctx.textAlign = 'center';
             ctx.font = 'bold 24px sans-serif';
@@ -702,6 +769,9 @@ self.onmessage = (e) => {
             canvas = payload.canvas;
             ctx = canvas.getContext('2d');
             Object.assign(SETTINGS, payload.settings);
+            // Ensure canvas matches initial settings
+            canvas.width = SETTINGS.CANVAS_WIDTH;
+            canvas.height = SETTINGS.CANVAS_HEIGHT;
             // Theme colors if passed
             if (payload.theme) {
                 Object.assign(COLORS, payload.theme);
@@ -716,8 +786,35 @@ self.onmessage = (e) => {
             break;
 
         case 'SETTINGS':
+            const oldSettings = { ...SETTINGS };
             Object.assign(SETTINGS, payload);
             if (payload.highScore !== undefined) highScore = payload.highScore;
+
+            // Check if visual settings changed, if so, re-init visuals
+            const visualKeys = [
+                'TREES_DENSITY', 'TREES_SIZE', 'TREES_LAYERS',
+                'CLOUDS_DENSITY', 'CLOUDS_SIZE', 'CLOUDS_LAYERS',
+                'STARS_DENSITY', 'STARS_SIZE', 'STARS_LAYERS',
+                'BUSHES_DENSITY', 'BUSHES_SIZE', 'BUSHES_LAYERS', 'ENABLE_TREES'
+            ];
+            const shouldReInit = visualKeys.some(k => payload[k] !== undefined && payload[k] !== oldSettings[k]);
+
+            if (shouldReInit) {
+                initVisuals();
+            }
+            break;
+
+        case 'RESIZE':
+            if (canvas && payload.width && payload.height) {
+                canvas.width = payload.width;
+                canvas.height = payload.height;
+                SETTINGS.CANVAS_WIDTH = payload.width;
+                SETTINGS.CANVAS_HEIGHT = payload.height;
+                // Re-init visuals if needed (e.g. generate more trees/clouds to fill new width)
+                initVisuals();
+                // Force a draw immediately
+                draw();
+            }
             break;
 
         case 'INPUT':
@@ -728,17 +825,7 @@ self.onmessage = (e) => {
             highScore = 0;
             break;
 
-        case 'RESIZE':
-            if (canvas) {
-                const { width, height } = payload;
-                canvas.width = width;
-                canvas.height = height;
-                SETTINGS.CANVAS_WIDTH = width;
-                SETTINGS.CANVAS_HEIGHT = height;
-                // Force redraw immediately if paused/ready so it doesn't look broken
-                if (gameState !== 'playing') draw();
-            }
-            break;
+
 
         case 'STOP':
             cancelAnimationFrame(animationId);

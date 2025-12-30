@@ -93,6 +93,10 @@ body {
   --accent: #61dafb;
   --border: #2a2a2a;
   --shadow: rgba(0,0,0,0.35);
+
+  /* dino */
+  --day: #f5f5f5;
+  --night: #111111;
 }
 
 /* Theme 1 */
@@ -356,8 +360,7 @@ button, a, [role="button"], input[type="submit"], input[type="button"], label, s
 }
 
 code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
 }
 
 .container {
@@ -371,8 +374,8 @@ code {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 16px;
-  box-shadow: 0 10px 30px var(--shadow);
-  padding: 24px;
+  box-shadow: 1px 1px 1px var(--shadow);
+  padding: 10px;
 }
 
 .btn {
