@@ -4,16 +4,17 @@ import { useWebSocket } from '../../hooks/useWebSocket'
 import LiveDashboard from '../views/LiveDashboard'
 import DinoView from '../views/DinoView'
 import SSVEPView from '../views/SSVEPView'
-import TestView from '../views/TestView'
 import RPSGame from '../views/RPSGame'
 import CalibrationView from '../views/CalibrationView'
+import MLTrainingView from '../views/MLTrainingView'
+import SettingsView from '../views/SettingsView'
 
 import '../../styles/App.css';
 import themePresets from '../themes/presets';
 import ScrollStack, { ScrollStackItem } from '../ui/ScrollStack';
 import PillNav from '../ui/PillNav';
 import Pill from '../ui/Pill';
-import { ConnectionButton } from '../ui/connection_btn';
+import { ConnectionButton } from '../ui/ConnectionButton';
 
 export default function Dashboard() {
   const { user, logout } = useAuth()
@@ -25,9 +26,9 @@ export default function Dashboard() {
 
   // WebSocket modal state and preset URLs
   const [wsModalOpen, setWsModalOpen] = useState(false)
-  const [localWs, setLocalWs] = useState(import.meta.env.VITE_WS_URL || 'ws://localhost:5000')
-  const [ngrokWs, setNgrokWs] = useState('')
-  const [theme, setTheme] = React.useState(() => localStorage.getItem('theme') || 'theme-violet');
+  const [localWs, setLocalWs] = useState(import.meta.env.VITE_WS_URL)
+  const [ngrokWs, setNgrokWs] = useState(import.meta.env.VITE_NGROK_WS_URL)
+  const [theme, setTheme] = React.useState(() => localStorage.getItem('theme') || 'theme-yellow-dark');
   const [navColors, setNavColors] = React.useState({ base: '#000000', pill: '#ffffff', pillText: '#000000', hoverText: '#ffffff' });
   const [authView, setAuthView] = useState(null);
   const isAuthenticated = !!user;
@@ -92,12 +93,13 @@ export default function Dashboard() {
 
 
   const navItems = React.useMemo(() => [
-    { label: 'Live', onClick: () => setCurrentPage('live'), href: '#live' },
+    { label: 'GRAPHS', onClick: () => setCurrentPage('live'), href: '#live' },
     { label: 'Dino', onClick: () => setCurrentPage('dino'), href: '#dino' },
     { label: 'SSVEP', onClick: () => setCurrentPage('ssvep'), href: '#ssvep' },
     { label: 'RPS', onClick: () => setCurrentPage('rps'), href: '#rps' },
+    { label: 'M. L.', onClick: () => setCurrentPage('ml_training'), href: '#ml_training' },
     { label: 'Calibration', onClick: () => setCurrentPage('calibration'), href: '#calibration' },
-    { label: 'Test', onClick: () => setCurrentPage('test'), href: '#test' },
+    { label: 'Settings', onClick: () => setCurrentPage('settings'), href: '#settings' },
     {
       label: 'Theme',
       type: 'pill',
@@ -137,7 +139,7 @@ export default function Dashboard() {
           <div className="flex items-center gap-3">
             <div className="relative group">
               <div className="absolute inset-0 bg-primary/20 blur-lg rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-              <video muted autoPlay loop playsInline preload="auto" aria-label="logo animation" className="w-10 h-10 relative z-10 rounded-lg border border-border bg-black object-cover">
+              <video muted autoPlay loop playsInline preload="auto" aria-label="logo animation" className="w-16 h-16 relative z-10 rounded-lg border border-border bg-black object-cover">
                 <source src="/Resources/brain_animation.mp4" type="video/mp4" />
               </video>
             </div>
@@ -171,7 +173,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <nav className="nav">
+          <nav className="nav shrink-0">
             <div className="backdrop-blur-sm bg-surface/50 border border-white/5 rounded-full p-1">
               <PillNav
                 items={navItems}
@@ -186,41 +188,45 @@ export default function Dashboard() {
               />
             </div>
           </nav>
-          <ConnectionButton
-            status={status}
-            latency={latency}
-            connect={connect}
-            disconnect={disconnect}
-          />
+          <div className="w-[180px] flex justify-end shrink-0">
+            <ConnectionButton
+              status={status}
+              latency={latency}
+              connect={connect}
+              disconnect={disconnect}
+            />
+          </div>
         </div>
       </div>
 
       {/* Main Content Area */}
-      <div className="container" style={{ flex: 1, padding: '24px 0', overflowY: 'auto' }}>
+      <div className="scrollbar-thin scrollbar-thumb-border hover:scrollbar-thumb-primary/50 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']" style={{ flex: 1, padding: '0px 0px', overflowY: 'auto' }}>
         {currentPage === 'live' && <LiveDashboard wsData={lastMessage} wsConfig={lastConfig} wsEvent={lastEvent} sendMessage={sendMessage} />}
         {currentPage === 'dino' && <DinoView wsData={lastMessage} wsEvent={lastEvent} isPaused={false} />}
         {currentPage === 'ssvep' && <SSVEPView />}
         {currentPage === 'test' && <TestView wsData={lastMessage} wsEvent={lastEvent} config={lastConfig} />}
         {currentPage === 'rps' && <RPSGame wsEvent={lastEvent} />}
         {currentPage === 'calibration' && <CalibrationView wsData={lastMessage} wsEvent={lastEvent} config={lastConfig} />}
+        {currentPage === 'ml_training' && <MLTrainingView />}
+        {currentPage === 'settings' && <SettingsView />}
       </div>
 
       {/* Footer */}
-      {/* <div className="footer">
-        NeuroKeys: BCI Typing Project •{' '}
+      <div className="footer">
+        NeuroTECH - A BCI Project •{' '}
         <a onClick={() => setAuthView('signup')} className="muted" href="#signup" rel="noreferrer">
           Sign Up
         </a>
-        {' '} •{' '}
+        {' '}•{' '}
         <a
           className="muted"
-          href="https://github.com/askh-tamrakar/NeuroKeys-BCI_Typing_Project"
+          href="https://github.com/askh-tamrakar/NeuroTECH-BCI"
           target="_blank"
           rel="noreferrer"
         >
           GitHub
         </a>
-      </div> */}
+      </div>
     </div>
   );
 }

@@ -6,7 +6,7 @@ EEG filter processor (Passive - Single Channel)
 """
 
 import numpy as np
-from scipy.signal import iirnotch, butter, lfilter, lfilter_zi
+from scipy.signal import iirnotch, butter, sosfilt
 
 class EEGFilterProcessor:
     def __init__(self, config: dict, sr: int = 512, channel_key: str = None):
@@ -20,9 +20,10 @@ class EEGFilterProcessor:
         # Initial design
         self._design_filters()
         
-        # Initialize state (0.0)
-        self.zi_notch = lfilter_zi(self.b_notch, self.a_notch) * 0.0
-        self.zi_band = lfilter_zi(self.b_band, self.a_band) * 0.0
+        # Initialize state (n_sections, 2)
+        # SOS state shape is always (sections, 2) for standard IIR (filter_design usually output='sos' returns (sections, 6))
+        self.zi_notch = np.zeros((self.sos_notch.shape[0], 2))
+        self.zi_band = np.zeros((self.sos_band.shape[0], 2))
 
     def _load_params(self):
         # 1. Global EEG Config
@@ -30,8 +31,6 @@ class EEGFilterProcessor:
         eeg_filters = eeg_base.get("filters", [])
         
         # 2. Channel Override?
-        # Note: EEG config is complex (list of filters), so deep merging is harder.
-        # Simple strategy: If `filters.<channel_key>.filters` exists, use that instead.
         if self.channel_key:
             ch_cfg = self.config.get("filters", {}).get(self.channel_key, {})
             if "filters" in ch_cfg:
@@ -49,12 +48,25 @@ class EEGFilterProcessor:
 
     def _design_filters(self):
         # Notch
-        self.b_notch, self.a_notch = iirnotch(self.notch_freq, self.notch_q, fs=self.sr)
+        # iirnotch doesn't support output='sos' directly in older scipy? 
+        # Actually it typically returns b, a. 
+        # To get SOS for notch, easiest is to convert tf2sos, but iirnotch is precise.
+        # Check if user has modern scipy from repro? Repro didn't check iirnotch sos.
+        # Fallback: keep Notch as BA (it's usually stable as 2nd order) OR convert.
+        # Let's try to keep Notch as BA if simple, but to be consistent let's convert tf2sos if needed.
+        # Actually, standard iirnotch (b, a) is fine because it's always 2nd order (low order = stable).
+        # The ISSUE is usually high order bandpass.
+        # BUT for consistency, let's use SOS for everything if possible.
+        # However, iirnotch returns (b, a). We can use tf2sos on it.
+        from scipy.signal import tf2sos
+        b_notch, a_notch = iirnotch(self.notch_freq, self.notch_q, fs=self.sr)
+        self.sos_notch = tf2sos(b_notch, a_notch)
+
         # Bandpass
         nyq = self.sr / 2.0
         low = self.bp_low / nyq
         high = self.bp_high / nyq
-        self.b_band, self.a_band = butter(self.bp_order, [low, high], btype="band")
+        self.sos_band = butter(self.bp_order, [low, high], btype="band", output='sos')
 
     def update_config(self, config: dict, sr: int):
         """Update filter parameters if config changed."""
@@ -70,14 +82,17 @@ class EEGFilterProcessor:
             print(f"[EEG] Config changed -> redesigning filters")
             self._design_filters()
             # Reset state
-            self.zi_notch = lfilter_zi(self.b_notch, self.a_notch) * 0.0
-            self.zi_band = lfilter_zi(self.b_band, self.a_band) * 0.0
+            self.zi_notch = np.zeros((self.sos_notch.shape[0], 2))
+            self.zi_band = np.zeros((self.sos_band.shape[0], 2))
 
     def process_sample(self, val: float) -> float:
         """Process a single sample value: Notch -> Bandpass."""
         # 1. Notch
-        notch_out, self.zi_notch = lfilter(self.b_notch, self.a_notch, [val], zi=self.zi_notch)
+        # sosfilt expects array, we pass [val]. Returns array.
+        notch_out, self.zi_notch = sosfilt(self.sos_notch, [val], zi=self.zi_notch)
+        
         # 2. Bandpass
-        band_out, self.zi_band = lfilter(self.b_band, self.a_band, notch_out, zi=self.zi_band)
+        band_out, self.zi_band = sosfilt(self.sos_band, notch_out, zi=self.zi_band)
+        
         return float(band_out[0])
 

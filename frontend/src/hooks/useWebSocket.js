@@ -48,10 +48,8 @@ export function useWebSocket(url = 'http://localhost:5000') {
       }
 
       socketRef.current = io(endpoint, {
-        reconnection: true,
-        reconnectionDelay: 1000,
-        reconnectionDelayMax: 5000,
-        reconnectionAttempts: 5,
+        reconnection: false, // User requested manual retry only
+        timeout: 3000, // Fail after 3 seconds
         transports: ['websocket', 'polling']
       })
 
@@ -88,7 +86,14 @@ export function useWebSocket(url = 'http://localhost:5000') {
       // === ERROR EVENT ===
       socketRef.current.on('error', (error) => {
         console.error('❌ WebSocket error:', error)
-        setStatus('error')
+        // Reset to disconnected on error to allow retry
+        setStatus('disconnected')
+      })
+
+      // === CONNECTION ERROR (Failed to connect) ===
+      socketRef.current.on('connect_error', (err) => {
+        console.warn('⚠️ Connection failed:', err.message)
+        setStatus('disconnected') // Go back to disconnected so user can click again
       })
 
       // === PONG EVENT (latency measurement) ===
@@ -103,8 +108,44 @@ export function useWebSocket(url = 'http://localhost:5000') {
       })
 
       // === DATA EVENTS ===
+      // === DATA EVENTS ===
+
+      // Batch Listener (Restored)
+      socketRef.current.on('bio_data_batch', (batchData) => {
+        try {
+          if (!batchData || !batchData.samples || batchData.samples.length === 0) return
+
+          // compatibility: use last sample for simple views
+          const lastSample = batchData.samples[batchData.samples.length - 1]
+
+          const rawPayload = {
+            stream_name: batchData.stream_name,
+            channels: lastSample.channels,
+            sample_rate: batchData.sample_rate,
+            sample_count: lastSample.sample_count,
+            timestamp: lastSample.timestamp,
+            // Attach FULL BATCH for LiveView
+            _batch: batchData.samples
+          }
+
+          setLastMessage({
+            data: JSON.stringify(rawPayload),
+            timestamp: Date.now(),
+            raw: rawPayload
+          })
+        } catch (e) {
+          console.warn('⚠️ Failed to parse bio_data_batch:', e)
+        }
+      })
+
+      let lastUpdate = 0
       socketRef.current.on('bio_data_update', (data) => {
         try {
+          // Throttle updates to ~30Hz (33ms) to prevent main thread saturation
+          const now = Date.now()
+          if (now - lastUpdate < 33) return
+          lastUpdate = now
+
           // Handle NEW LSL format (from fixed web_server.py)
           if (data.stream_name && data.channels && typeof data.channels === 'object') {
             const channels = data.channels

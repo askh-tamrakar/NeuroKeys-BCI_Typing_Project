@@ -13,8 +13,11 @@ class RPSExtractor:
         self.sr = sr
         
         # Window settings
-        # Window size 512 samples (~1s at 512Hz)
-        self.buffer_size = 512 
+        # Window size matches Calibration View default (1500ms)
+        # 1.5s * 512Hz = 768 samples
+        self.window_duration = 1.5
+        self.buffer_size = int(sr * self.window_duration)
+        
         # Stride 64 samples (~125ms update rate) for responsiveness
         self.stride = 64 
         
@@ -35,7 +38,14 @@ class RPSExtractor:
             
         return None
 
-    def _extract_features(self, window):
+    @staticmethod
+    def extract_features(window: list | np.ndarray, sr: int = None) -> dict:
+        """
+        Static method for stateless feature extraction.
+        """
+        if not window or len(window) == 0:
+            return {}
+
         data = np.array(window)
         
         # 1. RMS (Root Mean Square)
@@ -66,10 +76,13 @@ class RPSExtractor:
         
         # 9. Entropy (Approximate entropy via histogram)
         # Using simple histogram entropy as proxy
-        hist, _ = np.histogram(data, bins=10, density=True)
-        # Remove zeros to avoid log(0)
-        hist = hist[hist > 0]
-        entropy = -np.sum(hist * np.log2(hist))
+        try:
+            hist, _ = np.histogram(data, bins=10, density=True)
+            # Remove zeros to avoid log(0)
+            hist = hist[hist > 0]
+            entropy = -np.sum(hist * np.log2(hist))
+        except:
+            entropy = 0
         
         # 10. Energy
         energy = np.sum(data**2)
@@ -85,11 +98,17 @@ class RPSExtractor:
             "iemg": float(iemg),
             "entropy": float(entropy),
             "energy": float(energy),
-            "timestamp": self.sample_count / self.sr
         }
         
         return features
 
+    def _extract_features(self, window):
+        """
+        Internal wrapper to maintain compatibility and add timestamp.
+        """
+        features = RPSExtractor.extract_features(window, self.sr)
+        features["timestamp"] = self.sample_count / self.sr
+        return features
+
     def update_config(self, config: dict):
-        # Currently no dynamic config needed for extractor, but defined for interface consistency
         pass

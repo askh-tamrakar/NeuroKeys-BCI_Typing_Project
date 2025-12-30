@@ -20,5 +20,15 @@ htmlcov/
 *.sqlite3
 *.db
 *.bak
-
-data/processed/windows/
+data/processed/windows
+__pycache__
+src/feature/__pycache__/router.cpython-311.pyc
+src/feature/detectors/__pycache__/rps_detector.cpython-311.pyc
+src/feature/extractors/__pycache__/blink_extractor.cpython-311.pyc
+src/feature/extractors/__pycache__/rps_extractor.cpython-311.pyc
+src/processing/__pycache__/eeg_processor.cpython-311.pyc
+src/processing/__pycache__/emg_processor.cpython-311.pyc
+src/processing/__pycache__/eog_processor.cpython-311.pyc
+src/processing/__pycache__/filter_router.cpython-311.pyc
+src/utils/__pycache__/__init__.cpython-311.pyc
+src/web/__pycache__/web_server.cpython-311.pyc

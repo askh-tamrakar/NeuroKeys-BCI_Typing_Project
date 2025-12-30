@@ -3,9 +3,9 @@
 #include <Arduino.h>
 
 // ===== CONFIGURATION =====
-#define NUM_CHANNELS 2              // REDUCED to 2 channels
+#define NUM_CHANNELS 4              // INCREASED to 4 channels
 #define HEADER_LEN 3
-#define PACKET_LEN (NUM_CHANNELS * 2 + HEADER_LEN + 1)  // = 10 bytes (was 16)
+#define PACKET_LEN (NUM_CHANNELS * 2 + HEADER_LEN + 1)  // = 12 bytes
 #define SAMP_RATE 512.0             // INCREASED to 512 Hz (was 500)
 #define SYNC_BYTE_1 0xC7
 #define SYNC_BYTE_2 0x7C
@@ -40,9 +40,9 @@ void timerCallback(timer_callback_args_t __attribute((unused)) * p_args) {
     return;
   }
 
-  // Read ONLY 2 channels (A0, A1)
+  // Read 4 channels (A0, A1, A2, A3)
   for (currentChannel = 0; currentChannel < NUM_CHANNELS; currentChannel++) {
-    adcValue = analogRead(currentChannel);
+    adcValue = analogRead(A0 + currentChannel);
     packetBuffer[((2 * currentChannel) + HEADER_LEN)] = highByte(adcValue);
     packetBuffer[((2 * currentChannel) + HEADER_LEN + 1)] = lowByte(adcValue);
   }
@@ -78,7 +78,7 @@ void processCommand(String command) {
   command.toUpperCase();
 
   if (command == "WHORU") {
-    Serial.println("UNO-R4-2CH-512HZ");
+    Serial.println("UNO-R4-4CH-512HZ");
   }
   else if (command == "START") {
     timerStart();
@@ -92,10 +92,12 @@ void processCommand(String command) {
     Serial.println(timerStatus ? "RUNNING" : "STOPPED");
   }
   else if (command == "CONFIG") {
-    Serial.println("2 CHANNELS @ 512 Hz");
-    Serial.println("CH0 = A0 (Fp1)");
-    Serial.println("CH1 = A1 (Fp2)");
-    Serial.println("PACKET_SIZE = 10 bytes");
+    Serial.println("4 CHANNELS @ 512 Hz");
+    Serial.println("CH0 = A0");
+    Serial.println("CH1 = A1");
+    Serial.println("CH2 = A2");
+    Serial.println("CH3 = A3");
+    Serial.println("PACKET_SIZE = 12 bytes");
   }
   else {
     Serial.println("UNKNOWN_COMMAND");
@@ -119,11 +121,11 @@ void setup() {
   timerBegin(SAMP_RATE);
   analogReadResolution(14);
 
-  Serial.println("\n=== 2-CHANNEL BCI @ 512 Hz ===");
-  Serial.println("Channels: 2 (A0, A1)");
+  Serial.println("\n=== 4-CHANNEL BCI @ 512 Hz ===");
+  Serial.println("Channels: 4 (A0-A3)");
   Serial.println("Sampling: 512 Hz");
-  Serial.println("Packet Size: 10 bytes");
-  Serial.println("Data Rate: 5120 bytes/sec");
+  Serial.println("Packet Size: 12 bytes");
+  Serial.println("Data Rate: 6144 bytes/sec");
   Serial.println("Ready for brain typing!");
 }
 

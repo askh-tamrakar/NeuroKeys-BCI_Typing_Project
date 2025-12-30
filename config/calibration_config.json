@@ -4,7 +4,7 @@
     "enabled": true,
     "offset": 0.0,
     "gain": 1.0,
-    "calibration_date": "2025-12-27",
+    "calibration_date": "2025-12-29",
     "calibrated": true
   },
   "ch1": {
@@ -12,7 +12,23 @@
     "enabled": true,
     "offset": 0.0,
     "gain": 1.0,
-    "calibration_date": "2025-12-27",
+    "calibration_date": "2025-12-29",
+    "calibrated": true
+  },
+  "ch2": {
+    "sensor": "EOG",
+    "enabled": true,
+    "offset": 0.0,
+    "gain": 1.0,
+    "calibration_date": "2025-12-29",
+    "calibrated": true
+  },
+  "ch3": {
+    "sensor": "EOG",
+    "enabled": true,
+    "offset": 0.0,
+    "gain": 1.0,
+    "calibration_date": "2025-12-29",
     "calibrated": true
   }
 }

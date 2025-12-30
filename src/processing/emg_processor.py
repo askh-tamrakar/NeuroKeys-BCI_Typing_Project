@@ -6,7 +6,8 @@ EMG filter processor (Passive)
 """
 
 import numpy as np
-from scipy.signal import butter, lfilter, lfilter_zi
+import numpy as np
+from scipy.signal import butter, sosfilt, iirnotch, tf2sos
 
 class EMGFilterProcessor:
     def __init__(self, config: dict, sr: int = 512, channel_key: str = None):
@@ -17,10 +18,18 @@ class EMGFilterProcessor:
         self._load_params()
         self._design_filters()
         
-        # Initialize state
-        self.zi_hp = lfilter_zi(self.b_hp, self.a_hp) * 0.0
-        self.zi_notch = lfilter_zi(self.b_notch, self.a_notch) * 0.0 if self.notch_enabled else None
-        self.zi_bp = lfilter_zi(self.b_bp, self.a_bp) * 0.0 if self.bp_enabled else None
+        # Initialize state (sections, 2)
+        self.zi_hp = np.zeros((self.sos_hp.shape[0], 2))
+        
+        if self.notch_enabled:
+            self.zi_notch = np.zeros((self.sos_notch.shape[0], 2))
+        else:
+            self.zi_notch = None
+
+        if self.bp_enabled:
+            self.zi_bp = np.zeros((self.sos_bp.shape[0], 2))
+        else:
+            self.zi_bp = None
 
     def _load_params(self):
         # 1. Default Global Config
@@ -52,22 +61,29 @@ class EMGFilterProcessor:
         
         # 1. High Pass
         wn_hp = self.hp_cutoff / nyq
-        self.b_hp, self.a_hp = butter(self.hp_order, wn_hp, btype="high", analog=False)
+        self.sos_hp = butter(self.hp_order, wn_hp, btype="high", output='sos', analog=False)
 
         # 2. Notch
         if self.notch_enabled:
-            from scipy.signal import iirnotch
-            self.b_notch, self.a_notch = iirnotch(self.notch_freq, self.notch_q, fs=self.sr)
+            b_notch, a_notch = iirnotch(self.notch_freq, self.notch_q, fs=self.sr)
+            self.sos_notch = tf2sos(b_notch, a_notch)
 
         # 3. Bandpass
         if self.bp_enabled:
             low = self.bp_low / nyq
+            if self.bp_high >= self.sr / 2.0:
+                print(f"[EMG] ⚠️ Bandpass High ({self.bp_high} Hz) >= Nyquist. Capping to {self.sr/2.0 - 1.0} Hz.")
+                self.bp_high = self.sr / 2.0 - 1.0
+            
             high = self.bp_high / nyq
+            
             if low <= 0 or high >= 1:
-                # Fallback if invalid
-                self.b_bp, self.a_bp = [1.0], [1.0] 
+                # Fallback if invalid: Disable filter to avoid crash
+                print(f"[EMG] ⚠️ Invalid Bandpass freq: {self.bp_low}-{self.bp_high} Hz (Nyquist: {nyq}). Disabling.")
+                self.bp_enabled = False
+                self.sos_bp = None
             else:
-                self.b_bp, self.a_bp = butter(self.bp_order, [low, high], btype="bandpass", analog=False)
+                self.sos_bp = butter(self.bp_order, [low, high], btype="bandpass", output='sos', analog=False)
 
     def update_config(self, config: dict, sr: int):
         """Update filter parameters if config changed."""
@@ -81,28 +97,39 @@ class EMGFilterProcessor:
         
         if old_state != new_state:
             print(f"[EMG] Config changed ({self.channel_key}) -> HP:{self.hp_cutoff} N:{self.notch_enabled} BP:{self.bp_enabled}")
+            
             self._design_filters()
             
-            # Reset states
-            self.zi_hp = lfilter_zi(self.b_hp, self.a_hp) * 0.0
-            self.zi_notch = lfilter_zi(self.b_notch, self.a_notch) * 0.0 if self.notch_enabled else None
-            self.zi_bp = lfilter_zi(self.b_bp, self.a_bp) * 0.0 if self.bp_enabled else None
+            # Reset
+            self.zi_hp = np.zeros((self.sos_hp.shape[0], 2))
+
+            if self.notch_enabled:
+                self.zi_notch = np.zeros((self.sos_notch.shape[0], 2))
+            else:
+                self.zi_notch = None
+
+            if self.bp_enabled:
+                self.zi_bp = np.zeros((self.sos_bp.shape[0], 2))
+            else:
+                self.zi_bp = None
 
     def process_sample(self, val: float) -> float:
         """Process a single sample value."""
         # 1. High Pass
-        out, self.zi_hp = lfilter(self.b_hp, self.a_hp, [val], zi=self.zi_hp)
-        out = out[0]
-
+        # Returns array, take [0] only if we return scalar here, wait.
+        # But sosfilt output preserves shape. If input is [val], output is [out].
+        # But zi must be maintained.
+        
+        # Note: sosfilt([val], zi=zi) returns (filtered_array, new_zi)
+        out, self.zi_hp = sosfilt(self.sos_hp, [val], zi=self.zi_hp)
+        
         # 2. Notch
         if self.notch_enabled and self.zi_notch is not None:
-            filtered, self.zi_notch = lfilter(self.b_notch, self.a_notch, [out], zi=self.zi_notch)
-            out = filtered[0]
+             out, self.zi_notch = sosfilt(self.sos_notch, out, zi=self.zi_notch)
             
         # 3. Bandpass
         if self.bp_enabled and self.zi_bp is not None:
-             filtered, self.zi_bp = lfilter(self.b_bp, self.a_bp, [out], zi=self.zi_bp)
-             out = filtered[0]
+             out, self.zi_bp = sosfilt(self.sos_bp, out, zi=self.zi_bp)
 
-        return float(out)
+        return float(out[0])
 

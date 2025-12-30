@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import Sidebar from '../ui/Sidebar'
 import LiveView from '../views/LiveView'
 import { ConfigService } from '../../services/ConfigService'
+import '../../styles/live/LiveDashboard.css'
 
 export default function LiveDashboard({ wsData, wsConfig, wsEvent, sendMessage }) {
     const [config, setConfig] = useState()
@@ -33,26 +34,29 @@ export default function LiveDashboard({ wsData, wsConfig, wsEvent, sendMessage }
     }, [wsConfig])
 
     // Auto-save removed. Manual save only.
-    const handleManualSave = () => {
-        if (!config) return
+    const handleManualSave = (updatedConfig) => {
+        // Use updatedConfig if provided (and not an event object), otherwise fallback to state config
+        const configToSave = (updatedConfig && !updatedConfig.type) ? updatedConfig : config
+
+        if (!configToSave) return
 
         // Persist locally + Backend
-        ConfigService.saveConfig(config)
+        ConfigService.saveConfig(configToSave)
 
         // Sync to Backend via WS
         if (sendMessage) {
             sendMessage({
                 type: 'SAVE_CONFIG',
-                config: config
+                config: configToSave
             })
         }
         // alert("Configuration saved and synced!")
     }
 
-    if (loading) return <div className="flex items-center justify-center h-screen bg-bg text-text">Loading Config...</div>
+    if (loading) return <div className="loading-screen">Loading Config...</div>
 
     return (
-        <div className="flex h-screen w-full bg-bg overflow-hidden relative">
+        <div className="dashboard-container">
             {/* Fixed Sidebar */}
             <Sidebar
                 config={config}
@@ -60,15 +64,15 @@ export default function LiveDashboard({ wsData, wsConfig, wsEvent, sendMessage }
                 isPaused={isPaused}
                 setIsPaused={setIsPaused}
                 onSave={handleManualSave}
-                className="shrink-0 z-20"
+                className="sidebar-fixed"
             />
 
             {/* Main Content Area */}
-            <main className="flex-grow h-full overflow-hidden relative flex flex-col">
+            <main className="main-content">
                 {/* Header / Top Bar if needed, currently sidebar handles controls */}
 
                 {/* LiveView Visualization */}
-                <div className="flex-grow p-4 md:p-6 overflow-hidden relative">
+                <div className="live-view-wrapper">
                     <LiveView
                         wsData={wsData}
                         wsEvent={wsEvent}

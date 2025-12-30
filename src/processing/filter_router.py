@@ -38,6 +38,7 @@ try:
     from .emg_processor import EMGFilterProcessor
     from .eog_processor import EOGFilterProcessor
     from .eeg_processor import EEGFilterProcessor
+    from ..utils.config import config_manager
 except ImportError:
     print("[Router] Running from different context, using local imports")
     import sys
@@ -45,53 +46,17 @@ except ImportError:
     from src.processing.emg_processor import EMGFilterProcessor
     from src.processing.eog_processor import EOGFilterProcessor
     from src.processing.eeg_processor import EEGFilterProcessor
+    from src.utils.config import config_manager
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-CONFIG_PATH = PROJECT_ROOT / "config" / "sensor_config.json"
 RAW_STREAM_NAME = "BioSignals-Raw-uV"
 PROCESSED_STREAM_NAME = "BioSignals-Processed"
 RELOAD_INTERVAL = 2.0
 DEFAULT_SR = 512
 
-
 def load_config() -> dict:
-    """Load sensor_config.json with safe fallback defaults."""
-    defaults = {
-        "sampling_rate": DEFAULT_SR,
-        "channel_mapping": {
-            "ch0": {"sensor": "EMG", "enabled": True},
-            "ch1": {"sensor": "EOG", "enabled": True}
-        },
-        "filters": {
-            "EMG": {"cutoff": 70.0, "order": 4},
-            "EOG": {"cutoff": 10.0, "order": 4},
-            "EEG": {
-                "filters": [
-                    {"type": "notch", "freq": 50.0, "Q": 30},
-                    {"type": "bandpass", "low": 0.5, "high": 45.0, "order": 4}
-                ]
-            }
-        }
-    }
-    
-    if not CONFIG_PATH.exists():
-        return defaults
-    
-    try:
-        with open(CONFIG_PATH, "r") as f:
-            cfg = json.load(f)
-        
-        if "sampling_rate" not in cfg:
-            cfg["sampling_rate"] = defaults["sampling_rate"]
-        if "filters" not in cfg:
-            cfg["filters"] = defaults["filters"]
-        if "channel_mapping" not in cfg:
-            cfg["channel_mapping"] = defaults["channel_mapping"]
-        
-        return cfg
-    except Exception as e:
-        print(f"[Router] Failed to load config ({CONFIG_PATH}): {e} — using defaults")
-        return defaults
+    """Load fully merged config using ConfigManager."""
+    return config_manager.get_all_configs()
 
 
 def get_config_hash(cfg: dict) -> str:
@@ -396,7 +361,7 @@ class FilterRouter:
                                     filtered_val = processor.process_sample(raw_val)
                                 else:
                                     # ✅ Channel disabled or unmapped - pass through
-                                    print(f"[Router] [WARNING] Channel {ch_idx} disabled or unmapped - passing through")
+                                    # print(f"[Router] [WARNING] Channel {ch_idx} disabled or unmapped - passing through")
                                     filtered_val = raw_val
                                 
                                 processed_sample.append(filtered_val)
