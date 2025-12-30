@@ -26,8 +26,8 @@ export default function Dashboard() {
 
   // WebSocket modal state and preset URLs
   const [wsModalOpen, setWsModalOpen] = useState(false)
-  const [localWs, setLocalWs] = useState(import.meta.env.VITE_WS_URL || 'ws://localhost:5000')
-  const [ngrokWs, setNgrokWs] = useState('')
+  const [localWs, setLocalWs] = useState(import.meta.env.VITE_WS_URL)
+  const [ngrokWs, setNgrokWs] = useState(import.meta.env.VITE_NGROK_WS_URL)
   const [theme, setTheme] = React.useState(() => localStorage.getItem('theme') || 'theme-yellow-dark');
   const [navColors, setNavColors] = React.useState({ base: '#000000', pill: '#ffffff', pillText: '#000000', hoverText: '#ffffff' });
   const [authView, setAuthView] = useState(null);

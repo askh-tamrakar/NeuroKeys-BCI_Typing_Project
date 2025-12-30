@@ -1,6 +1,7 @@
 import numpy as np
 import collections
 from scipy import stats
+from scipy.signal import butter, sosfilt, sosfilt_zi, find_peaks
 
 class BlinkExtractor:
     """
@@ -27,9 +28,13 @@ class BlinkExtractor:
         self.buffer_size = sr 
         self.buffer = collections.deque(maxlen=self.buffer_size)
         
-        # Baseline estimation (rolling mean)
-        self.baseline = 0.0
-        self.alpha = 0.01 # Smoothing factor for baseline
+        # Bandpass Filter (0.5 - 10 Hz)
+        # 0.5Hz removes drift, 10Hz removes EMG/noise while keeping blink shape
+        nyquist = 0.5 * sr
+        low = 0.5 / nyquist
+        high = 10.0 / nyquist
+        self.sos = butter(4, [low, high], btype='band', output='sos')
+        self.zi = sosfilt_zi(self.sos)
         
         # State tracking
         self.is_collecting = False
@@ -45,14 +50,10 @@ class BlinkExtractor:
         """
         self.current_idx += 1
         
-        # Update baseline (very slow moving average)
-        if self.current_idx == 1:
-            self.baseline = sample_val
-        else:
-            self.baseline = self.alpha * sample_val + (1 - self.alpha) * self.baseline
-            
-        # Zero-centered signal
-        zero_centered = sample_val - self.baseline
+        # Apply Bandpass Filter
+        filtered_val, self.zi = sosfilt(self.sos, [sample_val], zi=self.zi)
+        zero_centered = filtered_val[0]
+        
         self.buffer.append(zero_centered)
         
         # Detection logic:
@@ -128,10 +129,10 @@ class BlinkExtractor:
         
         asymmetry = rise_time_ms / (fall_time_ms + 1e-6)
         
-        # New Feature: Peak Counting (for Double Blink Detection)
-        # Find peaks > 50% of max amplitude to ignore noise
-        from scipy.signal import find_peaks
-        peaks, _ = find_peaks(abs_data, height=peak_amp * 0.5, distance=sr * 0.05) # 50ms distance
+        # Robust Peak Detection (Prominence based)
+        # Prominence > 50% of peak amplitude helps filter out overlapping noise
+        # Distance > 200ms (0.2 * sr) to avoid counting the same blink or rapid artifacts
+        peaks, _ = find_peaks(abs_data, prominence=peak_amp * 0.4, distance=sr * 0.2)
         peak_count = len(peaks)
         
         # Statistical features

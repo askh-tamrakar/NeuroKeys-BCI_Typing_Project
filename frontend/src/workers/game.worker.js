@@ -5,18 +5,20 @@ let SETTINGS = {
     GRAVITY: 0.4,
     JUMP_STRENGTH: -10,
     GROUND_OFFSET: 60,
-    DINO_WIDTH: 44,
-    DINO_HEIGHT: 47,
-    OBSTACLE_WIDTH: 20,
-    OBSTACLE_MIN_HEIGHT: 40,
-    OBSTACLE_MAX_HEIGHT: 60,
-    GAME_SPEED: 5, // Derived
+    DINO_WIDTH: 62,
+    DINO_HEIGHT: 66,
+    OBSTACLE_WIDTH: 28,
+    OBSTACLE_MIN_HEIGHT: 56,
+    OBSTACLE_MAX_HEIGHT: 84,
+    GAME_SPEED: 5,
     SPAWN_INTERVAL: 1150,
     CANVAS_WIDTH: 800,
     CANVAS_HEIGHT: 376,
     CYCLE_DURATION: 100,
     JUMP_DISTANCE: 150,
+    JUMP_DISTANCE: 150,
     ENABLE_TREES: true,
+    OBSTACLE_BONUS_FACTOR: 0.1,
 };
 
 // Game State
@@ -25,7 +27,7 @@ let ctx = null;
 let animationId = null;
 let lastTime = 0;
 
-let gameState = 'ready'; // ready, playing, paused, gameOver
+let gameState = 'ready';
 let score = 0;
 let highScore = 0;
 let dinoY = 0;
@@ -33,19 +35,27 @@ let velocity = 0;
 let obstacles = [];
 let lastSpawnTimestamp = 0;
 let distance = 0;
-let gameTime = 0; // 0-1 for day/night cycle
+let gameTime = 0;
 let lastSentScore = 0;
+let obstaclesPassed = 0;
+let scoreMultiplier = 1.0;
 
 // Visuals State
 let clouds = [];
 let trees = [];
+let bushes = [];
+let extraBushes = []; // Additional foreground/background bushes
 let stars = [];
+let bushSprites = []; // Array of ImageBitmaps
 
 // Eye State (for animation)
 let eyeState = 'open'; // open, blink, double-blink
 let eyeStateTimer = null;
 
 // --- Initialization ---
+
+// Bush Pixel Matrices (0 = empty, 1 = pixel)
+// Removed procedural variants
 
 function initVisuals() {
     // Init clouds
@@ -79,6 +89,56 @@ function initVisuals() {
     }
     trees.sort((a, b) => a.depth - b.depth);
 
+    // Init bushes (Layered Sprites)
+    bushes = [];
+    if (bushSprites && bushSprites.length > 0) {
+
+        const layers = [
+            { count: 5, scale: 0.6, speed: 0.8, yOff: 5, layer: 0 },
+            { count: 4, scale: 0.9, speed: 1.0, yOff: 15, layer: 1 },
+            { count: 3, scale: 1.2, speed: 1.2, yOff: 25, layer: 2 }
+        ];
+
+        layers.forEach(layerConfig => {
+            const count = Math.floor(SETTINGS.CANVAS_WIDTH / 150) + layerConfig.count;
+            for (let i = 0; i < count; i++) {
+                bushes.push({
+                    x: Math.random() * SETTINGS.CANVAS_WIDTH,
+                    yOffset: layerConfig.yOff,
+                    variant: Math.floor(Math.random() * bushSprites.length),
+                    scale: layerConfig.scale * (0.9 + Math.random() * 0.2),
+                    speedFactor: layerConfig.speed,
+                    layer: layerConfig.layer
+                });
+            }
+        });
+
+        // Sort by layer so back draws first
+        bushes.sort((a, b) => a.layer - b.layer);
+    }
+
+    // Init Visual Bushes (Layers 3 & 4)
+    extraBushes = [];
+    const extraLayers = [
+        { count: 3, scale: 0.5, speed: 0.4, yOff: 0, layer: 3 },
+        { count: 2, scale: 1.8, speed: 1.6, yOff: 45, layer: 4 },
+        { count: 1, scale: 2.2, speed: 1.95, yOff: 60, layer: 5 }
+    ];
+
+    extraLayers.forEach(layerConfig => {
+        const count = Math.floor(SETTINGS.CANVAS_WIDTH / 250) + layerConfig.count;
+        for (let i = 0; i < count; i++) {
+            extraBushes.push({
+                x: Math.random() * SETTINGS.CANVAS_WIDTH,
+                variant: Math.floor(Math.random() * (bushSprites.length || 1)),
+                scale: layerConfig.scale,
+                speedFactor: layerConfig.speed,
+                yOffset: layerConfig.yOff,
+                layer: layerConfig.layer
+            });
+        }
+    });
+
     // Init stars
     stars = [];
     for (let i = 0; i < 50; i++) {
@@ -102,6 +162,8 @@ function resetGame() {
     obstacles = [];
     lastSpawnTimestamp = Date.now();
     distance = 0;
+    obstaclesPassed = 0;
+    scoreMultiplier = 1.0;
     self.postMessage({ type: 'SCORE_UPDATE', score: 0 });
 }
 
@@ -174,8 +236,18 @@ function updatePhysics(deltaTime) {
             });
         }
 
+        // Check for passed obstacles
+        obstacles.forEach(obs => {
+            if (!obs.passed && obs.x + obs.width < 75) { // 75 is Dino X position
+                obs.passed = true;
+                obstaclesPassed++;
+                scoreMultiplier = 1.0 + (obstaclesPassed * SETTINGS.OBSTACLE_BONUS_FACTOR);
+                // Optional: Log or visual feedback could go here
+            }
+        });
+
         // Score
-        score += 1 * timeFactor; // Score based on distance/time
+        score += (1 * timeFactor) * scoreMultiplier; // Score based on distance/time * multiplier
 
         const displayScore = Math.floor(score / 10);
         if (displayScore > lastSentScore) {
@@ -184,17 +256,33 @@ function updatePhysics(deltaTime) {
         }
 
         // Collisions
+        // Collisions
         const groundY = SETTINGS.CANVAS_HEIGHT - SETTINGS.GROUND_OFFSET;
         const dinoX = 75;
-        const dinoLeft = dinoX + 10;
-        const dinoRight = dinoX + SETTINGS.DINO_WIDTH - 10;
-        const dinoTop = groundY - SETTINGS.DINO_HEIGHT - dinoY + 5;
-        const dinoBottom = groundY - dinoY - 5;
+
+        // Use proportional hitboxes so scaling works as expected
+        const dinoPadX = SETTINGS.DINO_WIDTH * 0.25; // 25% padding on each side (was ~10px on 44px)
+        const dinoPadY = SETTINGS.DINO_HEIGHT * 0.15; // 15% padding on top/bottom
+
+        const dinoLeft = dinoX + dinoPadX;
+        const dinoRight = dinoX + SETTINGS.DINO_WIDTH - dinoPadX;
+
+        // dinoY is negative when going UP. groundY is the baseline.
+        // Visual Top: groundY + dinoY - HEIGHT
+        // Visual Bottom: groundY + dinoY
+        // Hitbox Top = Visual Top + PadY (moved down)
+        // Hitbox Bottom = Visual Bottom - PadY (moved up)
+
+        const dinoTop = groundY + dinoY - SETTINGS.DINO_HEIGHT + dinoPadY;
+        const dinoBottom = groundY + dinoY - dinoPadY;
 
         for (const obs of obstacles) {
-            const obsLeft = obs.x + 5;
-            const obsRight = obs.x + obs.width - 5;
-            const obsTop = groundY - obs.height;
+            // Proportional obstacle hitbox
+            const obsPad = obs.width * 0.2; // 20% padding (was ~5px on 20px)
+
+            const obsLeft = obs.x + obsPad;
+            const obsRight = obs.x + obs.width - obsPad;
+            const obsTop = groundY - obs.height; // Top is hard (cactus spikes), maybe keep it tight?
             const obsBottom = groundY;
 
             if (dinoRight > obsLeft && dinoLeft < obsRight && dinoBottom > obsTop && dinoTop < obsBottom) {
@@ -227,6 +315,26 @@ function updatePhysics(deltaTime) {
                 }
             });
         }
+
+        // Bushes (Move with parallax)
+        bushes.forEach(bush => {
+            bush.x -= GAME_SPEED * bush.speedFactor;
+            if (bush.x < -100) { // Offscreen 
+                // Recycle
+                bush.x = SETTINGS.CANVAS_WIDTH + Math.random() * 200;
+                // Keep layer properties (scale, yOff, speed) consistent for this object, just randomize variant
+                bush.variant = Math.floor(Math.random() * (bushSprites.length || 1));
+            }
+        });
+
+        // Visual Bushes (Move with parallax)
+        extraBushes.forEach(bush => {
+            bush.x -= GAME_SPEED * bush.speedFactor;
+            if (bush.x < -100) {
+                bush.x = SETTINGS.CANVAS_WIDTH + Math.random() * 400; // More sparse
+                bush.variant = Math.floor(Math.random() * (bushSprites.length || 1));
+            }
+        });
     }
 }
 
@@ -240,7 +348,11 @@ const COLORS = {
     primary: '#3b82f6',
     border: '#e5e7eb',
     muted: '#9ca3af',
-    accent: '#3b82f6'
+    accent: '#3b82f6',
+    bushLight: '#a7f3d0', // Very light green
+    bush: '#4ade80',  // Light green
+    bushDark: '#16a34a', // Darker green
+    berry: '#ef4444' // Red berry
 };
 
 function drawPixelCircle(cx, cy, radius, color) {
@@ -272,8 +384,9 @@ function drawSky(width, height) {
     ctx.fillRect(0, 0, width, height);
 
     const centerX = width / 2;
-    const centerY = height + 100;
     const radius = width * 0.6;
+    // Ensure the sun/moon arc peaks at y=50 (visible)
+    const centerY = Math.max(height + 100, radius * 0.9 + 50);
 
     // Sun
     if (gameTime > 0.05 && gameTime < 0.65) {
@@ -364,6 +477,36 @@ function drawTrees(width, groundY) {
     ctx.globalAlpha = 1.0;
 }
 
+function drawBushes(groundY) {
+    if (!bushSprites || bushSprites.length === 0) return;
+
+    try {
+        bushes.forEach(bush => {
+            const sprite = bushSprites[bush.variant];
+            if (!sprite) return;
+
+            const bx = Math.floor(bush.x);
+            // Height calculation based on sprite aspect ratio if possible
+            const sW = sprite.width;
+            const sH = sprite.height;
+
+            const drawW = Math.floor(sW * bush.scale);
+            const drawH = Math.floor(sH * bush.scale);
+
+            // groundY is the top of the ground line
+            const by = Math.floor(groundY - drawH + bush.yOffset);
+
+            if (bx + drawW > -50 && bx < SETTINGS.CANVAS_WIDTH + 50) {
+                ctx.globalAlpha = bush.layer === 0 ? 0.7 : 1.0; // Dim back layer
+                ctx.drawImage(sprite, bx, by, drawW, drawH);
+                ctx.globalAlpha = 1.0;
+            }
+        });
+    } catch (err) {
+        console.error("Error drawing bushes:", err);
+    }
+}
+
 function drawDino(x, y) {
     const { DINO_WIDTH, DINO_HEIGHT } = SETTINGS;
     const scaleX = DINO_WIDTH / 44;
@@ -444,58 +587,97 @@ function drawCactus(x, y, width, height) {
 function draw() {
     if (!ctx) return;
 
-    const width = SETTINGS.CANVAS_WIDTH;
-    const height = SETTINGS.CANVAS_HEIGHT;
-    const groundY = height - SETTINGS.GROUND_OFFSET;
+    try {
+        const width = SETTINGS.CANVAS_WIDTH;
+        const height = SETTINGS.CANVAS_HEIGHT;
+        const groundY = height - SETTINGS.GROUND_OFFSET;
 
-    // Clear
-    ctx.clearRect(0, 0, width, height);
+        // Clear
+        ctx.clearRect(0, 0, width, height);
 
-    // Background
-    drawSky(width, height);
-    drawTrees(width, groundY);
+        // Background
+        drawSky(width, height);
+        drawTrees(width, groundY);
 
-    // Ground
-    ctx.fillStyle = COLORS.surface;
-    ctx.fillRect(0, Math.floor(groundY), width, height - groundY);
-    ctx.fillStyle = COLORS.border;
-    ctx.fillRect(0, Math.floor(groundY), width, 10);
+        // Visual Bushes (Back Layer - Layer 3)
+        extraBushes.forEach(bush => {
+            if (bush.layer === 3) { // Far back
+                const sprite = bushSprites[bush.variant];
+                if (sprite) {
+                    const drawW = Math.floor(sprite.width * bush.scale);
+                    const drawH = Math.floor(sprite.height * bush.scale);
+                    const by = Math.floor(groundY - drawH + bush.yOffset);
 
-    // Terrain pattern
-    const offset = distance % 100;
-    ctx.fillStyle = COLORS.muted;
-    for (let i = -100; i < width + 100; i += 50) {
-        ctx.fillRect(Math.floor(i - offset + 10), Math.floor(groundY + 15), 10, 8);
-    }
+                    ctx.globalAlpha = 0.6; // Faded for background
+                    ctx.drawImage(sprite, Math.floor(bush.x), by, drawW, drawH);
+                    ctx.globalAlpha = 1.0;
+                }
+            }
+        });
 
-    // Dino
-    const dinoYPos = groundY - SETTINGS.DINO_HEIGHT + dinoY;
-    drawDino(75, dinoYPos);
-
-    // Obstacles
-    obstacles.forEach(obs => {
-        drawCactus(obs.x, groundY - obs.height, obs.width, obs.height);
-    });
-
-    // Score & UI (Handled by React Overlay now)
-    // ctx.fillStyle = COLORS.text;
-    // ctx.font = 'bold 20px monospace';
-    // ctx.textAlign = 'right';
-    // ctx.fillText(`Score: ${Math.floor(score / 10)}`, width - 15, 15);
-    // ctx.fillText(`Best: ${Math.floor(highScore / 10)}`, width - 15, 40);
-
-    if (gameState === 'ready') {
-        ctx.textAlign = 'center';
-        ctx.font = 'bold 24px sans-serif';
-        ctx.fillText('Blink to Start!', width / 2, height / 2 - 20);
-    } else if (gameState === 'gameOver') {
-        ctx.textAlign = 'center';
-        ctx.font = 'bold 24px sans-serif';
+        // Ground
+        ctx.fillStyle = COLORS.surface;
+        ctx.fillRect(0, Math.floor(groundY), width, height - groundY);
+        // Draw the main line in PRIMARY color as requested ("primary color line")
         ctx.fillStyle = COLORS.primary;
-        ctx.fillText('GAME OVER!', width / 2, height / 2 - 20);
-        ctx.fillStyle = COLORS.text;
-        ctx.font = '16px sans-serif';
-        ctx.fillText('Blink to restart', width / 2, height / 2 + 20);
+        ctx.fillRect(0, Math.floor(groundY), width, 4);
+
+        // Draw Bushes (Standard Layers 0-2)
+        drawBushes(groundY);
+
+        // Dino
+        const dinoYPos = groundY - SETTINGS.DINO_HEIGHT + dinoY;
+        drawDino(75, dinoYPos);
+
+        // Obstacles
+        obstacles.forEach(obs => {
+            drawCactus(obs.x, groundY - obs.height, obs.width, obs.height);
+        });
+
+        // Visual Bushes (Front Layer - Layer 4)
+        extraBushes.forEach(bush => {
+            if (bush.layer === 4) { // Foreground
+                const sprite = bushSprites[bush.variant];
+                if (sprite) {
+                    const drawW = Math.floor(sprite.width * bush.scale);
+                    const drawH = Math.floor(sprite.height * bush.scale);
+                    const by = Math.floor(groundY - drawH + bush.yOffset);
+
+                    ctx.globalAlpha = 1.0;
+                    ctx.drawImage(sprite, Math.floor(bush.x), by, drawW, drawH);
+                }
+            } else if (bush.layer === 5) { // Extreme Foreground (Blurry?)
+                const sprite = bushSprites[bush.variant];
+                if (sprite) {
+                    const drawW = Math.floor(sprite.width * bush.scale);
+                    const drawH = Math.floor(sprite.height * bush.scale);
+                    const by = Math.floor(groundY - drawH + bush.yOffset);
+
+                    ctx.globalAlpha = 1.0;
+                    // Optional: expensive filter, sticking to raw draw for perf
+                    // ctx.filter = 'blur(2px)'; 
+                    ctx.drawImage(sprite, Math.floor(bush.x), by, drawW, drawH);
+                    // ctx.filter = 'none';
+                }
+            }
+        });
+
+        if (gameState === 'ready') {
+            ctx.textAlign = 'center';
+            ctx.font = 'bold 24px sans-serif';
+            ctx.fillStyle = COLORS.text;
+            ctx.fillText('Blink to Start!', width / 2, height / 2 - 20);
+        } else if (gameState === 'gameOver') {
+            ctx.textAlign = 'center';
+            ctx.font = 'bold 24px sans-serif';
+            ctx.fillStyle = COLORS.primary;
+            ctx.fillText('GAME OVER!', width / 2, height / 2 - 20);
+            ctx.fillStyle = COLORS.text;
+            ctx.font = '16px sans-serif';
+            ctx.fillText('Blink to restart', width / 2, height / 2 + 20);
+        }
+    } catch (err) {
+        console.error("[Worker] Draw Error:", err);
     }
 }
 
@@ -524,6 +706,9 @@ self.onmessage = (e) => {
             if (payload.theme) {
                 Object.assign(COLORS, payload.theme);
             }
+            if (payload.bushSprites) {
+                bushSprites = payload.bushSprites;
+            }
             highScore = payload.highScore || 0;
             initVisuals();
             lastTime = Date.now();
@@ -541,6 +726,18 @@ self.onmessage = (e) => {
 
         case 'RESET_SCORE':
             highScore = 0;
+            break;
+
+        case 'RESIZE':
+            if (canvas) {
+                const { width, height } = payload;
+                canvas.width = width;
+                canvas.height = height;
+                SETTINGS.CANVAS_WIDTH = width;
+                SETTINGS.CANVAS_HEIGHT = height;
+                // Force redraw immediately if paused/ready so it doesn't look broken
+                if (gameState !== 'playing') draw();
+            }
             break;
 
         case 'STOP':

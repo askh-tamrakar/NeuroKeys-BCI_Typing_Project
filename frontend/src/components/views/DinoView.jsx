@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import '../../styles/views/DinoView.css'
 import CameraPanel from '../ui/CameraPanel'
+import CustomSelect from '../ui/CustomSelect'
 import Counter from '../ui/Counter'
 import CountUp from '../ui/CountUp'
 
@@ -19,11 +20,11 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         GRAVITY: 0.4,
         JUMP_STRENGTH: -10,
         GROUND_OFFSET: 60,
-        DINO_WIDTH: 44,
-        DINO_HEIGHT: 47,
-        OBSTACLE_WIDTH: 20,
-        OBSTACLE_MIN_HEIGHT: 40,
-        OBSTACLE_MAX_HEIGHT: 60,
+        DINO_WIDTH: 62,
+        DINO_HEIGHT: 66,
+        OBSTACLE_WIDTH: 28,
+        OBSTACLE_MIN_HEIGHT: 56,
+        OBSTACLE_MAX_HEIGHT: 84,
         GAME_SPEED: 1.8,
         SPAWN_INTERVAL: 1150,
         CANVAS_WIDTH: 800,
@@ -33,10 +34,11 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         ENABLE_TREES: true,
         ENABLE_MANUAL_CONTROLS: true,
         CONTROL_CHANNEL: 'ch3',
+        OBSTACLE_BONUS_FACTOR: 0.025,
     }
 
     const [settings, setSettings] = useState(() => {
-        const saved = localStorage.getItem('dino_settings_v2')
+        const saved = localStorage.getItem('dino_settings_v6')
         if (saved) {
             try {
                 return { ...DEFAULT_SETTINGS, ...JSON.parse(saved) }
@@ -56,6 +58,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
     }
 
     // Refs for game state (to avoid stale closures)
+    const containerRef = useRef(null) // Container for ResizeObserver
     const canvasRef = useRef(null)
     const animationRef = useRef(null)
     const gameStateRef = useRef('ready')
@@ -146,7 +149,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         const now = Date.now()
         const timeSinceLastPress = now - blinkPressTimeRef.current
 
-        if (75 < timeSinceLastPress && timeSinceLastPress < 400) {
+        if (timeSinceLastPress < 400 && timeSinceLastPress > 75) {
             handleDoublePress()
         } else {
             handleSinglePress()
@@ -187,10 +190,9 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
             workerRef.current = worker
 
             // Get OffscreenCanvas
-            // This will throw if already transferred (e.g. strict mode double-mount)
             const offscreen = canvasRef.current.transferControlToOffscreen()
 
-            // Get theme colors to pass to worker
+            // Get theme colors
             const styles = getComputedStyle(document.documentElement)
             const theme = {
                 bg: styles.getPropertyValue('--bg').trim(),
@@ -202,23 +204,61 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                 accent: styles.getPropertyValue('--accent').trim()
             }
 
-            // Init Worker
-            worker.postMessage({
-                type: 'INIT',
-                payload: {
-                    canvas: offscreen,
-                    settings: settingsRef.current,
-                    highScore: highScore,
-                    theme: theme
-                }
-            }, [offscreen])
+            // Load 8 Bush Variants
+            const loadBush = (i) => new Promise((resolve, reject) => {
+                const img = new Image();
+                img.src = `/Resources/Dino/bush_${i}.png`;
+                img.onload = () => createImageBitmap(img).then(resolve).catch(reject);
+                img.onerror = reject;
+            });
+
+            Promise.all(Array.from({ length: 8 }, (_, i) => loadBush(i + 1)))
+                .then(bushSprites => {
+                    // Init Worker with Sprites
+                    const width = containerRef.current ? containerRef.current.clientWidth : settingsRef.current.CANVAS_WIDTH;
+                    const height = containerRef.current ? containerRef.current.clientHeight : settingsRef.current.CANVAS_HEIGHT;
+
+                    worker.postMessage({
+                        type: 'INIT',
+                        payload: {
+                            canvas: offscreen,
+                            settings: {
+                                ...settingsRef.current,
+                                CANVAS_WIDTH: width,
+                                CANVAS_HEIGHT: height
+                            },
+                            highScore: highScore,
+                            theme: theme,
+                            bushSprites: bushSprites // Pass array
+                        }
+                    }, [offscreen, ...bushSprites]); // Transfer all bitmaps
+                })
+                .catch(err => {
+                    console.warn("Failed to load bush sprites", err);
+                    const width = containerRef.current ? containerRef.current.clientWidth : settingsRef.current.CANVAS_WIDTH;
+                    const height = containerRef.current ? containerRef.current.clientHeight : settingsRef.current.CANVAS_HEIGHT;
+
+                    // Init without sprites
+                    worker.postMessage({
+                        type: 'INIT',
+                        payload: {
+                            canvas: offscreen,
+                            settings: {
+                                ...settingsRef.current,
+                                CANVAS_WIDTH: width,
+                                CANVAS_HEIGHT: height
+                            },
+                            highScore: highScore,
+                            theme: theme
+                        }
+                    }, [offscreen]);
+                });
 
             // Listen to worker
             worker.onmessage = (e) => {
                 const { type, score, highScore: newHigh } = e.data
                 if (type === 'GAME_OVER') {
                     setGameState('gameOver')
-                    // Sync score only on game over
                     if (score !== undefined) scoreRef.current = score
                 } else if (type === 'HIGHSCORE_UPDATE') {
                     setHighScore(newHigh)
@@ -229,8 +269,6 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
             }
         } catch (err) {
             console.warn("Canvas transfer failed, retrying with fresh DOM node...", err)
-            // If transfer failed, it's likely because the node is already detached.
-            // We force a remount of the canvas element to get a fresh one.
             setCanvasResetKey(prev => prev + 1)
         }
 
@@ -239,12 +277,44 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         }
     }, [canvasResetKey])
 
+    // Handle Resizing (Responsive)
+    useEffect(() => {
+        if (!workerRef.current || !containerRef.current) return
+
+        const updateSize = () => {
+            if (!containerRef.current || !workerRef.current) return
+            const { clientWidth, clientHeight } = containerRef.current
+
+            workerRef.current.postMessage({
+                type: 'RESIZE',
+                payload: {
+                    width: clientWidth,
+                    height: clientHeight
+                }
+            })
+        }
+
+        const resizeObserver = new ResizeObserver(() => {
+            updateSize()
+        })
+
+        resizeObserver.observe(containerRef.current)
+        updateSize() // Initial
+
+        return () => {
+            resizeObserver.disconnect()
+        }
+    }, [canvasResetKey])
+
     // Update settings in worker
     useEffect(() => {
         if (workerRef.current) {
+            // Exclude canvas dimensions so we don't overwrite the resize observer's values
+            // with potentially stale default settings
+            const { CANVAS_WIDTH, CANVAS_HEIGHT, ...safeSettings } = settings
             workerRef.current.postMessage({
                 type: 'SETTINGS',
-                payload: settings
+                payload: safeSettings
             })
         }
     }, [settings])
@@ -262,8 +332,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
     // Bridge Inputs
     const handleSinglePress = () => {
         logEvent("🦘 Jump Triggered")
-        // UI Feedback only (optional, since worker handles drawing)
-        // triggerSingleBlink() 
+        triggerSingleBlink()
 
         if (workerRef.current) {
             console.log("[DinoView] Sending 'jump' to worker. Ref:", workerRef.current)
@@ -280,7 +349,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
 
     const handleDoublePress = () => {
         logEvent("⏯️ Pause/Resume Triggered")
-        // triggerDoubleBlink()
+        triggerDoubleBlink()
 
         if (workerRef.current) {
             workerRef.current.postMessage({ type: 'INPUT', payload: { action: 'pause' } })
@@ -295,7 +364,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                 // Check if manual controls enabled
                 console.log("[DinoView] Spacebar pressed. Manual controls:", settings.ENABLE_MANUAL_CONTROLS)
                 if (settings.ENABLE_MANUAL_CONTROLS) {
-                    handleSinglePress()
+                    handleEOGBlink() // Use the same unified logic for consistency
                 }
             }
         }
@@ -312,10 +381,6 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         setEyeState('double-blink')
         setTimeout(() => setEyeState('open'), 600)
     }
-    // (Note: Removed duplicate blinking logic, simpler is better for perf)
-
-    // ... (Old Drawing functions and Game Loop REMOVED) ...
-
 
     const handleSettingChange = (key, value) => {
         setSettings(prev => ({
@@ -325,87 +390,119 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
     }
 
     const handleSaveSettings = () => {
-        localStorage.setItem('dino_settings_v2', JSON.stringify(settings))
+        localStorage.setItem('dino_settings_v6', JSON.stringify(settings))
         setSavedMessage('Saved!')
         setTimeout(() => setSavedMessage(''), 2000)
     }
 
     return (
-        <div className="h-[calc(100vh-100px)] overflow-hidden">
-            <div className="flex gap-2 flex-wrap lg:flex-nowrap h-full">
+        <div className="dino-container">
+            <div className="dino-game-wrapper">
                 {/* Main game area */}
-                <div className="flex-1 min-w-0 h-full flex flex-col justify-center">
-                    <div className="card bg-surface border border-border shadow-card rounded-2xl p-2 h-full flex flex-col">
-                        <div className="flex justify-between items-center mb-2 px-2">
-                            <h2 className="text-2xl font-bold text-text flex items-center gap-3">
-                                <span className="w-3 h-3 rounded-full bg-primary animate-pulse"></span>
+                <div className="game-main-area">
+                    <div className="game-card">
+                        <div className="game-header">
+                            <h2 className="game-title">
+                                <span className="status-dot"></span>
                                 EOG Dino Game
                             </h2>
                             <button
                                 onClick={() => setShowSettings(!showSettings)}
-                                className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${showSettings ? 'bg-primary text-bg' : 'bg-bg text-muted border border-border hover:text-text'}`}
+                                className={`tuner-button ${showSettings ? 'active' : 'inactive'}`}
                             >
                                 ⚙️ Tuner
                             </button>
                         </div>
 
-                        <div className="space-y-2 flex-1 flex flex-col">
+                        <div className="game-content-stack">
                             {/* Game info */}
-                            <div className="bg-bg/50 backdrop-blur-sm rounded-xl p-2 border border-border relative mt-6 shrink-0">
+                            <div className="game-info-panel">
                                 {/* Eye Tracker (Absolute Positioned on Top Border) */}
-                                <div className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 -top-[1px] z-10 w-full flex justify-center gap-24 pointer-events-none">
+                                <div className="eyes-container">
                                     {/* Left Eye */}
-                                    <div className="eye w-24 h-24 bg-surface rounded-full border-4 border-border relative overflow-hidden flex justify-center items-center shadow-sm" ref={leftEyeRef}>
-                                        <div className="pupil w-8 h-8 bg-text rounded-full"></div>
+                                    <div className={`eye ${eyeState !== 'open' ? eyeState : ''}`} ref={leftEyeRef}>
+                                        <div className="pupil"></div>
                                     </div>
                                     {/* Right Eye */}
-                                    <div className="eye w-24 h-24 bg-surface rounded-full border-4 border-border relative overflow-hidden flex justify-center items-center shadow-sm" ref={rightEyeRef}>
-                                        <div className="pupil w-8 h-8 bg-text rounded-full"></div>
+                                    <div className={`eye ${eyeState !== 'open' ? eyeState : ''}`} ref={rightEyeRef}>
+                                        <div className="pupil"></div>
                                     </div>
+
+                                    {/* Face Decorations (Eyebrows & Smile) */}
+                                    <svg className="face-decoration-svg" style={{ overflow: 'visible', width: '100%', height: '100%' }}>
+                                        {/* Left Curve (Border to Top of Eye - Quarter Circle) */}
+                                        <path
+                                            d="M -160 -16 A 64 64 0 0 1 -96 -62"
+                                            fill="none"
+                                            stroke="var(--text)"
+                                            strokeWidth="3"
+                                            strokeLinecap="round"
+                                        />
+                                        {/* Right Curve (Top of Eye to Border - Quarter Circle) */}
+                                        <path
+                                            d="M 160 -16 A 64 64 0 0 0 96 -62"
+                                            fill="none"
+                                            stroke="var(--text)"
+                                            strokeWidth="3"
+                                            strokeLinecap="round"
+                                        />
+                                        {/* Smile (Circular Arc) */}
+                                        <path
+                                            d="M -40 75 A 45 45 0 0 0 40 75"
+                                            fill="none"
+                                            stroke="var(--text)"
+                                            strokeWidth="3"
+                                            strokeLinecap="round"
+                                        />
+                                    </svg>
                                 </div>
 
-                                <div className="flex justify-between items-end pt-4 px-40">
-                                    <div className="text-left">
-                                        <div className="text-muted text-sm font-bold">Status</div>
-                                        <div className="text-text font-bold text-lg capitalize">{gameState}</div>
+                                <div className="game-stats-container">
+                                    {/* Left Side: Status & Score */}
+                                    <div className="stat-group-left">
+                                        <div className="stat-block stat-block-start mb-1">
+                                            <span className="stat-label">Status</span>
+                                            <div className={`stat-value-status ${gameState === 'playing' ? 'playing' : 'default'}`}>
+                                                {gameState}
+                                            </div>
+                                        </div>
+                                        <div className="stat-block stat-block-start">
+                                            <span className="stat-label">Score</span>
+                                            <Counter value={Math.floor(score / 10)} fontSize={48} places={[10000, 1000, 100, 10, 1]} className="stat-counter-large" />
+                                        </div>
                                     </div>
-                                    <div className="text-right">
-                                        <div className="text-muted text-sm font-bold">EOG Sensor</div>
-                                        <div className={`text-sm font-bold ${wsData ? 'text-green-500' : 'text-red-500'}`}>
-                                            {wsData ? 'Connected' : 'Disconnected'}
+
+                                    {/* Right Side: Best & Sensor */}
+                                    <div className="stat-group-right">
+                                        <div className="stat-block stat-block-end">
+                                            <span className="stat-label">Best</span>
+                                            <CountUp
+                                                from={0}
+                                                to={Math.floor(highScore / 10)}
+                                                duration={2}
+                                                separator=","
+                                                className="text-text font-mono font-bold text-3xl leading-none"
+                                            />
+                                        </div>
+                                        <div className="stat-block stat-block-end mb-1">
+                                            <span className="stat-label">Sensor</span>
+                                            <div className={`stat-value-sensor ${wsData ? 'text-green-500' : 'text-red-500'}`}>
+                                                {wsData ? 'Connected' : 'Disconnected'}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
                             {/* Canvas */}
-                            <div className="bg-bg rounded-xl border-2 border-border overflow-hidden shadow-lg flex-1 min-h-0 relative">
-                                {/* Score Overlay */}
-                                <div className="absolute top-4 right-4 z-10 flex flex-col items-end pointer-events-none font-mono font-bold text-xl text-text leading-tight">
-                                    <div className="flex items-center gap-2">
-                                        <span className="opacity-75">Score:</span>
-                                        <Counter value={Math.floor(score / 10)} fontSize={20} />
-                                    </div>
-                                    <div className="flex items-center gap-2 mt-1">
-                                        <span className="opacity-75">Best:</span>
-                                        <CountUp
-                                            to={Math.floor(highScore / 10)}
-                                            from={0}
-                                            separator=","
-                                            direction="up"
-                                            duration={1}
-                                            className="text-primary"
-                                        />
-                                    </div>
-                                </div>
-
+                            <div
+                                className="dino-canvas-container"
+                                ref={containerRef}
+                            >
                                 <canvas
                                     key={canvasResetKey}
                                     ref={canvasRef}
-                                    width={settings.CANVAS_WIDTH}
-                                    height={settings.CANVAS_HEIGHT}
-                                    className="w-full h-full object-contain"
-                                    style={{ imageRendering: 'crisp-edges' }}
+                                    className="dino-canvas"
                                 />
                             </div>
                         </div>
@@ -413,7 +510,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                 </div>
 
                 {/* Right Sidebar */}
-                <div className="w-full lg:w-80 space-y-6 h-full overflow-y-auto no-scrollbar pb-6 scrollbar-thin scrollbar-thumb-border hover:scrollbar-thumb-primary/50 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
+                <div className="game-sidebar">
                     {/* Camera Panel */}
                     <CameraPanel />
 
@@ -548,6 +645,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                                 <div className="space-y-3">
                                     <h4 className="text-xs font-bold text-primary border-b border-border pb-1">Environment</h4>
                                     <SettingToggle label="Enable Trees" value={settings.ENABLE_TREES} onChange={(v) => handleSettingChange('ENABLE_TREES', v)} />
+                                    <SettingInput label="Obstacle Bonus" value={settings.OBSTACLE_BONUS_FACTOR} onChange={(v) => handleSettingChange('OBSTACLE_BONUS_FACTOR', v)} min="0" max="2.0" step="0.005" />
                                     <SettingInput label="Day Cycle (s)" value={settings.CYCLE_DURATION} onChange={(v) => handleSettingChange('CYCLE_DURATION', v)} min="10" max="300" step="5" />
                                 </div>
                             </div>
@@ -593,16 +691,14 @@ const SettingToggle = ({ label, value, onChange }) => (
 )
 
 const SettingSelect = ({ label, value, options, onChange }) => (
-    <div className="flex justify-between items-center py-1">
+    <div className="flex justify-between items-center py-1 gap-2">
         <span className="text-xs text-muted">{label}</span>
-        <select
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            className="text-xs bg-bg border border-border rounded px-2 py-1 text-text focus:outline-none focus:border-primary"
-        >
-            {options.map(opt => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-        </select>
+        <div className="w-40">
+            <CustomSelect
+                value={value}
+                onChange={onChange}
+                options={options}
+            />
+        </div>
     </div>
 )

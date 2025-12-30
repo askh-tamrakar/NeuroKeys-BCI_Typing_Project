@@ -88,7 +88,7 @@ export default function Sidebar({
 
                 {/* Stream Control */}
                 <ElectricBorder
-                    color={isPaused ? "#f87171" : "#10b981"}
+                    color={isPaused ? "#ef4444" : "#10b981"}
                     speed={isPaused ? .5 : 1.1}
                     chaos={isPaused ? .025 : .035}
                     thickness={2}
