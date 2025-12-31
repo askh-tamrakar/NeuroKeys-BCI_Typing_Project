@@ -1,4 +1,5 @@
 /* eslint-disable no-restricted-globals */
+import { calculateDayNightColors } from '../game/ColorMechanics.js';
 
 // Game Constants (Defaults, will be overridden by settings)
 let SETTINGS = {
@@ -18,24 +19,31 @@ let SETTINGS = {
     JUMP_DISTANCE: 150,
     JUMP_DISTANCE: 150,
     ENABLE_TREES: true,
-    OBSTACLE_BONUS_FACTOR: 0.1,
+    OBSTACLE_BONUS_FACTOR: 0.015,
 
     // Visual Customization (Defaults)
+    ENABLE_TREES: true,
     TREES_DENSITY: 1.0,
     TREES_SIZE: 1.0,
     TREES_LAYERS: 1,
 
+    ENABLE_CLOUDS: true,
     CLOUDS_DENSITY: 1.0,
     CLOUDS_SIZE: 1.0,
     CLOUDS_LAYERS: 1,
 
+    ENABLE_STARS: true,
     STARS_DENSITY: 1.0,
     STARS_SIZE: 1.0,
     STARS_LAYERS: 1,
 
+    ENABLE_BUSHES: true,
     BUSHES_DENSITY: 1.0,
     BUSHES_SIZE: 1.0,
     BUSHES_LAYERS: 3,
+
+    ENABLE_DAY_NIGHT_CYCLE: true,
+    FIXED_TIME: 0.25
 };
 
 // Game State
@@ -53,6 +61,7 @@ let obstacles = [];
 let lastSpawnTimestamp = 0;
 let distance = 0;
 let gameTime = 0;
+let moonPhase = 0; // 0 to 1
 let lastSentScore = 0;
 let obstaclesPassed = 0;
 let scoreMultiplier = 1.0;
@@ -69,6 +78,15 @@ let bushSprites = []; // Array of ImageBitmaps
 let eyeState = 'open'; // open, blink, double-blink
 let eyeStateTimer = null;
 
+// Dynamic Element Colors
+let CURRENT_COLORS = {
+    sky: '#fff',
+    tree: '#ccc',
+    cloud: '#fff',
+    sun: '#ff0',
+    moon: '#fff'
+};
+
 // --- Initialization ---
 
 // Bush Pixel Matrices (0 = empty, 1 = pixel)
@@ -77,57 +95,68 @@ let eyeStateTimer = null;
 function initVisuals() {
     // Init clouds
     clouds = [];
-    const cloudCount = Math.floor(15 * SETTINGS.CLOUDS_DENSITY);
-    const cloudLayers = Math.max(1, SETTINGS.CLOUDS_LAYERS);
+    if (SETTINGS.ENABLE_CLOUDS) {
+        const cloudCount = Math.floor(15 * SETTINGS.CLOUDS_DENSITY);
 
-    for (let i = 0; i < cloudCount; i++) {
-        // Distribute depth based on layers
-        // If layers=1, all range 0.15-1.0
-        // If layers>1, maybe discreet layers? For now, stick to random spread but multiplied count
-        const depth = 0.15 + Math.random() * 0.85;
-        // Optional: Filter depth based on active layers (e.g. only draw far ones if layers > 1 is complex, just sticking to count for density)
+        // Loop through layers to distribute clouds
+        const layers = Math.max(1, SETTINGS.CLOUDS_LAYERS);
+        for (let l = 0; l < layers; l++) {
+            // Depth from 0.15 (far) to 1.0 (near)
+            // Layer 0 is far, Layer N is near? or vice versa.
+            // Let's say l=0 is far.
+            const t = layers > 1 ? l / (layers - 1) : 0.5;
+            const depthBase = 0.15 + t * 0.85;
 
-        clouds.push({
-            x: Math.random() * SETTINGS.CANVAS_WIDTH,
-            y: Math.random() * 150 + 20,
-            width: (60 + Math.random() * 40) * depth * SETTINGS.CLOUDS_SIZE,
-            speed: (0.1 + Math.random() * 0.1) * depth,
-            depth: depth
-        });
+            // Add variance within layer
+            const countPerLayer = Math.ceil(cloudCount / layers);
+            for (let i = 0; i < countPerLayer; i++) {
+                const depth = depthBase + (Math.random() * 0.1 - 0.05); // Small jitter
+                clouds.push({
+                    x: Math.random() * SETTINGS.CANVAS_WIDTH,
+                    y: Math.random() * 150 + 20,
+                    width: (60 + Math.random() * 40) * depth * SETTINGS.CLOUDS_SIZE,
+                    speed: (0.1 + Math.random() * 0.1) * depth,
+                    depth: depth
+                });
+            }
+        }
+        clouds.sort((a, b) => a.depth - b.depth);
     }
-    clouds.sort((a, b) => a.depth - b.depth);
 
     // Init trees
     trees = [];
     if (SETTINGS.ENABLE_TREES) {
         const baseTreeCount = Math.floor(SETTINGS.CANVAS_WIDTH / 60) + 5;
-        const treeCount = Math.floor(baseTreeCount * SETTINGS.TREES_DENSITY);
+        const treeCount = Math.ceil(baseTreeCount * SETTINGS.TREES_DENSITY);
 
-        for (let i = 0; i < treeCount; i++) {
-            const depth = 0.4 + Math.random() * 0.6;
-            const size = SETTINGS.TREES_SIZE;
+        const layers = Math.max(1, SETTINGS.TREES_LAYERS);
+        for (let l = 0; l < layers; l++) {
+            const t = layers > 1 ? l / (layers - 1) : 0.5;
+            // Trees usually are background, so depth 0.4 to 1.0
+            const depthBase = 0.4 + t * 0.6;
 
-            trees.push({
-                x: Math.random() * SETTINGS.CANVAS_WIDTH * 1.2,
-                height: (50 + Math.random() * 70) * depth * size,
-                width: (25 + Math.random() * 25) * depth * size,
-                type: Math.random() > 0.5 ? 'round' : 'pine',
-                depth: depth,
-                speedFactor: 0.5 * depth
-            });
+            const countPerLayer = Math.ceil(treeCount / layers);
+            for (let i = 0; i < countPerLayer; i++) {
+                const depth = Math.min(1.0, Math.max(0.1, depthBase + (Math.random() * 0.1 - 0.05)));
+                const size = SETTINGS.TREES_SIZE;
+
+                trees.push({
+                    x: Math.random() * SETTINGS.CANVAS_WIDTH * 1.5, // Spread wider
+                    height: (50 + Math.random() * 70) * depth * size,
+                    width: (25 + Math.random() * 25) * depth * size,
+                    type: Math.random() > 0.5 ? 'round' : 'pine',
+                    depth: depth,
+                    speedFactor: 0.5 * depth
+                });
+            }
         }
         trees.sort((a, b) => a.depth - b.depth);
     }
 
     // Init bushes (Layered Sprites)
     bushes = [];
-    if (bushSprites && bushSprites.length > 0) {
-        const userLayers = Math.max(0, Math.min(7, SETTINGS.BUSHES_LAYERS));
-
-        // Procedurally generate layer configs
-        // We want a nice spread from background (small, slow, high yOff?) to foreground (large, fast, low yoff)
-        // Wait, standard parallax: background is slow, foreground is fast.
-        // BG: Scale 0.6, Speed 0.5. FG: Scale 2.5, Speed 2.0.
+    if (SETTINGS.ENABLE_BUSHES && bushSprites && bushSprites.length > 0) {
+        const userLayers = Math.max(0, Math.min(10, SETTINGS.BUSHES_LAYERS));
 
         for (let l = 0; l < userLayers; l++) {
             // Normalized layer position (0 = back, 1 = front)
@@ -138,19 +167,11 @@ function initVisuals() {
             const baseScale = 0.5 + t * 2.0;
             // Speed: 0.4 -> 2.5
             const baseSpeed = 0.4 + t * 2.1;
-            // yOff: BG might be slightly higher or grounded. FG usually lower (yOffset adds to groundY-height). 
-            // Positive yOffset pushes it DOWN (buried). Negative pushes UP (floating).
-            // Usually foreground bushes might be lower on screen (higher y value) to fake perspective if ground is flat?
-            // Actually our ground is flat line.
-            // Let's vary yOff for randomness but generally keep them grounded.
-            // Just use the previous manual tweaks as guide: 
-            // Layer 0: yOff 5. Layer 5: yOff 60 (pushed down).
+            // yOff:
             const baseYOff = 5 + t * 55;
 
-            // Count: BG has more, FG has fewer?
-            // 5 -> 1
+            // Count logic
             const baseCount = Math.max(1, Math.floor(5 - t * 4));
-
             const count = Math.floor((Math.floor(SETTINGS.CANVAS_WIDTH / (250 - t * 100)) + baseCount) * SETTINGS.BUSHES_DENSITY);
 
             for (let i = 0; i < count; i++) {
@@ -167,19 +188,33 @@ function initVisuals() {
         bushes.sort((a, b) => a.layer - b.layer);
     }
 
-    // Clear extraBushes as they are now merged into the main bush system
+    // Clear extraBushes
     extraBushes = [];
 
     // Init stars
     stars = [];
-    const starCount = Math.floor(50 * SETTINGS.STARS_DENSITY);
-    for (let i = 0; i < starCount; i++) {
-        stars.push({
-            x: Math.random() * SETTINGS.CANVAS_WIDTH,
-            y: Math.random() * SETTINGS.CANVAS_HEIGHT / 2,
-            size: (Math.random() * 2 + 1) * SETTINGS.STARS_SIZE,
-            blinkOffset: Math.random() * Math.PI
-        });
+    if (SETTINGS.ENABLE_STARS) {
+        const starCount = Math.floor(50 * SETTINGS.STARS_DENSITY);
+
+        const layers = Math.max(1, SETTINGS.STARS_LAYERS);
+
+        for (let l = 0; l < layers; l++) {
+            // Stars are just distant points, but let's vary size/opacity layers?
+            // Or just use layers to spawn MORE stars effectively?
+            // The user asked for "layers" for stars. Let's interpret as depth planes affecting parallax or just count.
+            // Stars usually don't parallax much unless they are 3d.
+            // We can just add more stars per layer.
+
+            const countPerLayer = Math.ceil(starCount / layers);
+            for (let i = 0; i < countPerLayer; i++) {
+                stars.push({
+                    x: Math.random() * SETTINGS.CANVAS_WIDTH,
+                    y: Math.random() * SETTINGS.CANVAS_HEIGHT / 2,
+                    size: (Math.random() * 2 + 1) * SETTINGS.STARS_SIZE,
+                    blinkOffset: Math.random() * Math.PI
+                });
+            }
+        }
     }
 }
 
@@ -244,6 +279,27 @@ function updatePhysics(deltaTime) {
     const derivedSpeed = vy > 0 ? (SETTINGS.JUMP_DISTANCE * GRAVITY) / (2 * vy) : 5;
     const GAME_SPEED = derivedSpeed * timeFactor;
     const APPLIED_GRAVITY = GRAVITY * timeFactor;
+
+    // Day/Night Cycle
+    if (SETTINGS.ENABLE_DAY_NIGHT_CYCLE) {
+        gameTime = (gameTime + deltaTime / (SETTINGS.CYCLE_DURATION * 1000)) % 1.0;
+    } else {
+        gameTime = SETTINGS.FIXED_TIME !== undefined ? SETTINGS.FIXED_TIME : 0.25;
+    }
+
+    // Moon Phase Cycle
+    if (SETTINGS.ENABLE_AUTO_MOON_CYCLE) {
+        const dayDuration = SETTINGS.CYCLE_DURATION || 100;
+        const daysPerCycle = SETTINGS.MOON_CYCLE_DAYS || 30; // 30 days for full cycle (15 days to full)
+        const duration = dayDuration * daysPerCycle;
+
+        moonPhase = (moonPhase + deltaTime / (duration * 1000)) % 1.0;
+    } else {
+        moonPhase = SETTINGS.MOON_PHASE !== undefined ? SETTINGS.MOON_PHASE : 0.5;
+    }
+
+    // Update Dynamic Colors using Module
+    CURRENT_COLORS = calculateDayNightColors(gameTime, COLORS);
 
     if (gameState === 'playing') {
         // Dino Physics
@@ -335,8 +391,9 @@ function updatePhysics(deltaTime) {
         // Environment
         distance += GAME_SPEED;
 
-        // Day/Night Cycle
-        gameTime = (gameTime + deltaTime / (SETTINGS.CYCLE_DURATION * 1000)) % 1.0;
+        distance += GAME_SPEED;
+
+        // Day/Night Cycle moved up
 
         // Trees
         if (SETTINGS.ENABLE_TREES) {
@@ -389,8 +446,32 @@ const COLORS = {
     bushLight: '#a7f3d0', // Very light green
     bush: '#4ade80',  // Light green
     bushDark: '#16a34a', // Darker green
-    berry: '#ef4444' // Red berry
+    berry: '#ef4444', // Red berry
+    day: '#ffffff',   // Default Day
+    night: '#000000', // Default Night
+    treeDay: '#2ecc71',
+    treeNight: '#0e1512',
+    cloudDay: '#cccccc', // Neutral Grey Default
+    cloudNight: '#444444', // Neutral Dark Grey Default
+    sunDay: '#F1C40F',
+    sunNight: '#D35400',
+    moonDay: '#ffffff',
+    moonDay: '#ffffff',
+    moonNight: '#CFE9DB',
+    // Semantic Defaults
+    dinoDay: '#2C2C2C',
+    dinoNight: '#ffffff',
+    obstacleDay: '#5D4037',
+    obstacleNight: '#8D6E63',
+    groundDay: '#e0e0e0',
+    groundNight: '#1b1b1b',
+    groundLineDay: '#5D4037',
+    groundLineNight: '#8D6E63',
+    skyDay: '#f8fafc',
+    skyNight: '#0f172a'
 };
+
+
 
 function drawPixelCircle(cx, cy, radius, color) {
     ctx.fillStyle = color;
@@ -417,12 +498,16 @@ function drawBlockyCircle(cx, cy, size, color, pixelSize = 4) {
 }
 
 function drawSky(width, height) {
-    ctx.fillStyle = COLORS.bg; // Or dynamic sky color
+    // Use Pre-Calculated Dynamic Color
+    const skyColor = CURRENT_COLORS.sky;
+    ctx.fillStyle = skyColor;
     ctx.fillRect(0, 0, width, height);
+
+    // Update bg color reference so partial clears or other elements that rely on "bg" match
+    COLORS.bg = skyColor;
 
     const centerX = width / 2;
     const radius = width * 0.6;
-    // Ensure the sun/moon arc peaks at y=50 (visible)
     const centerY = Math.max(height + 100, radius * 0.9 + 50);
 
     // Sun
@@ -430,7 +515,8 @@ function drawSky(width, height) {
         const sunAngle = ((gameTime - 0.1) / 0.5) * Math.PI;
         const sunX = centerX - Math.cos(sunAngle) * radius;
         const sunY = centerY - Math.sin(sunAngle) * radius * 0.9;
-        drawBlockyCircle(sunX, sunY, 28, COLORS.primary, 2);
+        // Dynamic Sun Color
+        drawBlockyCircle(sunX, sunY, 28, CURRENT_COLORS.sun, 2);
     }
 
     // Moon
@@ -440,10 +526,126 @@ function drawSky(width, height) {
         const moonAngle = (moonTime / 0.5) * Math.PI;
         const moonX = centerX - Math.cos(moonAngle) * radius;
         const moonY = centerY - Math.sin(moonAngle) * radius * 0.9;
-        drawBlockyCircle(moonX, moonY, 24, COLORS.text, 2);
-        ctx.fillStyle = COLORS.bg;
-        ctx.fillRect(moonX - 12, moonY - 8, 8, 8);
-        ctx.fillRect(moonX + 4, moonY + 8, 4, 4);
+        const moonSize = 24;
+
+        // Draw Base Moon (Full)
+        // If phases enabled, we might mask it.
+        // But simpler to draw full moon then draw 'sky' colored shadow over it.
+        drawBlockyCircle(moonX, moonY, moonSize, CURRENT_COLORS.moon, 2);
+
+        if (SETTINGS.ENABLE_MOON_PHASES) {
+            // Phase Logic (0 = New, 0.5 = Full, 1 = New)
+            // We want to simulate the shadow moving across.
+            // Simplified "Retro" Phase: A sliding rectangular shadow or offset circle?
+            // Let's use an offset circle of "Sky Color" to bite into the moon.
+
+
+            const phase = moonPhase;
+
+            ctx.fillStyle = skyColor;
+
+            if (phase === 0.5) {
+                // Full Moon - No Shadow (maybe small craters?)
+                // Optional: visual interest
+            } else if (Math.abs(phase - 0.5) > 0.45) {
+                // New Moon (mostly hidden)
+                drawBlockyCircle(moonX, moonY, moonSize - 2, skyColor, 2); // Hide center
+            } else {
+                // Crescent / Gibbous
+                // Calculate shadow position
+                // Phase 0..0.5 (Waxing) -> Shadow moves Right to Left (revealing)
+                // Phase 0.5..1 (Waning) -> Shadow moves Right to Left (hiding)?
+
+                // Let's model it as a shadow circle moving.
+                // Full Moon (0.5) -> Shadow is far away.
+                // New Moon (0/1) -> Shadow is on top.
+
+                let shadowOffset = 0;
+
+                // 0.0 (New) -> Shadow at 0
+                // 0.25 (Half) -> Shadow at roughly radius
+                // 0.5 (Full) -> Shadow at 2*radius (gone)
+
+                // Let's simply slide a "Sky Color" circle across.
+                // range: -2.5*radius to 2.5*radius?
+
+                // Normalize phase to -1 (New) to 0 (Full) to 1 (New)? No.
+                // Let's stick to 0..1
+
+                // 0.5 is target.
+                // If phase < 0.5 (Waxing): Shadow is on Left, moving Left?
+                // Actually, standard is:
+                // New (0) -> Waxing Crescent -> First Quarter (0.25) -> Waxing Gibbous -> Full (0.5)
+
+                // Implementation:
+                // Shadow X offset.
+                // For 0 (New): Shadow matches Moon X.
+                // For 0.25 (Half): Shadow is offset by radius/2?
+                // For 0.5 (Full): Shadow is completely off.
+
+                const relativePhase = (phase - 0.5) * 2; // -1 (New) to 0 (Full) to 1 (New) ??
+                // No, Input 0 -> -1. Input 0.5 -> 0. Input 1 -> 1.
+
+                // If we want a simple "slide from right":
+                // Shadow starts at Right, moves Left?
+
+                // Let's try Offset = f(phase).
+                // 0 (New) -> Offset 0
+                // 0.25 -> Offset Radius (covers half?)
+                // 0.5 -> Offset 2*Radius (covers none)
+
+                // Actually, let's just make it look cool.
+                // Use a shadow offset driven by a cosine of the phase?
+
+                // Strategy: A second "Sky" circle that eclipses the moon.
+                // Offset defined by phase.
+                // Phase 0: Offset 0.
+                // Phase 0.5: Offset infinity (or large).
+
+                // Better visual for retro: 
+                // 0.0-0.5: Shadow moves LEFT to RIGHT (revealing moon? no, covering).
+                // Let's assume shadow comes from left.
+
+                // Let's use a simpler mapping: 
+                // Phase is "amount of light".
+                // We draw the shadow circle at an offset.
+
+                // Let's use `Math.cos(phase * 2 * PI)` logic.
+                // Shift = moonSize * 2 * (percentage)
+
+                let shift = 0;
+
+                if (phase < 0.5) {
+                    // Waxing (0 -> 0.5). Shadow is moving OUT to the LEFT? 
+                    // 0: Shadow centered. 0.5: Shadow far left.
+                    // shift = -moonSize * 2 * (phase / 0.5); // 0 -> -2*size
+
+                    // Better:
+                    // 0 (New) -> Shadow on top (offset 0)
+                    // 0.25 (Half) -> Shadow offset by radius (-12)
+                    // 0.5 (Full) -> Shadow offset by diameter (-48)
+                    shift = - (phase / 0.5) * (moonSize * 2.5);
+                } else {
+                    // Waning (0.5 -> 1.0). Shadow comes in from RIGHT.
+                    // 0.5: Shadow far right.
+                    // 1.0: Shadow centered.
+                    // Normalized p: (phase - 0.5) / 0.5 => 0..1
+                    const p = (phase - 0.5) / 0.5; // 0 to 1
+                    // 0 -> 2.5*size
+                    // 1 -> 0
+                    shift = (1 - p) * (moonSize * 2.5);
+                }
+
+                // Draw Shadow Circle
+                // We use blocky circle for shadow too to match style
+                drawBlockyCircle(moonX + shift, moonY, moonSize, skyColor, 2);
+            }
+        } else {
+            // Default "Classic" Moon Details (Pixel Cutouts)
+            ctx.fillStyle = skyColor;
+            ctx.fillRect(moonX - 12, moonY - 8, 8, 8);
+            ctx.fillRect(moonX + 4, moonY + 8, 4, 4);
+        }
     }
 
     // Stars
@@ -468,8 +670,8 @@ function drawSky(width, height) {
     }
 
     // Clouds
-    ctx.fillStyle = COLORS.muted;
-    ctx.globalAlpha = 0.4;
+    ctx.fillStyle = CURRENT_COLORS.cloud;
+    ctx.globalAlpha = 0.6; // Slightly more opacity for dynamic colored clouds
     clouds.forEach(cloud => {
         const w = Math.floor(cloud.width);
         const h = Math.floor(w * 0.4);
@@ -491,8 +693,8 @@ function drawSky(width, height) {
 
 function drawTrees(width, groundY) {
     if (!SETTINGS.ENABLE_TREES) return;
-    ctx.fillStyle = COLORS.muted;
-    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = CURRENT_COLORS.tree;
+    ctx.globalAlpha = 0.8; // Better visibility
     trees.forEach(tree => {
         const tx = Math.floor(tree.x);
         const tw = Math.floor(tree.width);
@@ -566,7 +768,7 @@ function drawDino(x, y) {
     const scaleY = DINO_HEIGHT / 47;
 
     ctx.save();
-    ctx.fillStyle = COLORS.primary;
+    ctx.fillStyle = CURRENT_COLORS.dino;
 
     // Body
     ctx.fillRect(Math.floor(x + 6 * scaleX), Math.floor(y + 20 * scaleY), Math.ceil(25 * scaleX), Math.ceil(17 * scaleY));
@@ -586,7 +788,7 @@ function drawDino(x, y) {
     ctx.fillRect(Math.floor(x + 36 * scaleX), Math.floor(y + (eyeState === 'open' ? 18 : 19) * scaleY), Math.ceil(2 * scaleX), Math.ceil((eyeState === 'open' ? 2 : 1) * scaleY));
 
     // Legs
-    ctx.fillStyle = COLORS.primary;
+    ctx.fillStyle = CURRENT_COLORS.dino;
     const legOffset = Math.floor(Date.now() / 100) % 2 === 0 ? 0 : 2;
     ctx.fillRect(Math.floor(x + 24 * scaleX), Math.floor(y + 37 * scaleY), Math.ceil(4 * scaleX), Math.ceil((10 - legOffset) * scaleY));
     ctx.fillRect(Math.floor(x + 14 * scaleX), Math.floor(y + 37 * scaleY), Math.ceil(4 * scaleX), Math.ceil((10 + legOffset) * scaleY));
@@ -599,8 +801,9 @@ function drawDino(x, y) {
 
 function drawCactus(x, y, width, height) {
     ctx.save();
-    ctx.fillStyle = COLORS.surface; // Fill with surface color
-    ctx.strokeStyle = COLORS.border; // Outline with border color
+    ctx.save();
+    ctx.fillStyle = CURRENT_COLORS.obstacle; // Semantic Obstacle Color
+    ctx.strokeStyle = CURRENT_COLORS.obstacle; // Solid look for high contrast
     ctx.lineWidth = 2;
 
     // Main trunk
@@ -669,10 +872,10 @@ function draw() {
         });
 
         // Ground
-        ctx.fillStyle = COLORS.surface;
+        ctx.fillStyle = CURRENT_COLORS.ground;
         ctx.fillRect(0, Math.floor(groundY), width, height - groundY);
-        // Draw the main line in PRIMARY color as requested ("primary color line")
-        ctx.fillStyle = COLORS.primary;
+        // Draw the main line
+        ctx.fillStyle = CURRENT_COLORS.groundLine;
         ctx.fillRect(0, Math.floor(groundY), width, 4);
 
         // Draw Bushes (Standard Layers 0-2)
@@ -726,21 +929,21 @@ function draw() {
             ctx.fillRect(0, 0, width, height);
 
             ctx.textAlign = 'center';
-            ctx.font = 'bold 24px sans-serif';
+            ctx.font = 'bold 36px sans-serif';
             ctx.fillStyle = COLORS.primary;
             ctx.fillText('PAUSED', width / 2, height / 2 - 20);
 
             ctx.fillStyle = 'white'; // White text on dark overlay looks better
-            ctx.font = '16px sans-serif';
+            ctx.font = '24px sans-serif';
             ctx.fillText('Double Blink to resume', width / 2, height / 2 + 20);
 
         } else if (gameState === 'gameOver') {
             ctx.textAlign = 'center';
-            ctx.font = 'bold 24px sans-serif';
+            ctx.font = 'bold 36px sans-serif';
             ctx.fillStyle = COLORS.primary;
             ctx.fillText('GAME OVER!', width / 2, height / 2 - 20);
             ctx.fillStyle = COLORS.text;
-            ctx.font = '16px sans-serif';
+            ctx.font = '24px sans-serif';
             ctx.fillText('Blink to restart', width / 2, height / 2 + 20);
         }
     } catch (err) {
@@ -785,6 +988,18 @@ self.onmessage = (e) => {
             loop();
             break;
 
+        case 'THEME_UPDATE':
+            if (payload) {
+                // Only update keys that exist in payload to avoid overwriting with undefined
+                // If payload is the full theme object, just assign
+                Object.assign(COLORS, payload);
+                // Force a recalculate of CURRENT_COLORS immediately if needed
+                CURRENT_COLORS = calculateDayNightColors(gameTime, COLORS);
+                // Also update bg immediately if static
+                COLORS.bg = CURRENT_COLORS.sky;
+            }
+            break;
+
         case 'SETTINGS':
             const oldSettings = { ...SETTINGS };
             Object.assign(SETTINGS, payload);
@@ -795,7 +1010,8 @@ self.onmessage = (e) => {
                 'TREES_DENSITY', 'TREES_SIZE', 'TREES_LAYERS',
                 'CLOUDS_DENSITY', 'CLOUDS_SIZE', 'CLOUDS_LAYERS',
                 'STARS_DENSITY', 'STARS_SIZE', 'STARS_LAYERS',
-                'BUSHES_DENSITY', 'BUSHES_SIZE', 'BUSHES_LAYERS', 'ENABLE_TREES'
+                'BUSHES_DENSITY', 'BUSHES_SIZE', 'BUSHES_LAYERS',
+                'ENABLE_TREES', 'ENABLE_CLOUDS', 'ENABLE_STARS', 'ENABLE_BUSHES'
             ];
             const shouldReInit = visualKeys.some(k => payload[k] !== undefined && payload[k] !== oldSettings[k]);
 

@@ -4,7 +4,12 @@ import CameraPanel from '../ui/CameraPanel'
 import CustomSelect from '../ui/CustomSelect'
 import Counter from '../ui/Counter'
 import CountUp from '../ui/CountUp'
-import { ScanEye, SlidersHorizontal, ArrowUp, Pause, Play, Trash2, Wifi, WifiOff, Save, Skull, Trophy, Keyboard, Eye } from 'lucide-react'
+import {
+    ScanEye, SlidersHorizontal, ArrowUp, Pause, Play, Trash2, Wifi, WifiOff, Save, Skull, Trophy, Keyboard, Eye,
+    Gamepad2, Globe, Sparkles, Atom, Ruler, Settings, RotateCcw, ScrollText, Timer, Weight, MoveVertical,
+    MoveHorizontal, Maximize, ArrowDownToLine, Grid, Sun, Moon, Cloud, Star, TreePine, Leaf, PlayCircle, Hand,
+    Layers, Zap, Clock, ChevronDown, Activity, Hash, Target, Radio, Signal, Circle
+} from 'lucide-react'
 
 export default function DinoView({ wsData, wsEvent, isPaused }) {
     // Game state
@@ -32,27 +37,38 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         CANVAS_HEIGHT: 376,
         CYCLE_DURATION: 100,
         JUMP_DISTANCE: 300,
-        ENABLE_TREES: true,
         ENABLE_MANUAL_CONTROLS: true,
         CONTROL_CHANNEL: 'any',
         OBSTACLE_BONUS_FACTOR: 0.015,
 
         // Visual Customization
+        ENABLE_TREES: true,
         TREES_DENSITY: 0.7,
         TREES_SIZE: 1.2,
         TREES_LAYERS: 10,
 
+        ENABLE_CLOUDS: true,
         CLOUDS_DENSITY: 2,
         CLOUDS_SIZE: 0.9,
         CLOUDS_LAYERS: 10,
 
+        ENABLE_STARS: true,
         STARS_DENSITY: 1,
         STARS_SIZE: 1.1,
         STARS_LAYERS: 10,
 
+        ENABLE_BUSHES: true,
         BUSHES_DENSITY: 0.8,
         BUSHES_SIZE: 0.7,
-        BUSHES_LAYERS: 5
+        BUSHES_LAYERS: 7,
+
+        ENABLE_DAY_NIGHT_CYCLE: true,
+        FIXED_TIME: 0.25, // Noon default
+
+        ENABLE_MOON_PHASES: true,
+        ENABLE_AUTO_MOON_CYCLE: true,
+        MOON_CYCLE_DAYS: 30, // Days for full phase cycle (15 days to Full)
+        MOON_PHASE: 0.5 // 0.0=New, 0.5=Full, 1.0=New
     }
 
     const [settings, setSettings] = useState(() => {
@@ -230,14 +246,14 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         if (!worker) {
             try {
                 // Create worker
-                worker = new Worker(new URL('../../workers/game.worker.js', import.meta.url))
+                worker = new Worker(new URL('../../workers/game.worker.js', import.meta.url), { type: 'module' })
                 workerRef.current = worker
 
                 // Get OffscreenCanvas
                 const offscreen = canvasRef.current.transferControlToOffscreen()
 
                 // Get theme colors
-                const styles = getComputedStyle(document.documentElement)
+                const styles = getComputedStyle(document.body)
                 const theme = {
                     bg: styles.getPropertyValue('--bg').trim(),
                     surface: styles.getPropertyValue('--surface').trim(),
@@ -245,7 +261,27 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                     primary: styles.getPropertyValue('--primary').trim(),
                     border: styles.getPropertyValue('--border').trim(),
                     muted: styles.getPropertyValue('--muted').trim(),
-                    accent: styles.getPropertyValue('--accent').trim()
+                    accent: styles.getPropertyValue('--accent').trim(),
+                    day: styles.getPropertyValue('--day').trim(),
+                    night: styles.getPropertyValue('--night').trim(),
+                    treeDay: styles.getPropertyValue('--tree-day').trim(),
+                    treeNight: styles.getPropertyValue('--tree-night').trim(),
+                    cloudDay: styles.getPropertyValue('--cloud-day').trim(),
+                    cloudNight: styles.getPropertyValue('--cloud-night').trim(),
+                    sunDay: styles.getPropertyValue('--sun-day').trim(),
+                    sunNight: styles.getPropertyValue('--sun-night').trim(),
+                    moonDay: styles.getPropertyValue('--moon-day').trim(),
+                    moonNight: styles.getPropertyValue('--moon-night').trim(),
+                    dinoDay: styles.getPropertyValue('--dino-day').trim(),
+                    dinoNight: styles.getPropertyValue('--dino-night').trim(),
+                    obstacleDay: styles.getPropertyValue('--obstacle-day').trim(),
+                    obstacleNight: styles.getPropertyValue('--obstacle-night').trim(),
+                    groundDay: styles.getPropertyValue('--ground-day').trim(),
+                    groundNight: styles.getPropertyValue('--ground-night').trim(),
+                    groundLineDay: styles.getPropertyValue('--ground-line-day').trim(),
+                    groundLineNight: styles.getPropertyValue('--ground-line-night').trim(),
+                    skyDay: styles.getPropertyValue('--sky-day').trim(),
+                    skyNight: styles.getPropertyValue('--sky-night').trim()
                 }
 
                 // Load 8 Bush Variants
@@ -317,22 +353,6 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
             } catch (err) {
                 console.warn("Canvas transfer failed or Worker init error:", err)
             }
-        } else {
-            // Worker already exists (reused). Just re-attach ResizeObserver if missing?
-            if (containerRef.current && !observerRef.current) {
-                observerRef.current = new ResizeObserver(entries => {
-                    for (let entry of entries) {
-                        const { width, height } = entry.contentRect;
-                        if (width > 0 && height > 0 && workerRef.current) {
-                            workerRef.current.postMessage({
-                                type: 'RESIZE',
-                                payload: { width, height }
-                            });
-                        }
-                    }
-                });
-                observerRef.current.observe(containerRef.current);
-            }
         }
 
         // Always re-bind events because 'worker' instance is stable but closure might not be?
@@ -371,7 +391,59 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                 }
             }, 100)
         }
-    }, [canvasResetKey])
+    }, [canvasResetKey]);
+
+    // Monitor Theme Changes and Sync to Worker
+    useEffect(() => {
+        const observer = new MutationObserver((mutations) => {
+            let shouldUpdate = false;
+            for (const mutation of mutations) {
+                if (mutation.type === 'attributes' && (mutation.attributeName === 'class' || mutation.attributeName === 'style')) {
+                    shouldUpdate = true;
+                    break;
+                }
+            }
+
+            if (shouldUpdate && workerRef.current) {
+                const styles = getComputedStyle(document.body);
+                const theme = {
+                    bg: styles.getPropertyValue('--bg').trim(),
+                    surface: styles.getPropertyValue('--surface').trim(),
+                    text: styles.getPropertyValue('--text').trim(),
+                    primary: styles.getPropertyValue('--primary').trim(),
+                    border: styles.getPropertyValue('--border').trim(),
+                    muted: styles.getPropertyValue('--muted').trim(),
+                    accent: styles.getPropertyValue('--accent').trim(),
+                    day: styles.getPropertyValue('--day').trim(),
+                    night: styles.getPropertyValue('--night').trim(),
+                    treeDay: styles.getPropertyValue('--tree-day').trim(),
+                    treeNight: styles.getPropertyValue('--tree-night').trim(),
+                    cloudDay: styles.getPropertyValue('--cloud-day').trim(),
+                    cloudNight: styles.getPropertyValue('--cloud-night').trim(),
+                    sunDay: styles.getPropertyValue('--sun-day').trim(),
+                    sunNight: styles.getPropertyValue('--sun-night').trim(),
+                    moonDay: styles.getPropertyValue('--moon-day').trim(),
+                    moonNight: styles.getPropertyValue('--moon-night').trim(),
+                    dinoDay: styles.getPropertyValue('--dino-day').trim(),
+                    dinoNight: styles.getPropertyValue('--dino-night').trim(),
+                    obstacleDay: styles.getPropertyValue('--obstacle-day').trim(),
+                    obstacleNight: styles.getPropertyValue('--obstacle-night').trim(),
+                    groundDay: styles.getPropertyValue('--ground-day').trim(),
+                    groundNight: styles.getPropertyValue('--ground-night').trim(),
+                    groundLineDay: styles.getPropertyValue('--ground-line-day').trim(),
+                    groundLineNight: styles.getPropertyValue('--ground-line-night').trim(),
+                    skyDay: styles.getPropertyValue('--sky-day').trim(),
+                    skyNight: styles.getPropertyValue('--sky-night').trim()
+                };
+                workerRef.current.postMessage({ type: 'THEME_UPDATE', payload: theme });
+            }
+        });
+
+        observer.observe(document.body, { attributes: true });
+        observer.observe(document.documentElement, { attributes: true });
+
+        return () => observer.disconnect();
+    }, []);
 
     // Handle Resizing (Responsive)
     useEffect(() => {
@@ -588,31 +660,31 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                                     {/* Left Side: Status & Score */}
                                     <div className="stat-group-left">
                                         <div className="stat-block stat-block-start mb-1">
-                                            <span className="stat-label">Status</span>
-                                            <div className={`stat-value-status ${gameState === 'playing' ? 'playing' : 'default'}`}>
+                                            <span className="stat-label flex items-center gap-1"><Activity size={24} /> Status</span>
+                                            <div className={`stat-value-status ${gameState}`}>
                                                 {gameState}
                                             </div>
                                         </div>
-                                        <div className="stat-block stat-block-start">
-                                            <span className="stat-label">Score</span>
-                                            <Counter value={Math.floor(score / 10)} fontSize={48} places={[10000, 1000, 100, 10, 1]} className="stat-counter-large" />
+                                        <div className="stat-block-row stat-block-start">
+                                            <span className="stat-label flex items-center gap-1"><Target size={24} /> Score :</span>
+                                            <Counter value={Math.floor(score / 10)} fontSize={48} digitHeight={75} places={[10000, 1000, 100, 10, 1]} className="stat-counter-large" />
                                         </div>
                                     </div>
 
                                     {/* Right Side: Best & Sensor */}
                                     <div className="stat-group-right">
-                                        <div className="stat-block stat-block-end">
-                                            <span className="stat-label">Best</span>
-                                            <CountUp
-                                                from={0}
-                                                to={Math.floor(highScore / 10)}
-                                                duration={2}
-                                                separator=","
-                                                className="text-text font-mono font-bold text-3xl leading-none"
+                                        <div className="stat-block-row stat-block-end">
+                                            <Counter
+                                                value={Math.floor(highScore / 10)}
+                                                fontSize={48}
+                                                digitHeight={75}
+                                                places={[10000, 1000, 100, 10, 1]}
+                                                className="stat-counter-large"
                                             />
+                                            <span className="stat-label flex items-center gap-1">: Best <Trophy size={24} className="text-yellow-500 mb-1" /></span>
                                         </div>
                                         <div className="stat-block stat-block-end mb-1">
-                                            <span className="stat-label">Sensor</span>
+                                            <span className="stat-label flex items-center gap-1"><Radio size={24} /> Sensor</span>
                                             <div className={`stat-value-sensor ${wsData ? 'text-green-500' : 'text-red-500'}`}>
                                                 {wsData ? 'Connected' : 'Disconnected'}
                                             </div>
@@ -638,20 +710,21 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
 
                 {/* Right Sidebar */}
                 <div className="game-sidebar">
+                    <div className="h-[85px] shrink-0" />
                     {/* Camera Panel */}
                     <CameraPanel />
 
                     {/* Eye Controls Panel */}
                     <div className="card bg-surface border border-border shadow-card rounded-2xl p-4" style={{ flexShrink: 0 }}>
-                        <h3 className="text-sm font-bold text-text uppercase tracking-wider mb-3">Controls</h3>
+                        <h3 className="text-sm font-bold text-text uppercase tracking-wider mb-3 flex items-center gap-2"><Gamepad2 size={16} /> Controls</h3>
                         <div className="space-y-2 text-sm text-text">
-                            <div className="flex justify-between">
-                                <span className="text-muted">Blink ONCE</span>
-                                <span className="font-bold text-primary">Jump</span>
+                            <div className="flex justify-between items-center">
+                                <span className="text-muted flex items-center gap-1.5"><Eye size={14} className="text-secondary/70" /> Blink ONCE</span>
+                                <span className="font-bold text-primary flex items-center gap-1"><ArrowUp size={12} /> Jump</span>
                             </div>
-                            <div className="flex justify-between">
-                                <span className="text-muted">Blink TWICE</span>
-                                <span className="font-bold text-primary">Pause / Resume</span>
+                            <div className="flex justify-between items-center">
+                                <span className="text-muted flex items-center gap-1.5"><Eye size={14} className="text-secondary/70" /><Eye size={14} className="text-secondary/70 -ml-2" /> Blink TWICE</span>
+                                <span className="font-bold text-primary flex items-center gap-1"><Pause size={12} /> Pause/Resume</span>
                             </div>
                         </div>
 
@@ -670,7 +743,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                             />
 
                             <div className="flex justify-between items-center text-xs">
-                                <span className="text-muted font-medium uppercase tracking-wider">Input Status</span>
+                                <span className="text-muted font-medium uppercase tracking-wider flex items-center gap-1"><Signal size={12} /> Input Status</span>
                                 <span className={`font-bold ${wsData ? 'text-green-500' : 'text-red-500'}`}>
                                     {wsData ? 'ACTIVE' : 'OFFLINE'}
                                 </span>
@@ -681,12 +754,12 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                     {/* Event Log Panel */}
                     <div className="card bg-surface border border-border shadow-card rounded-2xl p-4" style={{ flexShrink: 0 }}>
                         <div className="flex justify-between items-center mb-2">
-                            <h3 className="text-sm font-bold text-text uppercase tracking-wider">Event Log</h3>
+                            <h3 className="text-sm font-bold text-text uppercase tracking-wider flex items-center gap-2"><ScrollText size={16} /> Event Log</h3>
                             <button
                                 onClick={() => setEventLogs([])}
-                                className="text-xs text-muted hover:text-red-400"
+                                className="text-xs text-muted hover:text-red-400 flex items-center gap-1"
                             >
-                                Clear
+                                <Trash2 size={12} /> Clear
                             </button>
                         </div>
                         <div className="bg-bg/50 rounded-lg p-2 h-32 overflow-y-auto font-mono text-xs space-y-1 border border-border/50 scrollbar-thin scrollbar-thumb-border hover:scrollbar-thumb-primary/50 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
@@ -718,120 +791,175 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                     {showSettings && (
                         <div className="card bg-surface border border-border shadow-card rounded-2xl p-4 animate-fade-in" style={{ flexShrink: 0 }}>
                             <div className="flex justify-between items-center mb-4">
-                                <h3 className="text-sm font-bold text-text uppercase tracking-wider">Game Constants</h3>
+                                <h3 className="text-sm font-bold text-text uppercase tracking-wider flex items-center gap-2"><Settings size={16} /> Game Constants</h3>
                                 <div className="flex gap-2 items-center">
                                     {savedMessage && <span className="text-xs text-green-500 font-bold animate-fade-in">{savedMessage}</span>}
                                     <button
                                         onClick={handleSaveSettings}
-                                        className="text-xs bg-primary text-bg px-2 py-1 rounded font-bold hover:opacity-90"
+                                        className="text-xs bg-primary text-bg px-2 py-1 rounded font-bold hover:opacity-90 flex items-center gap-1"
                                     >
-                                        Save
+                                        <Save size={12} /> Save
                                     </button>
                                     <button
                                         onClick={handleResetSettings}
-                                        className="text-xs text-red-400 hover:text-red-300 underline"
+                                        className="text-xs text-red-400 hover:text-red-300 underline flex items-center gap-1"
                                     >
-                                        Reset Config
+                                        <RotateCcw size={12} /> Reset Config
                                     </button>
                                 </div>
                             </div>
 
-                            <div className="mb-4 bg-bg rounded p-2 border border-border">
-                                <div className="flex justify-between items-center text-xs">
-                                    <span className="text-muted">Highscore: {Math.floor(highScore / 10)}</span>
-                                    <button
-                                        onClick={() => {
-                                            localStorage.setItem('dino_highscore', '0')
-                                            setHighScore(0)
-                                            setSavedMessage('Score Reset!')
-                                            setTimeout(() => setSavedMessage(''), 2000)
-                                        }}
-                                        className="text-red-400 hover:text-red-300 font-bold uppercase tracking-wide text-[10px] border border-red-900/50 px-2 py-0.5 rounded bg-red-900/10"
-                                    >
-                                        Reset Score
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div className="space-y-6">
-                                <div className="space-y-3">
-                                    <h4 className="text-xs font-bold text-primary border-b border-border pb-1">Controls</h4>
-
-                                    <SettingToggle label="Manual Controls (Space)" value={settings.ENABLE_MANUAL_CONTROLS} onChange={(v) => handleSettingChange('ENABLE_MANUAL_CONTROLS', v)} />
-
-                                    <h4 className="text-xs font-bold text-primary border-b border-border pb-1 mt-4">Physics</h4>
-                                    <SettingInput label="Gravity" value={settings.GRAVITY} onChange={(v) => handleSettingChange('GRAVITY', v)} min="0.1" max="2.0" step="0.05" />
-                                    <SettingInput label="Jump Strength (Y)" value={settings.JUMP_STRENGTH} onChange={(v) => handleSettingChange('JUMP_STRENGTH', v)} min="-20" max="-5" step="0.5" />
-                                    <SettingInput label="Jump Distance (X)" value={settings.JUMP_DISTANCE} onChange={(v) => handleSettingChange('JUMP_DISTANCE', v)} min="100" max="600" step="10" />
-                                    {/* Derived Speed Display */}
-                                    <div className="flex justify-between text-xs text-muted pt-2 opacity-75">
-                                        <span>Derived Game Speed</span>
-                                        <span>{((settings.JUMP_DISTANCE * settings.GRAVITY) / (2 * Math.abs(settings.JUMP_STRENGTH))).toFixed(1)}</span>
+                            <div className="space-y-2">
+                                <SettingsSection title="Gameplay" icon={Gamepad2} defaultOpen={true}>
+                                    <div className="space-y-3 pt-2">
+                                        <SettingToggle label="Manual Controls (Space)" value={settings.ENABLE_MANUAL_CONTROLS} onChange={(v) => handleSettingChange('ENABLE_MANUAL_CONTROLS', v)} icon={Hand} />
+                                        <SettingInput label="Obstacle Bonus" value={settings.OBSTACLE_BONUS_FACTOR} onChange={(v) => handleSettingChange('OBSTACLE_BONUS_FACTOR', v)} min="0" max="0.5" step="0.005" icon={Zap} />
+                                        <div className="flex justify-between items-center text-xs pt-1 border-t border-border/50">
+                                            <span className="text-muted flex items-center gap-1"><Trophy size={10} /> Highscore: {Math.floor(highScore / 10)}</span>
+                                            <button
+                                                onClick={() => {
+                                                    localStorage.setItem('dino_highscore', '0')
+                                                    setHighScore(0)
+                                                    setSavedMessage('Score Reset!')
+                                                    setTimeout(() => setSavedMessage(''), 2000)
+                                                }}
+                                                className="text-red-400 hover:text-red-300 font-bold uppercase tracking-wide text-[10px] border border-red-900/50 px-2 py-0.5 rounded bg-red-900/10 flex items-center gap-1"
+                                            >
+                                                <Trash2 size={10} /> Reset
+                                            </button>
+                                        </div>
                                     </div>
-                                </div>
-                                <div className="space-y-3">
-                                    <h4 className="text-xs font-bold text-primary border-b border-border pb-1">Dimensions</h4>
-                                    <SettingInput label="Dino Width" value={settings.DINO_WIDTH} onChange={(v) => handleSettingChange('DINO_WIDTH', v)} min="20" max="100" step="2" />
-                                    <SettingInput label="Dino Height" value={settings.DINO_HEIGHT} onChange={(v) => handleSettingChange('DINO_HEIGHT', v)} min="20" max="100" step="2" />
-                                    <SettingInput label="Ground Offset" value={settings.GROUND_OFFSET} onChange={(v) => handleSettingChange('GROUND_OFFSET', v)} min="20" max="150" step="5" />
-                                </div>
-                                <div className="space-y-3">
-                                    <h4 className="text-xs font-bold text-primary border-b border-border pb-1">Obstacles</h4>
-                                    <SettingInput label="Spawn Interval" value={settings.SPAWN_INTERVAL} onChange={(v) => handleSettingChange('SPAWN_INTERVAL', v)} min="500" max="3000" step="50" />
-                                    <SettingInput label="Obs Width" value={settings.OBSTACLE_WIDTH} onChange={(v) => handleSettingChange('OBSTACLE_WIDTH', v)} min="10" max="50" step="2" />
-                                    <SettingInput label="Obs Max Height" value={settings.OBSTACLE_MAX_HEIGHT} onChange={(v) => handleSettingChange('OBSTACLE_MAX_HEIGHT', v)} min="30" max="100" step="5" />
-                                </div>
-                                <div className="space-y-3">
-                                    <h4 className="text-xs font-bold text-primary border-b border-border pb-1">Environment</h4>
-                                    <SettingToggle label="Enable Trees" value={settings.ENABLE_TREES} onChange={(v) => handleSettingChange('ENABLE_TREES', v)} />
-                                    <SettingInput label="Obstacle Bonus" value={settings.OBSTACLE_BONUS_FACTOR} onChange={(v) => handleSettingChange('OBSTACLE_BONUS_FACTOR', v)} min="0" max="0.5" step="0.005" />
-                                    <SettingInput label="Day Cycle (s)" value={settings.CYCLE_DURATION} onChange={(v) => handleSettingChange('CYCLE_DURATION', v)} min="10" max="300" step="5" />
-                                </div>
+                                </SettingsSection>
 
-                                <div className="space-y-3">
-                                    <h4 className="text-xs font-bold text-primary border-b border-border pb-1">Visuals - Trees</h4>
-                                    <SettingInput label="Tree Density" value={settings.TREES_DENSITY} onChange={(v) => handleSettingChange('TREES_DENSITY', v)} min="0.1" max="3.0" step="0.1" />
-                                    <SettingInput label="Tree Size" value={settings.TREES_SIZE} onChange={(v) => handleSettingChange('TREES_SIZE', v)} min="0.5" max="2.0" step="0.1" />
-                                    <SettingInput label="Tree Layers" value={settings.TREES_LAYERS} onChange={(v) => handleSettingChange('TREES_LAYERS', v)} min="1" max="10" step="1" />
-                                </div>
+                                <SettingsSection title="Environment" icon={Globe}>
+                                    <div className="space-y-3 pt-2">
+                                        <h5 className="text-[10px] font-bold text-muted uppercase tracking-wider mb-1 flex items-center gap-1"><Sun size={10} /> Day/Night</h5>
+                                        <SettingToggle label="Auto Cycle" value={settings.ENABLE_DAY_NIGHT_CYCLE} onChange={(v) => handleSettingChange('ENABLE_DAY_NIGHT_CYCLE', v)} icon={RotateCcw} />
+                                        {settings.ENABLE_DAY_NIGHT_CYCLE ? (
+                                            <SettingInput label="Duration (s)" value={settings.CYCLE_DURATION} onChange={(v) => handleSettingChange('CYCLE_DURATION', v)} min="10" max="300" step="5" icon={Timer} />
+                                        ) : (
+                                            <SettingInput label="Fixed Time" value={settings.FIXED_TIME} onChange={(v) => handleSettingChange('FIXED_TIME', v)} min="0" max="1" step="0.05" icon={Clock} />
+                                        )}
 
-                                <div className="space-y-3">
-                                    <h4 className="text-xs font-bold text-primary border-b border-border pb-1">Visuals - Clouds</h4>
-                                    <SettingInput label="Cloud Density" value={settings.CLOUDS_DENSITY} onChange={(v) => handleSettingChange('CLOUDS_DENSITY', v)} min="0.1" max="3.0" step="0.1" />
-                                    <SettingInput label="Cloud Size" value={settings.CLOUDS_SIZE} onChange={(v) => handleSettingChange('CLOUDS_SIZE', v)} min="0.5" max="2.0" step="0.1" />
-                                    <SettingInput label="Cloud Layers" value={settings.CLOUDS_LAYERS} onChange={(v) => handleSettingChange('CLOUDS_LAYERS', v)} min="1" max="10" step="1" />
-                                </div>
+                                        <h5 className="text-[10px] font-bold text-muted uppercase tracking-wider mb-1 mt-3 flex items-center gap-1"><Moon size={10} /> Moon</h5>
+                                        <SettingToggle label="Enable Phases" value={settings.ENABLE_MOON_PHASES} onChange={(v) => handleSettingChange('ENABLE_MOON_PHASES', v)} icon={Moon} />
+                                        {settings.ENABLE_MOON_PHASES && (
+                                            <>
+                                                <SettingToggle label="Auto Cycle" value={settings.ENABLE_AUTO_MOON_CYCLE} onChange={(v) => handleSettingChange('ENABLE_AUTO_MOON_CYCLE', v)} icon={RotateCcw} />
+                                                {settings.ENABLE_AUTO_MOON_CYCLE ? (
+                                                    <SettingInput label="Days/Cycle" value={settings.MOON_CYCLE_DAYS} onChange={(v) => handleSettingChange('MOON_CYCLE_DAYS', v)} min="1" max="30" step="1" icon={Timer} />
+                                                ) : (
+                                                    <SettingInput label="Phase (0-1)" value={settings.MOON_PHASE} onChange={(v) => handleSettingChange('MOON_PHASE', v)} min="0" max="1" step="0.05" icon={Circle} />
+                                                )}
+                                            </>
+                                        )}
 
-                                <div className="space-y-3">
-                                    <h4 className="text-xs font-bold text-primary border-b border-border pb-1">Visuals - Stars</h4>
-                                    <SettingInput label="Star Density" value={settings.STARS_DENSITY} onChange={(v) => handleSettingChange('STARS_DENSITY', v)} min="0.1" max="3.0" step="0.1" />
-                                    <SettingInput label="Star Size" value={settings.STARS_SIZE} onChange={(v) => handleSettingChange('STARS_SIZE', v)} min="0.5" max="2.0" step="0.1" />
-                                    <SettingInput label="Star Layers" value={settings.STARS_LAYERS} onChange={(v) => handleSettingChange('STARS_LAYERS', v)} min="1" max="10" step="1" />
-                                </div>
+                                        <h5 className="text-[10px] font-bold text-muted uppercase tracking-wider mb-1 mt-3 flex items-center gap-1"><Grid size={10} /> Elements</h5>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <SettingToggle label="Trees" value={settings.ENABLE_TREES} onChange={(v) => handleSettingChange('ENABLE_TREES', v)} icon={TreePine} />
+                                            <SettingToggle label="Clouds" value={settings.ENABLE_CLOUDS} onChange={(v) => handleSettingChange('ENABLE_CLOUDS', v)} icon={Cloud} />
+                                            <SettingToggle label="Stars" value={settings.ENABLE_STARS} onChange={(v) => handleSettingChange('ENABLE_STARS', v)} icon={Star} />
+                                            <SettingToggle label="Bushes" value={settings.ENABLE_BUSHES} onChange={(v) => handleSettingChange('ENABLE_BUSHES', v)} icon={Leaf} />
+                                        </div>
+                                    </div>
+                                </SettingsSection>
 
-                                <div className="space-y-3">
-                                    <h4 className="text-xs font-bold text-primary border-b border-border pb-1">Visuals - Bushes</h4>
-                                    <SettingInput label="Bush Density" value={settings.BUSHES_DENSITY} onChange={(v) => handleSettingChange('BUSHES_DENSITY', v)} min="0.1" max="3.0" step="0.1" />
-                                    <SettingInput label="Bush Size" value={settings.BUSHES_SIZE} onChange={(v) => handleSettingChange('BUSHES_SIZE', v)} min="0.5" max="2.0" step="0.1" />
-                                    <SettingInput label="Bush Layers" value={settings.BUSHES_LAYERS} onChange={(v) => handleSettingChange('BUSHES_LAYERS', v)} min="1" max="7" step="1" />
-                                </div>
+                                <SettingsSection title="Visual Details" icon={Sparkles}>
+                                    <div className="space-y-4 pt-2">
+                                        {/* Trees */}
+                                        <div className="bg-bg/50 p-2 rounded border border-border/50">
+                                            <h5 className="text-[10px] font-bold text-primary mb-2 border-b border-border/30 pb-1 flex items-center gap-1"><TreePine size={10} /> Trees Config</h5>
+                                            <SettingInput label="Layers" value={settings.TREES_LAYERS} onChange={(v) => handleSettingChange('TREES_LAYERS', v)} min="1" max="15" step="1" icon={Layers} />
+                                            <SettingInput label="Density" value={settings.TREES_DENSITY} onChange={(v) => handleSettingChange('TREES_DENSITY', v)} min="0" max="5" step="0.1" icon={Grid} />
+                                            <SettingInput label="Size" value={settings.TREES_SIZE} onChange={(v) => handleSettingChange('TREES_SIZE', v)} min="0.5" max="2.0" step="0.1" icon={Maximize} />
+                                        </div>
+
+                                        {/* Clouds */}
+                                        <div className="bg-bg/50 p-2 rounded border border-border/50">
+                                            <h5 className="text-[10px] font-bold text-primary mb-2 border-b border-border/30 pb-1 flex items-center gap-1"><Cloud size={10} /> Clouds Config</h5>
+                                            <SettingInput label="Layers" value={settings.CLOUDS_LAYERS} onChange={(v) => handleSettingChange('CLOUDS_LAYERS', v)} min="1" max="15" step="1" icon={Layers} />
+                                            <SettingInput label="Density" value={settings.CLOUDS_DENSITY} onChange={(v) => handleSettingChange('CLOUDS_DENSITY', v)} min="0.1" max="3.0" step="0.1" icon={Grid} />
+                                            <SettingInput label="Size" value={settings.CLOUDS_SIZE} onChange={(v) => handleSettingChange('CLOUDS_SIZE', v)} min="0.5" max="1.5" step="0.1" icon={Maximize} />
+                                        </div>
+
+                                        {/* Stars & Bushes */}
+                                        <div className="bg-bg/50 p-2 rounded border border-border/50">
+                                            <h5 className="text-[10px] font-bold text-primary mb-2 border-b border-border/30 pb-1 flex items-center gap-1"><Star size={10} /> Stars & Bushes</h5>
+                                            <SettingInput label="Stars Layers" value={settings.STARS_LAYERS} onChange={(v) => handleSettingChange('STARS_LAYERS', v)} min="1" max="15" step="1" icon={Layers} />
+                                            <SettingInput label="Stars Density" value={settings.STARS_DENSITY} onChange={(v) => handleSettingChange('STARS_DENSITY', v)} min="0.1" max="3.0" step="0.1" icon={Grid} />
+                                            <div className="h-2" />
+                                            <SettingInput label="Bush Layers" value={settings.BUSHES_LAYERS} onChange={(v) => handleSettingChange('BUSHES_LAYERS', v)} min="1" max="10" step="1" icon={Layers} />
+                                            <SettingInput label="Bush Density" value={settings.BUSHES_DENSITY} onChange={(v) => handleSettingChange('BUSHES_DENSITY', v)} min="0.1" max="3.0" step="0.1" icon={Grid} />
+                                        </div>
+                                    </div>
+                                </SettingsSection>
+
+                                <SettingsSection title="Physics" icon={Atom}>
+                                    <div className="space-y-3 pt-2">
+                                        <SettingInput label="Gravity" value={settings.GRAVITY} onChange={(v) => handleSettingChange('GRAVITY', v)} min="0.1" max="2.0" step="0.05" icon={Weight} />
+                                        <SettingInput label="Jump Strength" value={settings.JUMP_STRENGTH} onChange={(v) => handleSettingChange('JUMP_STRENGTH', v)} min="-20" max="-5" step="0.5" icon={MoveVertical} />
+                                        <SettingInput label="Jump Distance" value={settings.JUMP_DISTANCE} onChange={(v) => handleSettingChange('JUMP_DISTANCE', v)} min="100" max="600" step="10" icon={MoveHorizontal} />
+                                        <div className="flex justify-between text-xs text-muted pt-1 opacity-75 border-t border-border/30 mt-2">
+                                            <span>Est. Speed</span>
+                                            <span className="font-mono">{((settings.JUMP_DISTANCE * settings.GRAVITY) / (2 * Math.abs(settings.JUMP_STRENGTH))).toFixed(1)}</span>
+                                        </div>
+                                    </div>
+                                </SettingsSection>
+
+                                <SettingsSection title="World Dimensions" icon={Ruler}>
+                                    <div className="space-y-3 pt-2">
+                                        <SettingInput label="Dino W" value={settings.DINO_WIDTH} onChange={(v) => handleSettingChange('DINO_WIDTH', v)} min="20" max="100" step="2" icon={Maximize} />
+                                        <SettingInput label="Dino H" value={settings.DINO_HEIGHT} onChange={(v) => handleSettingChange('DINO_HEIGHT', v)} min="20" max="100" step="2" icon={Maximize} />
+                                        <SettingInput label="Ground Offset" value={settings.GROUND_OFFSET} onChange={(v) => handleSettingChange('GROUND_OFFSET', v)} min="20" max="150" step="5" icon={ArrowDownToLine} />
+                                        <div className="h-1 border-t border-border/30 my-2" />
+                                        <SettingInput label="Spawn Interval" value={settings.SPAWN_INTERVAL} onChange={(v) => handleSettingChange('SPAWN_INTERVAL', v)} min="500" max="3000" step="50" icon={Timer} />
+                                        <SettingInput label="Obs Width" value={settings.OBSTACLE_WIDTH} onChange={(v) => handleSettingChange('OBSTACLE_WIDTH', v)} min="10" max="50" step="2" icon={Maximize} />
+                                        <SettingInput label="Obs Max H" value={settings.OBSTACLE_MAX_HEIGHT} onChange={(v) => handleSettingChange('OBSTACLE_MAX_HEIGHT', v)} min="30" max="100" step="5" icon={Maximize} />
+                                    </div>
+                                </SettingsSection>
                             </div>
                         </div>
                     )}
-
-
+                    <div className="spacer-footer-dino" />
                 </div>
             </div>
         </div>
     )
 }
 
-// Helper outside component to avoid remounting on render (fixes slider focus)
-const SettingInput = ({ label, value, onChange, min, max, step }) => (
-    <div className="flex flex-col gap-1">
-        <div className="flex justify-between text-xs text-muted">
-            <span>{label}</span>
-            <span>{value}</span>
+// --- Helper Components ---
+
+const SettingsSection = ({ title, icon: Icon, children, defaultOpen = false }) => {
+    const [isOpen, setIsOpen] = useState(defaultOpen)
+    return (
+        <div className="border border-border rounded-lg overflow-hidden bg-bg/20">
+            <button
+                onClick={() => setIsOpen(!isOpen)}
+                className="w-full flex justify-between items-center p-2 bg-surface hover:bg-bg/80 transition-colors"
+            >
+                <div className="flex items-center gap-2">
+                    {Icon && <Icon size={14} className="text-primary" />}
+                    <span className="text-xs font-bold text-text uppercase tracking-wider">{title}</span>
+                </div>
+                <ChevronDown size={14} className={`text-muted transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {isOpen && (
+                <div className="p-2 border-t border-border animate-fade-in">
+                    {children}
+                </div>
+            )}
+        </div>
+    )
+}
+
+const SettingInput = ({ label, value, onChange, min, max, step, icon: Icon }) => (
+    <div>
+        <div className="flex justify-between text-xs text-muted mb-1">
+            <div className="flex items-center gap-1.5">
+                {Icon && <Icon size={12} className="text-secondary/80" />}
+                <span>{label}</span>
+            </div>
+            <span className="font-mono text-primary">{value}</span>
         </div>
         <input
             type="range"
@@ -840,19 +968,22 @@ const SettingInput = ({ label, value, onChange, min, max, step }) => (
             step={step}
             value={value}
             onChange={(e) => onChange(parseFloat(e.target.value))}
-            className="w-full accent-primary h-2 bg-surface border border-border rounded-lg appearance-none cursor-pointer"
+            className="w-full accent-primary h-1.5 bg-surface border border-border rounded-lg appearance-none cursor-pointer"
         />
     </div>
 )
 
-const SettingToggle = ({ label, value, onChange }) => (
-    <div className="flex justify-between items-center py-1">
-        <span className="text-xs text-muted">{label}</span>
+const SettingToggle = ({ label, value, onChange, icon: Icon }) => (
+    <div className="flex justify-between items-center py-0.5">
+        <div className="flex items-center gap-1.5">
+            {Icon && <Icon size={12} className="text-secondary/80" />}
+            <span className="text-xs text-muted">{label}</span>
+        </div>
         <button
             onClick={() => onChange(!value)}
-            className={`w-8 h-4 rounded-full relative transition-colors ${value ? 'bg-primary' : 'bg-border'}`}
+            className={`w-7 h-3.5 rounded-full relative transition-colors ${value ? 'bg-primary' : 'bg-border'}`}
         >
-            <div className={`w-3 h-3 bg-white rounded-full absolute top-0.5 transition-transform ${value ? 'translate-x-4' : 'translate-x-1'}`} />
+            <div className={`w-2.5 h-2.5 bg-white rounded-full absolute top-0.5 transition-transform ${value ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
         </button>
     </div>
 )
@@ -860,7 +991,7 @@ const SettingToggle = ({ label, value, onChange }) => (
 const SettingSelect = ({ label, value, options, onChange }) => (
     <div className="flex justify-between items-center py-1 gap-2">
         <span className="text-xs text-muted">{label}</span>
-        <div className="w-40">
+        <div className="w-32">
             <CustomSelect
                 value={value}
                 onChange={onChange}

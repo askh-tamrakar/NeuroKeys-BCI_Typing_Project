@@ -197,15 +197,16 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
     setChannelConfig(prev => {
       const next = { ...prev }
       let changed = false
-      activeChannels.forEach(chIdx => {
+      activeChannels.forEach((chIdx, i) => {
         if (!next[chIdx]) {
-          next[chIdx] = { zoom: 1, manualRange: "", timeWindowMs: defaultTimeWindowMs }
+          const defaultColor = ['#3b82f6', '#10b981', '#f59e0b', '#a855f7'][i % 4]
+          next[chIdx] = { zoom: 1, manualRange: "", timeWindowMs: defaultTimeWindowMs, color: defaultColor }
           changed = true
         }
       })
       return changed ? next : prev
     })
-  }, [activeChannels])
+  }, [activeChannels, defaultTimeWindowMs])
 
   const updateChannelConfig = (chIdx, key, value) => {
     setChannelConfig(prev => ({
@@ -366,6 +367,7 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
 
   return (
     <div className="live-view-container">
+      <div className="h-[94px] shrink-0" />
       {/* Controls */}
       <div className="controls-container">
         <div className="separator"></div>
@@ -408,19 +410,23 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
         </div>
       </div>
 
-      {activeChannels.map((chIdx) => {
-        const sensorName = channelMapping[`ch${chIdx}`]?.sensor
+      {Array.from({ length: 4 }).map((_, chIdx) => {
+        const isEnabled = activeChannels.includes(chIdx);
         const rawData = getChannelData(chIdx)
-        // Moved sweep processing down to have access to currentTimeWindow
-        const chColor = ['rgb(59, 130, 246)', 'rgb(16, 185, 129)', 'rgb(245, 158, 11)', 'rgb(168, 85, 247)'][chIdx % 4]
-        const chColorHist = ['rgba(59, 130, 246, 0.3)', 'rgba(16, 185, 129, 0.3)', 'rgba(245, 158, 11, 0.3)', 'rgba(168, 85, 247, 0.3)'][chIdx % 4]
+        const sensorName = channelMapping[`ch${chIdx}`]?.sensor
 
+        // --- DEFINE VARIABLES IN CORRECT ORDER ---
         const currentZoom = channelConfig[chIdx]?.zoom || 1
         const currentManual = channelConfig[chIdx]?.manualRange || ""
         const currentTimeWindow = channelConfig[chIdx]?.timeWindowMs || defaultTimeWindowMs
+        const currentChColor = channelConfig[chIdx]?.color || ['rgb(59, 130, 246)', 'rgb(16, 185, 129)', 'rgb(245, 158, 11)', 'rgb(168, 85, 247)'][chIdx % 4]
+
+        // Now it is safe to use currentChColor
+        const chColorHist = currentChColor + '4D'
+
         const chDomain = getChannelYDomain(chIdx)
 
-        // Process sweep with channel-specific time window
+        // Moved sweep processing down to have access to currentTimeWindow
         const sweep = processSweep(rawData, currentTimeWindow)
 
         return (
@@ -428,10 +434,11 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
             <SignalChart
               graphNo={`Graph ${chIdx + 1}`}
               title={`${sensorName}`}
+              disabled={!isEnabled}
               byChannel={{ active: sweep.active, history: sweep.history }}
-              channelColors={{ active: chColor, history: chColorHist }}
+              channelColors={{ active: currentChColor, history: chColorHist }} // Pass dynamic color
               timeWindowMs={currentTimeWindow}
-              color={chColor}
+              color={currentChColor} // Main color prop
               height={300}
               showGrid={showGrid}
               scannerX={sweep.scanner}
@@ -445,6 +452,7 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
               onZoomChange={(z) => { updateChannelConfig(chIdx, 'zoom', z); updateChannelConfig(chIdx, 'manualRange', ""); }}
               onRangeChange={(val) => updateChannelConfig(chIdx, 'manualRange', val)}
               onTimeWindowChange={(val) => updateChannelConfig(chIdx, 'timeWindowMs', val)}
+              onColorChange={(val) => updateChannelConfig(chIdx, 'color', val)}
             />
           </div>
         )
@@ -458,6 +466,7 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
         </div>
         <div className="flex items-center gap-2"><span className="text-purple-400 flex items-center gap-1"><Wifi size={14} /> Stream</span>: {wsData?.raw?.stream_name || 'Disconnected'}</div>
       </div>
+      <div className="h-[30px] shrink-0" />
     </div>
   )
 }

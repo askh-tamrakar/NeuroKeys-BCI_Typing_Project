@@ -96,7 +96,7 @@ const CameraPanel = () => {
         <div className="camera-panel-card card group">
             {/* Header/Label */}
             <div className="camera-label">
-                <h3 className="text-sm font-bold text-text uppercase tracking-wider">Camera Feed</h3>
+                <h3 className="text-sm font-bold text-text uppercase tracking-wider flex items-center gap-2"><Camera size={16} /> Camera Feed</h3>
             </div>
 
             {/* Controls Container */}

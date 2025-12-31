@@ -80,9 +80,11 @@
 
 /* Main Containers */
 .dino-container {
-    height: 100%;
+    height: 100vh;
     overflow: hidden;
-    padding-bottom: 0;
+    /* Padding moved to children for granular control */
+    padding: 0; 
+    box-sizing: border-box;
 }
 
 .dino-game-wrapper {
@@ -101,7 +103,10 @@
 .game-main-area {
     flex: 1;
     min-width: 0;
+    width: 0px;
     padding: 15px;
+    padding-top: 109px;
+    padding-bottom: 45px; 
     height: 100%;
     display: flex;
     flex-direction: column;
@@ -190,8 +195,8 @@
 }
 
 .game-info-panel {
-    background-color: rgba(var(--bg-rgb), 0.5); 
-    backdrop-filter: blur(4px);
+    background-color: rgba(var(--bg-rgb), 0.2); 
+    backdrop-filter: blur(2px);
     border-radius: 0.75rem; 
     padding: 1rem;
     border: 1px solid var(--border);
@@ -209,32 +214,47 @@
     justify-content: space-between;
     align-items: center;
     width: 100%;
-    padding-left: 4rem;
-    padding-right: 4rem;
+    gap: 1rem;
+    padding-left: 1rem;
+    padding-right: 1rem;
 }
 
 .stat-group-left {
-    display: flex;
-    align-items: flex-end;
-    gap: 14rem; 
+    display: grid;
+    grid-template-columns: 200px 300px; /* Fixed widths for stability */
+    align-items: center;
+    gap: 7rem; 
     text-align: left;
 }
 
-.stat-group-right {
-    display: flex;
-    align-items: flex-end;
-    gap: 13rem; 
+.stat-group-right {    
+    display: grid;
+    grid-template-columns: 300px 200px;
+    align-items: center;
+    justify-content: center;
+    gap: 7rem;
     text-align: right;
+    justify-items: center;
+
 }
+
 
 .stat-block {
     display: flex;
     flex-direction: column;
 }
 
+.stat-block-row {
+    display: flex;
+    flex-direction: row;
+    align-items: baseline;
+    gap: 0.5rem;
+}
+
 .stat-block-start { 
     align-items: center; 
 }
+
 
 .stat-block-end { 
     align-items: center; 
@@ -246,6 +266,7 @@
 
 .stat-label {
     color: var(--text);
+    font-family: monospace;
     font-size: 22px;
     font-weight: 700;
     text-transform: uppercase;
@@ -260,8 +281,21 @@
 }
 
 .stat-value-status.playing { 
-    color: var(--primary); 
+    color: #22c55e; 
     animation: pulse 2s infinite; 
+}
+
+.stat-value-status.ready { 
+    color: var(--accent); 
+}
+
+.stat-value-status.paused { 
+    color: #f59e0b; 
+    animation: pulse 3s infinite;
+}
+
+.stat-value-status.gameOver { 
+    color: #ef4444; 
 }
 
 .stat-value-status.default { 
@@ -323,10 +357,9 @@
     width: 100%;
     height: 100%;
     overflow-y: auto;
-    padding-bottom: 1.5rem; /* pb-6 */
     display: flex;
     flex-direction: column;
-    gap: 1.5rem; /* space-y-6 */
+    gap: 1.5rem;
     
     /* Scrollbar hiding/customization */
     scrollbar-width: none; /* Firefox */
@@ -363,3 +396,7 @@
     color: #ff4444;
 }
 
+.spacer-footer-dino {
+    height: 21px;
+    flex-shrink: 0;
+}
