@@ -61,6 +61,7 @@ let obstacles = [];
 let lastSpawnTimestamp = 0;
 let distance = 0;
 let gameTime = 0;
+let moonPhase = 0; // 0 to 1
 let lastSentScore = 0;
 let obstaclesPassed = 0;
 let scoreMultiplier = 1.0;
@@ -284,6 +285,17 @@ function updatePhysics(deltaTime) {
         gameTime = (gameTime + deltaTime / (SETTINGS.CYCLE_DURATION * 1000)) % 1.0;
     } else {
         gameTime = SETTINGS.FIXED_TIME !== undefined ? SETTINGS.FIXED_TIME : 0.25;
+    }
+
+    // Moon Phase Cycle
+    if (SETTINGS.ENABLE_AUTO_MOON_CYCLE) {
+        const dayDuration = SETTINGS.CYCLE_DURATION || 100;
+        const daysPerCycle = SETTINGS.MOON_CYCLE_DAYS || 30; // 30 days for full cycle (15 days to full)
+        const duration = dayDuration * daysPerCycle;
+
+        moonPhase = (moonPhase + deltaTime / (duration * 1000)) % 1.0;
+    } else {
+        moonPhase = SETTINGS.MOON_PHASE !== undefined ? SETTINGS.MOON_PHASE : 0.5;
     }
 
     // Update Dynamic Colors using Module
@@ -514,13 +526,126 @@ function drawSky(width, height) {
         const moonAngle = (moonTime / 0.5) * Math.PI;
         const moonX = centerX - Math.cos(moonAngle) * radius;
         const moonY = centerY - Math.sin(moonAngle) * radius * 0.9;
-        // Dynamic Moon Color
-        drawBlockyCircle(moonX, moonY, 24, CURRENT_COLORS.moon, 2);
+        const moonSize = 24;
 
-        // Moon Cutout (Shadow) - Use CURRENT Sky Color
-        ctx.fillStyle = skyColor;
-        ctx.fillRect(moonX - 12, moonY - 8, 8, 8);
-        ctx.fillRect(moonX + 4, moonY + 8, 4, 4);
+        // Draw Base Moon (Full)
+        // If phases enabled, we might mask it.
+        // But simpler to draw full moon then draw 'sky' colored shadow over it.
+        drawBlockyCircle(moonX, moonY, moonSize, CURRENT_COLORS.moon, 2);
+
+        if (SETTINGS.ENABLE_MOON_PHASES) {
+            // Phase Logic (0 = New, 0.5 = Full, 1 = New)
+            // We want to simulate the shadow moving across.
+            // Simplified "Retro" Phase: A sliding rectangular shadow or offset circle?
+            // Let's use an offset circle of "Sky Color" to bite into the moon.
+
+
+            const phase = moonPhase;
+
+            ctx.fillStyle = skyColor;
+
+            if (phase === 0.5) {
+                // Full Moon - No Shadow (maybe small craters?)
+                // Optional: visual interest
+            } else if (Math.abs(phase - 0.5) > 0.45) {
+                // New Moon (mostly hidden)
+                drawBlockyCircle(moonX, moonY, moonSize - 2, skyColor, 2); // Hide center
+            } else {
+                // Crescent / Gibbous
+                // Calculate shadow position
+                // Phase 0..0.5 (Waxing) -> Shadow moves Right to Left (revealing)
+                // Phase 0.5..1 (Waning) -> Shadow moves Right to Left (hiding)?
+
+                // Let's model it as a shadow circle moving.
+                // Full Moon (0.5) -> Shadow is far away.
+                // New Moon (0/1) -> Shadow is on top.
+
+                let shadowOffset = 0;
+
+                // 0.0 (New) -> Shadow at 0
+                // 0.25 (Half) -> Shadow at roughly radius
+                // 0.5 (Full) -> Shadow at 2*radius (gone)
+
+                // Let's simply slide a "Sky Color" circle across.
+                // range: -2.5*radius to 2.5*radius?
+
+                // Normalize phase to -1 (New) to 0 (Full) to 1 (New)? No.
+                // Let's stick to 0..1
+
+                // 0.5 is target.
+                // If phase < 0.5 (Waxing): Shadow is on Left, moving Left?
+                // Actually, standard is:
+                // New (0) -> Waxing Crescent -> First Quarter (0.25) -> Waxing Gibbous -> Full (0.5)
+
+                // Implementation:
+                // Shadow X offset.
+                // For 0 (New): Shadow matches Moon X.
+                // For 0.25 (Half): Shadow is offset by radius/2?
+                // For 0.5 (Full): Shadow is completely off.
+
+                const relativePhase = (phase - 0.5) * 2; // -1 (New) to 0 (Full) to 1 (New) ??
+                // No, Input 0 -> -1. Input 0.5 -> 0. Input 1 -> 1.
+
+                // If we want a simple "slide from right":
+                // Shadow starts at Right, moves Left?
+
+                // Let's try Offset = f(phase).
+                // 0 (New) -> Offset 0
+                // 0.25 -> Offset Radius (covers half?)
+                // 0.5 -> Offset 2*Radius (covers none)
+
+                // Actually, let's just make it look cool.
+                // Use a shadow offset driven by a cosine of the phase?
+
+                // Strategy: A second "Sky" circle that eclipses the moon.
+                // Offset defined by phase.
+                // Phase 0: Offset 0.
+                // Phase 0.5: Offset infinity (or large).
+
+                // Better visual for retro: 
+                // 0.0-0.5: Shadow moves LEFT to RIGHT (revealing moon? no, covering).
+                // Let's assume shadow comes from left.
+
+                // Let's use a simpler mapping: 
+                // Phase is "amount of light".
+                // We draw the shadow circle at an offset.
+
+                // Let's use `Math.cos(phase * 2 * PI)` logic.
+                // Shift = moonSize * 2 * (percentage)
+
+                let shift = 0;
+
+                if (phase < 0.5) {
+                    // Waxing (0 -> 0.5). Shadow is moving OUT to the LEFT? 
+                    // 0: Shadow centered. 0.5: Shadow far left.
+                    // shift = -moonSize * 2 * (phase / 0.5); // 0 -> -2*size
+
+                    // Better:
+                    // 0 (New) -> Shadow on top (offset 0)
+                    // 0.25 (Half) -> Shadow offset by radius (-12)
+                    // 0.5 (Full) -> Shadow offset by diameter (-48)
+                    shift = - (phase / 0.5) * (moonSize * 2.5);
+                } else {
+                    // Waning (0.5 -> 1.0). Shadow comes in from RIGHT.
+                    // 0.5: Shadow far right.
+                    // 1.0: Shadow centered.
+                    // Normalized p: (phase - 0.5) / 0.5 => 0..1
+                    const p = (phase - 0.5) / 0.5; // 0 to 1
+                    // 0 -> 2.5*size
+                    // 1 -> 0
+                    shift = (1 - p) * (moonSize * 2.5);
+                }
+
+                // Draw Shadow Circle
+                // We use blocky circle for shadow too to match style
+                drawBlockyCircle(moonX + shift, moonY, moonSize, skyColor, 2);
+            }
+        } else {
+            // Default "Classic" Moon Details (Pixel Cutouts)
+            ctx.fillStyle = skyColor;
+            ctx.fillRect(moonX - 12, moonY - 8, 8, 8);
+            ctx.fillRect(moonX + 4, moonY + 8, 4, 4);
+        }
     }
 
     // Stars
@@ -676,44 +801,58 @@ function drawDino(x, y) {
 
 function drawCactus(x, y, width, height) {
     ctx.save();
-    ctx.save();
-    ctx.fillStyle = CURRENT_COLORS.obstacle; // Semantic Obstacle Color
-    ctx.strokeStyle = CURRENT_COLORS.obstacle; // Solid look for high contrast
+    ctx.fillStyle = CURRENT_COLORS.obstacle;
+    ctx.strokeStyle = CURRENT_COLORS.obstacle;
     ctx.lineWidth = 2;
 
-    // Main trunk
-    const trunkWidth = Math.floor(width * 0.6);
-    const trunkX = Math.floor(x + (width - trunkWidth) / 2);
-    const trunkH = Math.floor(height);
-    const _y = Math.floor(y);
+    const w = Math.floor(width);
+    const h = Math.floor(height);
 
-    ctx.fillRect(trunkX, _y, trunkWidth, trunkH);
-    ctx.strokeRect(trunkX, _y, trunkWidth, trunkH);
+    // Main Trunk
+    const trunkW = Math.floor(w * 0.4);
+    const trunkX = Math.floor(x + (w - trunkW) / 2);
+    const trunkH = h;
 
-    // Left arm
-    const armHeight = Math.floor(height * 0.4);
-    const armWidth = Math.floor(width * 0.3);
-    const leftArmX = Math.floor(trunkX - armWidth);
-    const leftArmY = Math.floor(y + height * 0.3);
-    const armConnW = Math.floor(trunkWidth * 0.3);
+    ctx.fillRect(trunkX, y, trunkW, trunkH);
+    ctx.strokeRect(trunkX, y, trunkW, trunkH);
 
-    ctx.fillRect(leftArmX, leftArmY, armWidth, armHeight);
-    ctx.strokeRect(leftArmX, leftArmY, armWidth, armHeight);
-    ctx.fillRect(leftArmX + armWidth, leftArmY, armConnW, armWidth);
-    ctx.strokeRect(leftArmX + armWidth, leftArmY, armConnW, armWidth);
+    // Arms configuration
+    const armThick = Math.floor(trunkW * 0.8);
 
-    // Right arm
-    const rightArmX = Math.floor(trunkX + trunkWidth);
-    const rightArmY = Math.floor(y + height * 0.5);
-    const rightArmH = Math.floor(armHeight * 0.8);
+    // Left Arm
+    const lArmH = Math.floor(h * 0.35);
+    const lArmX = Math.floor(x); // Far left
+    const lArmY = Math.floor(y + h * 0.3); // Top of the left arm
+    // Connector Y (where it meets trunk) - Should be at bottom of arm
+    const lConnY = Math.floor(lArmY + lArmH - armThick);
 
-    ctx.fillRect(rightArmX, rightArmY, armWidth, rightArmH);
-    ctx.strokeRect(rightArmX, rightArmY, armWidth, rightArmH);
-    ctx.fillRect(Math.floor(trunkX + trunkWidth * 0.7), rightArmY, armConnW, armWidth);
-    ctx.strokeRect(Math.floor(trunkX + trunkWidth * 0.7), rightArmY, armConnW, armWidth);
+    // Draw Left Upward Part
+    ctx.fillRect(lArmX, lArmY, armThick, lArmH);
+    ctx.strokeRect(lArmX, lArmY, armThick, lArmH);
+
+    // Draw Left Connector (horizontal)
+    ctx.fillRect(lArmX, lConnY, trunkX - lArmX, armThick);
+    ctx.strokeRect(lArmX, lConnY, trunkX - lArmX, armThick);
+
+
+    // Right Arm
+    const rArmH = Math.floor(h * 0.3);
+    const rArmX = Math.floor(x + w - armThick); // Far right
+    const rArmY = Math.floor(y + h * 0.15); // Top of right arm (higher)
+    const rConnY = Math.floor(rArmY + rArmH - armThick);
+
+    // Draw Right Upward Part
+    ctx.fillRect(rArmX, rArmY, armThick, rArmH);
+    ctx.strokeRect(rArmX, rArmY, armThick, rArmH);
+
+    // Draw Right Connector
+    ctx.fillRect(trunkX + trunkW, rConnY, rArmX - (trunkX + trunkW), armThick);
+    ctx.strokeRect(trunkX + trunkW, rConnY, rArmX - (trunkX + trunkW), armThick);
 
     ctx.restore();
 }
+
+
 
 function draw() {
     if (!ctx) return;

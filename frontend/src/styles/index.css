@@ -459,7 +459,7 @@ body {
   --night: #344E5C;
   --tree-day: #344E5C;
   --tree-night: #061016;
-  --cloud-day: #ffffff;
+  --cloud-day: #D9C974;
   --cloud-night: #3e5c6c;
   --sun-day: #EF3D59;
   --sun-night: #C0392B;
@@ -529,11 +529,11 @@ body {
     /* dino */
     --day: var(--bg);
     --night: #2C2B28;
-    --tree-day: #A18F3B; /* Muted Gold */
-    --tree-night: #3B392F;
-    --cloud-day: #ffffff;
+    --tree-day: #2C2B28; /* Muted Gold */
+    --tree-night: #FFE680;
+    --cloud-day: #FFE680;
     --cloud-night: #554d24;
-    --sun-day: #ffffff;
+    --sun-day: #F2B01E;
     --sun-night: #F2B01E;
     --moon-day: #FFFFFF;
     --moon-night: #FFE680;
@@ -542,8 +542,8 @@ body {
   --sky-night: #2C2B28;
   --dino-day: #F2B01E;
   --dino-night: #F2B01E;
-  --obstacle-day: #A18F3B;
-  --obstacle-night: #A18F3B;
+  --obstacle-day: #F2B01E;
+  --obstacle-night: #F2B01E;
   --ground-day: #3B392F;
   --ground-night: #3B392F;
   --ground-line-day: #E3A500;
@@ -565,10 +565,10 @@ body {
     /* dino */
     --day: var(--text);
     --night: var(--bg);
-    --tree-day: #D9C974;
-    --tree-night: #000;
-    --cloud-day: #ffffff;
-    --cloud-night: #3B392F;
+    --tree-day: #2C2B28;
+    --tree-night: #FFFFE0;
+    --cloud-day: #D9C974;
+    --cloud-night: #554d24;
     --sun-day: #F2B01E; /* Golden Sun */
     --sun-night: #B8860B; /* Dark Goldenrod */
     --moon-day: #fff;

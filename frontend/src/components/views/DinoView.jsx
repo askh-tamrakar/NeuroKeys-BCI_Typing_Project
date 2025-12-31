@@ -8,7 +8,7 @@ import {
     ScanEye, SlidersHorizontal, ArrowUp, Pause, Play, Trash2, Wifi, WifiOff, Save, Skull, Trophy, Keyboard, Eye,
     Gamepad2, Globe, Sparkles, Atom, Ruler, Settings, RotateCcw, ScrollText, Timer, Weight, MoveVertical,
     MoveHorizontal, Maximize, ArrowDownToLine, Grid, Sun, Moon, Cloud, Star, TreePine, Leaf, PlayCircle, Hand,
-    Layers, Zap, Clock, ChevronDown, Activity, Hash, Target, Radio, Signal
+    Layers, Zap, Clock, ChevronDown, Activity, Hash, Target, Radio, Signal, Circle
 } from 'lucide-react'
 
 export default function DinoView({ wsData, wsEvent, isPaused }) {
@@ -63,7 +63,12 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         BUSHES_LAYERS: 7,
 
         ENABLE_DAY_NIGHT_CYCLE: true,
-        FIXED_TIME: 0.25 // Noon default
+        FIXED_TIME: 0.25, // Noon default
+
+        ENABLE_MOON_PHASES: true,
+        ENABLE_AUTO_MOON_CYCLE: true,
+        MOON_CYCLE_DAYS: 30, // Days for full phase cycle (15 days to Full)
+        MOON_PHASE: 0.5 // 0.0=New, 0.5=Full, 1.0=New
     }
 
     const [settings, setSettings] = useState(() => {
@@ -834,6 +839,19 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                                             <SettingInput label="Duration (s)" value={settings.CYCLE_DURATION} onChange={(v) => handleSettingChange('CYCLE_DURATION', v)} min="10" max="300" step="5" icon={Timer} />
                                         ) : (
                                             <SettingInput label="Fixed Time" value={settings.FIXED_TIME} onChange={(v) => handleSettingChange('FIXED_TIME', v)} min="0" max="1" step="0.05" icon={Clock} />
+                                        )}
+
+                                        <h5 className="text-[10px] font-bold text-muted uppercase tracking-wider mb-1 mt-3 flex items-center gap-1"><Moon size={10} /> Moon</h5>
+                                        <SettingToggle label="Enable Phases" value={settings.ENABLE_MOON_PHASES} onChange={(v) => handleSettingChange('ENABLE_MOON_PHASES', v)} icon={Moon} />
+                                        {settings.ENABLE_MOON_PHASES && (
+                                            <>
+                                                <SettingToggle label="Auto Cycle" value={settings.ENABLE_AUTO_MOON_CYCLE} onChange={(v) => handleSettingChange('ENABLE_AUTO_MOON_CYCLE', v)} icon={RotateCcw} />
+                                                {settings.ENABLE_AUTO_MOON_CYCLE ? (
+                                                    <SettingInput label="Days/Cycle" value={settings.MOON_CYCLE_DAYS} onChange={(v) => handleSettingChange('MOON_CYCLE_DAYS', v)} min="1" max="30" step="1" icon={Timer} />
+                                                ) : (
+                                                    <SettingInput label="Phase (0-1)" value={settings.MOON_PHASE} onChange={(v) => handleSettingChange('MOON_PHASE', v)} min="0" max="1" step="0.05" icon={Circle} />
+                                                )}
+                                            </>
                                         )}
 
                                         <h5 className="text-[10px] font-bold text-muted uppercase tracking-wider mb-1 mt-3 flex items-center gap-1"><Grid size={10} /> Elements</h5>
