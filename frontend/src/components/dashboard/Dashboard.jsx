@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
+import { Github, UserPlus } from 'lucide-react'
 import LiveDashboard from '../views/LiveDashboard'
 import DinoView from '../views/DinoView'
 import SSVEPView from '../views/SSVEPView'
@@ -166,7 +167,8 @@ export default function Dashboard() {
               </div>
             )}
             <div className="headline flex flex-col">
-              <div className="headline-line main">NeuroTECH
+              <div className="headline-line main">
+                NeuroTECH
                 <br />
                 <div className="headline-line sub">BCI Dashboard</div>
               </div>
@@ -213,13 +215,13 @@ export default function Dashboard() {
 
       {/* Footer */}
       <div className="footer">
-        NeuroTECH - A BCI Project •{' '}
-        <a onClick={() => setAuthView('signup')} className="muted" href="#signup" rel="noreferrer">
+        <span className="flex items-center gap-1">NeuroTECH - A BCI Project </span>  •  {' '}
+        <a onClick={() => setAuthView('signup')} className="muted flex items-center gap-1" href="#signup" rel="noreferrer">
           Sign Up
         </a>
-        {' '}•{' '}
+        {' '} • {' '}
         <a
-          className="muted"
+          className="muted flex items-center gap-1"
           href="https://github.com/askh-tamrakar/NeuroTECH-BCI"
           target="_blank"
           rel="noreferrer"

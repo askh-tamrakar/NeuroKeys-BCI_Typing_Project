@@ -134,11 +134,13 @@
 }
 
 .mode-indicator {
-  font-size: 11px; /* Increased from 10px */
+  font-size: 11px;
+  width: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   color: var(--muted);
-  margin-left: auto;
   font-family: monospace;
-  background-color: rgba(var(--bg-rgb), 0.5);
   background-color: color-mix(in srgb, var(--bg) 50%, transparent);
   padding: 0.25rem 0.5rem;
   border-radius: 0.25rem;

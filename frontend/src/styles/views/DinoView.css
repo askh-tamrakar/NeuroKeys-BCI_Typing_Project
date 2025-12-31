@@ -80,8 +80,9 @@
 
 /* Main Containers */
 .dino-container {
-    height: calc(100vh - 100px);
+    height: 100%;
     overflow: hidden;
+    padding-bottom: 0;
 }
 
 .dino-game-wrapper {
@@ -100,16 +101,17 @@
 .game-main-area {
     flex: 1;
     min-width: 0;
+    padding: 15px;
     height: 100%;
     display: flex;
     flex-direction: column;
-    justify-content: flex-start;
+    justify-content: space-evenly;
+    align-items: stretch;
 }
 
 .game-card {
     background-color: var(--surface);
     border: 1px solid var(--border);
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); 
     border-radius: 1rem; 
     padding: 1.25rem; 
     height: 100%;
@@ -145,6 +147,10 @@
 }
 
 .tuner-button {
+    width: auto;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
     padding-left: 1rem;
     padding-right: 1rem;
     padding-top: 0.5rem;
@@ -155,17 +161,19 @@
     transition-property: all;
     transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
     transition-duration: 150ms;
+    border: 1px solid transparent; /* Reserve space */
 }
 
 .tuner-button.active {
     background-color: var(--primary);
     color: var(--bg);
+    border-color: var(--primary);
 }
 
 .tuner-button.inactive {
     background-color: var(--bg);
     color: var(--muted);
-    border: 1px solid var(--border);
+    border-color: var(--border);
 }
 
 .tuner-button.inactive:hover {
@@ -188,7 +196,7 @@
     padding: 1rem;
     border: 1px solid var(--border);
     position: relative;
-    margin-top: 1.5rem;
+    margin-top: 0;
     flex-shrink: 0;
     width: 100%;
     min-height: 100px;
@@ -331,6 +339,27 @@
 
 @media (min-width: 1024px) {
     .game-sidebar {
-        width: 20rem; /* w-80 */
+        width: 18rem; 
+        min-width: 18rem;
+        flex-shrink: 0;
     }
 }
+
+.camera-container {
+    aspect-ratio: 4 / 3;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+}
+
+.status-eye {
+    animation: pulse 1s infinite;
+}
+
+.status-eye.connected {
+    color: #10b981;
+}
+
+.status-eye.disconnected {
+    color: #ff4444;
+}
+

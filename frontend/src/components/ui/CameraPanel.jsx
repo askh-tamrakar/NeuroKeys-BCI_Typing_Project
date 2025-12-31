@@ -1,10 +1,13 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { Camera, CameraOff, SwitchCamera } from 'lucide-react';
+import '../../styles/ui/CameraPanel.css';
 
 const CameraPanel = () => {
     const videoRef = useRef(null);
     const [error, setError] = useState(null);
     const [devices, setDevices] = useState([]);
     const [currentDeviceIndex, setCurrentDeviceIndex] = useState(0);
+    const [isCameraOn, setIsCameraOn] = useState(true);
 
     // Enumerate devices on mount
     useEffect(() => {
@@ -20,11 +23,18 @@ const CameraPanel = () => {
         getDevices();
     }, []);
 
-    // Start camera stream
+    // Start/Stop camera stream
     useEffect(() => {
         let stream = null;
 
         const startCamera = async () => {
+            if (!isCameraOn) {
+                if (videoRef.current) {
+                    videoRef.current.srcObject = null;
+                }
+                return;
+            }
+
             if (devices.length === 0) return; // Wait for devices
 
             try {
@@ -62,13 +72,17 @@ const CameraPanel = () => {
                 stream.getTracks().forEach(track => track.stop());
             }
         };
-    }, [currentDeviceIndex, devices]);
+    }, [currentDeviceIndex, devices, isCameraOn]);
 
     const handleSwitchCamera = useCallback(() => {
         if (devices.length > 1) {
             setCurrentDeviceIndex(prev => (prev + 1) % devices.length);
         }
     }, [devices]);
+
+    const toggleCamera = useCallback(() => {
+        setIsCameraOn(prev => !prev);
+    }, []);
 
     if (error) {
         return (
@@ -79,36 +93,50 @@ const CameraPanel = () => {
     }
 
     return (
-        <div className="card bg-surface border border-border shadow-card rounded-2xl overflow-hidden relative group">
+        <div className="camera-panel-card card group">
             {/* Header/Label */}
-            <div className="absolute top-2 left-3 z-10 bg-black/50 backdrop-blur-sm px-2 py-0.5 rounded text-[10px] text-white font-bold uppercase tracking-wider pointer-events-none">
-                Camera Feed
+            <div className="camera-label">
+                <h3 className="text-sm font-bold text-text uppercase tracking-wider">Camera Feed</h3>
             </div>
 
-            {/* Switch Button (Visible on hover or if multiple devices) */}
-            {devices.length > 1 && (
-                <button
-                    onClick={handleSwitchCamera}
-                    className="absolute top-2 right-2 z-20 bg-black/50 hover:bg-primary/80 text-white p-1.5 rounded-full backdrop-blur-sm transition-all opacity-0 group-hover:opacity-100"
-                    title="Switch Camera"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
-                        <circle cx="12" cy="10" r="3" />
-                        <path d="M12 22v-4" />
-                        <path d="M8 2h8" />
-                    </svg>
-                </button>
-            )}
+            {/* Controls Container */}
+            <div className="camera-controls">
+                {/* Switch Button (Visible if multiple devices) */}
+                {devices.length > 1 && isCameraOn && (
+                    <button
+                        onClick={handleSwitchCamera}
+                        className="camera-btn switch"
+                        title="Switch Camera"
+                    >
+                        <SwitchCamera size={16} />
+                    </button>
+                )}
 
-            <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                className="w-full h-auto object-cover transform -scale-x-100 bg-black"
-                style={{ aspectRatio: '4/3' }}
-            />
+                {/* On/Off Toggle */}
+                <button
+                    onClick={toggleCamera}
+                    className={`camera-btn toggle ${!isCameraOn ? 'off' : ''}`}
+                    title={isCameraOn ? "Turn Camera Off" : "Turn Camera On"}
+                >
+                    {isCameraOn ? <Camera size={16} /> : <CameraOff size={16} />}
+                </button>
+            </div>
+
+            {/* Video or Placeholder */}
+            {isCameraOn ? (
+                <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="camera-video"
+                />
+            ) : (
+                <div className="camera-placeholder">
+                    <CameraOff size={32} className="text-muted opacity-20" />
+                    <span className="text-xs text-muted font-mono mt-2 uppercase tracking-widest">Camera Off</span>
+                </div>
+            )}
         </div>
     );
 };
