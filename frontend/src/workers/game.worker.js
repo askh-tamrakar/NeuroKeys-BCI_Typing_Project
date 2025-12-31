@@ -1,4 +1,5 @@
 /* eslint-disable no-restricted-globals */
+import { calculateDayNightColors } from '../game/ColorMechanics.js';
 
 // Game Constants (Defaults, will be overridden by settings)
 let SETTINGS = {
@@ -68,6 +69,15 @@ let bushSprites = []; // Array of ImageBitmaps
 // Eye State (for animation)
 let eyeState = 'open'; // open, blink, double-blink
 let eyeStateTimer = null;
+
+// Dynamic Element Colors
+let CURRENT_COLORS = {
+    sky: '#fff',
+    tree: '#ccc',
+    cloud: '#fff',
+    sun: '#ff0',
+    moon: '#fff'
+};
 
 // --- Initialization ---
 
@@ -245,6 +255,12 @@ function updatePhysics(deltaTime) {
     const GAME_SPEED = derivedSpeed * timeFactor;
     const APPLIED_GRAVITY = GRAVITY * timeFactor;
 
+    // Day/Night Cycle (Always active)
+    gameTime = (gameTime + deltaTime / (SETTINGS.CYCLE_DURATION * 1000)) % 1.0;
+
+    // Update Dynamic Colors using Module
+    CURRENT_COLORS = calculateDayNightColors(gameTime, COLORS);
+
     if (gameState === 'playing') {
         // Dino Physics
         velocity += APPLIED_GRAVITY;
@@ -335,8 +351,9 @@ function updatePhysics(deltaTime) {
         // Environment
         distance += GAME_SPEED;
 
-        // Day/Night Cycle
-        gameTime = (gameTime + deltaTime / (SETTINGS.CYCLE_DURATION * 1000)) % 1.0;
+        distance += GAME_SPEED;
+
+        // Day/Night Cycle moved up
 
         // Trees
         if (SETTINGS.ENABLE_TREES) {
@@ -389,8 +406,20 @@ const COLORS = {
     bushLight: '#a7f3d0', // Very light green
     bush: '#4ade80',  // Light green
     bushDark: '#16a34a', // Darker green
-    berry: '#ef4444' // Red berry
+    berry: '#ef4444', // Red berry
+    day: '#ffffff',   // Default Day
+    night: '#000000', // Default Night
+    treeDay: '#2ecc71',
+    treeNight: '#0e1512',
+    cloudDay: '#cccccc', // Neutral Grey Default
+    cloudNight: '#444444', // Neutral Dark Grey Default
+    sunDay: '#F1C40F',
+    sunNight: '#D35400',
+    moonDay: '#ffffff',
+    moonNight: '#CFE9DB'
 };
+
+
 
 function drawPixelCircle(cx, cy, radius, color) {
     ctx.fillStyle = color;
@@ -417,12 +446,16 @@ function drawBlockyCircle(cx, cy, size, color, pixelSize = 4) {
 }
 
 function drawSky(width, height) {
-    ctx.fillStyle = COLORS.bg; // Or dynamic sky color
+    // Use Pre-Calculated Dynamic Color
+    const skyColor = CURRENT_COLORS.sky;
+    ctx.fillStyle = skyColor;
     ctx.fillRect(0, 0, width, height);
+
+    // Update bg color reference so partial clears or other elements that rely on "bg" match
+    COLORS.bg = skyColor;
 
     const centerX = width / 2;
     const radius = width * 0.6;
-    // Ensure the sun/moon arc peaks at y=50 (visible)
     const centerY = Math.max(height + 100, radius * 0.9 + 50);
 
     // Sun
@@ -430,7 +463,8 @@ function drawSky(width, height) {
         const sunAngle = ((gameTime - 0.1) / 0.5) * Math.PI;
         const sunX = centerX - Math.cos(sunAngle) * radius;
         const sunY = centerY - Math.sin(sunAngle) * radius * 0.9;
-        drawBlockyCircle(sunX, sunY, 28, COLORS.primary, 2);
+        // Dynamic Sun Color
+        drawBlockyCircle(sunX, sunY, 28, CURRENT_COLORS.sun, 2);
     }
 
     // Moon
@@ -440,8 +474,11 @@ function drawSky(width, height) {
         const moonAngle = (moonTime / 0.5) * Math.PI;
         const moonX = centerX - Math.cos(moonAngle) * radius;
         const moonY = centerY - Math.sin(moonAngle) * radius * 0.9;
-        drawBlockyCircle(moonX, moonY, 24, COLORS.text, 2);
-        ctx.fillStyle = COLORS.bg;
+        // Dynamic Moon Color
+        drawBlockyCircle(moonX, moonY, 24, CURRENT_COLORS.moon, 2);
+
+        // Moon Cutout (Shadow) - Use CURRENT Sky Color
+        ctx.fillStyle = skyColor;
         ctx.fillRect(moonX - 12, moonY - 8, 8, 8);
         ctx.fillRect(moonX + 4, moonY + 8, 4, 4);
     }
@@ -468,8 +505,8 @@ function drawSky(width, height) {
     }
 
     // Clouds
-    ctx.fillStyle = COLORS.muted;
-    ctx.globalAlpha = 0.4;
+    ctx.fillStyle = CURRENT_COLORS.cloud;
+    ctx.globalAlpha = 0.6; // Slightly more opacity for dynamic colored clouds
     clouds.forEach(cloud => {
         const w = Math.floor(cloud.width);
         const h = Math.floor(w * 0.4);
@@ -491,8 +528,8 @@ function drawSky(width, height) {
 
 function drawTrees(width, groundY) {
     if (!SETTINGS.ENABLE_TREES) return;
-    ctx.fillStyle = COLORS.muted;
-    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = CURRENT_COLORS.tree;
+    ctx.globalAlpha = 0.8; // Better visibility
     trees.forEach(tree => {
         const tx = Math.floor(tree.x);
         const tw = Math.floor(tree.width);
@@ -726,21 +763,21 @@ function draw() {
             ctx.fillRect(0, 0, width, height);
 
             ctx.textAlign = 'center';
-            ctx.font = 'bold 24px sans-serif';
+            ctx.font = 'bold 36px sans-serif';
             ctx.fillStyle = COLORS.primary;
             ctx.fillText('PAUSED', width / 2, height / 2 - 20);
 
             ctx.fillStyle = 'white'; // White text on dark overlay looks better
-            ctx.font = '16px sans-serif';
+            ctx.font = '24px sans-serif';
             ctx.fillText('Double Blink to resume', width / 2, height / 2 + 20);
 
         } else if (gameState === 'gameOver') {
             ctx.textAlign = 'center';
-            ctx.font = 'bold 24px sans-serif';
+            ctx.font = 'bold 36px sans-serif';
             ctx.fillStyle = COLORS.primary;
             ctx.fillText('GAME OVER!', width / 2, height / 2 - 20);
             ctx.fillStyle = COLORS.text;
-            ctx.font = '16px sans-serif';
+            ctx.font = '24px sans-serif';
             ctx.fillText('Blink to restart', width / 2, height / 2 + 20);
         }
     } catch (err) {
@@ -783,6 +820,18 @@ self.onmessage = (e) => {
             initVisuals();
             lastTime = Date.now();
             loop();
+            break;
+
+        case 'THEME_UPDATE':
+            if (payload) {
+                // Only update keys that exist in payload to avoid overwriting with undefined
+                // If payload is the full theme object, just assign
+                Object.assign(COLORS, payload);
+                // Force a recalculate of CURRENT_COLORS immediately if needed
+                CURRENT_COLORS = calculateDayNightColors(gameTime, COLORS);
+                // Also update bg immediately if static
+                COLORS.bg = CURRENT_COLORS.sky;
+            }
             break;
 
         case 'SETTINGS':

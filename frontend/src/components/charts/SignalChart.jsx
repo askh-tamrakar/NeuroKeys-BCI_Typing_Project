@@ -1,7 +1,7 @@
 // SignalChart.jsx
-import React, { useMemo } from 'react'
+import React, { useMemo, useRef } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceDot, ReferenceArea } from 'recharts'
-import { ChartSpline, ZoomIn, ArrowUpDown, ArrowDown, ArrowUp, Sigma, Clock, Minus, Plus } from 'lucide-react'
+import { ChartSpline, ZoomIn, ArrowUpDown, ArrowDown, ArrowUp, Sigma, Clock, Minus, Plus, Ban } from 'lucide-react'
 import ElasticSlider from '../ui/ElasticSlider'
 import '../../styles/live/SignalChart.css'
 
@@ -33,7 +33,9 @@ export default function SignalChart({
   currentManual = "",
   onZoomChange = null,
   onRangeChange = null,
-  onTimeWindowChange = null
+  onTimeWindowChange = null,
+  onColorChange = null,
+  disabled = false
 }) {
   const merged = useMemo(() => {
     if (!byChannel || typeof byChannel !== 'object') {
@@ -186,11 +188,30 @@ export default function SignalChart({
     return result
   }, [finalYDomain, tickCount])
 
+  const colorInputRef = useRef(null)
+
   return (
-    <div className="signal-chart-container">
+    <div className={`signal-chart-container ${disabled ? 'signal-chart-disabled' : ''}`}>
+
       <div className="chart-header">
         <h3 className="chart-title">
-          <ChartSpline size={32} strokeWidth={3} style={{ color: color }} className="mr-2" />
+          <button
+            onClick={() => colorInputRef.current?.click()}
+            className="p-1 hover:bg-muted/10 rounded-full transition-colors cursor-pointer group"
+            title="Change Graph Color"
+          >
+            <ChartSpline size={32} strokeWidth={3} style={{ color: color }} className="mr-2 group-hover:scale-110 transition-transform" />
+          </button>
+
+          {/* Hidden Color Input */}
+          <input
+            type="color"
+            ref={colorInputRef}
+            value={color.length === 7 ? color : "#3b82f6"} // Ensure valid hex code if possible, though browser handles rgb usually
+            onChange={(e) => onColorChange && onColorChange(e.target.value)}
+            style={{ display: 'none' }}
+          />
+
           {graphNo}
           <span className="channel-color-dot" style={{ backgroundColor: color }}></span>
           {title}
@@ -217,7 +238,7 @@ export default function SignalChart({
 
           {/* Zoom Buttons */}
           <div className="zoom-controls">
-            <span className="control-label flex items-center gap-1"><ZoomIn size={12} /> ZOOM</span>
+            <span className="control-label flex items-center gap-1"><ZoomIn size={24} /> ZOOM</span>
             {[1, 2, 3, 5, 10, 25, 50].map(z => (
               <button
                 key={z}
@@ -233,7 +254,7 @@ export default function SignalChart({
 
           {/* Manual Range Input */}
           <div className="range-input-container">
-            <span className="control-label flex items-center gap-1"><ArrowUpDown size={12} /> RANGE</span>
+            <span className="control-label flex items-center gap-1"><ArrowUpDown size={24} /> RANGE</span>
             <input
               type="number"
               placeholder="+/-"
@@ -250,21 +271,22 @@ export default function SignalChart({
           </div>
         </div>
 
+        {/* Stats */}
         <div className="chart-stats">
           {dataArray.length > 0 && (
             <>
               <div className="stat-item">
-                <span className="stat-label flex items-center gap-1"><ArrowDown size={10} /> Min</span>
+                <span className="stat-label-chart"><ArrowDown size={18} /> Min</span>
                 <span className="stat-value">{min.toFixed(2)}</span>
               </div>
               <div className="stat-separator"></div>
               <div className="stat-item">
-                <span className="stat-label flex items-center gap-1"><ArrowUp size={10} /> Max</span>
+                <span className="stat-label-chart"><ArrowUp size={18} /> Max</span>
                 <span className="stat-value">{max.toFixed(2)}</span>
               </div>
               <div className="stat-separator"></div>
               <div className="stat-item">
-                <span className="stat-label flex items-center gap-1"><Sigma size={10} /> Mean</span>
+                <span className="stat-label-chart"><Sigma size={18} /> Mean</span>
                 <span className="stat-value">{mean.toFixed(2)}</span>
               </div>
             </>

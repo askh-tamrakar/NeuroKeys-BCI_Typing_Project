@@ -1,7 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ChevronDown, ChevronUp, Minus, Plus, Filter, Zap, Waves, Sliders, Cpu, Power, ArrowRightLeft, Check, Play, Pause, ListOrdered, Timer, Activity, CheckCircle, Network } from 'lucide-react';
+import {
+    ChevronDown, ChevronUp, Minus, Plus, Filter, Zap,
+    Waves, Sliders, Cpu, Power, ArrowRightLeft, Check, Play,
+    Pause, ListOrdered, Timer, Activity, CheckCircle, Network
+} from 'lucide-react';
 import ElectricBorder from './ElectricBorder';
-import ElasticSlider from './ElasticSlider';
 import CustomSelect from './CustomSelect';
 import { soundHandler } from '../../handlers/SoundHandler';
 export default function Sidebar({
@@ -63,7 +66,11 @@ export default function Sidebar({
             channel_mapping: {
                 ...config.channel_mapping,
                 [chKey]: {
+                    // Start with existing properties
                     ...config.channel_mapping?.[chKey],
+                    // Explicitly preserve sensor (or default to current getter value if missing)
+                    // This ensures "sensor" key exists in the config even if it was implicit before
+                    sensor: config.channel_mapping?.[chKey]?.sensor || 'EMG',
                     enabled: enabled
                 }
             }
@@ -78,9 +85,10 @@ export default function Sidebar({
     }
 
     return (
-        <aside className={`w-80 bg-surface border-r border-border h-full flex flex-col overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] ${className}`}>
+        <aside className={`w-80 bg-surface/80 backdrop-blur-md border-r border-border h-full flex flex-col overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] ${className}`}>
+            <div className="h-[94px] shrink-0" />
 
-            <div className="p-6 border-b border-border">
+            <div className="p-4 border-b border-border">
                 <h2 className="text-3xl font-bold text-text mb-1 flex items-center gap-3">
                     <Cpu size={32} className="text-primary animate-pulse" />
                     <span style={{ letterSpacing: '2.3px' }}>Controls</span>
@@ -88,7 +96,7 @@ export default function Sidebar({
                 <p className="text-base text-muted">LSL Stream Configuration</p>
             </div>
 
-            <div className="p-6 space-y-8">
+            <div className="p-4 space-y-8">
 
                 {/* Stream Control */}
                 <ElectricBorder
@@ -110,8 +118,10 @@ export default function Sidebar({
                             : 'bg-primary/10 text-primary hover:bg-primary/20'
                             }`}
                     >
-                        {isPaused ? <Play size={16} className="fill-current pulse text-green-500" /> : <Pause size={16} className="fill-current pulse text-red-500" />}
-                        {isPaused ? 'RESUME STREAM' : 'PAUSE STREAM'}
+                        {isPaused ? <Play size={20} className="fill-current pulse" style={{ color: "#ef4444" }} /> : <Pause size={20} className="fill-current pulse" style={{ color: "#10b981" }} />}
+                        {isPaused
+                            ? <span className="text-red-400">STREAM PAUSED</span>
+                            : <span className="text-emerald-400">STREAMING</span>}
                     </button>
                 </ElectricBorder>
 
@@ -265,6 +275,8 @@ export default function Sidebar({
                     />
                 </section>
             </div>
+
+            <div className="h-[30px] shrink-0" />
         </aside >
     )
 }
@@ -486,6 +498,7 @@ function FilterSection({
                     </div>
                 </div>
             )}
+            <div className="h-[35px] shrink-0" />
         </div>
     )
 }

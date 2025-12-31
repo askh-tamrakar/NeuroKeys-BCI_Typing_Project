@@ -3,30 +3,26 @@
   "channel_mapping": {
     "ch0": {
       "sensor": "EMG",
-      "enabled": true,
-      "label": "EMG Channel 0"
+      "enabled": true
     },
     "ch1": {
-      "sensor": "EMG",
-      "enabled": true,
-      "label": "EMG Channel 1"
+      "sensor": "EOG",
+      "enabled": true
     },
     "ch2": {
       "sensor": "EMG",
-      "enabled": true,
-      "label": "EMG Channel 2"
+      "enabled": true
     },
     "ch3": {
       "sensor": "EMG",
-      "enabled": true,
-      "label": "EMG Channel 3"
+      "enabled": true
     }
   },
-  "num_channels": 4,
+  "num_channels": 2,
   "serial_port": "",
   "display": {
-    "scannerX": 0,
+    "timeWindowMs": 30000,
     "showGrid": true,
-    "timeWindowMs": 1000
+    "scannerX": 0
   }
 }

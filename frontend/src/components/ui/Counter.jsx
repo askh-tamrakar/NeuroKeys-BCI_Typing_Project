@@ -1,18 +1,40 @@
 import { motion, useSpring, useTransform } from 'motion/react';
 import { useEffect } from 'react';
 
+const OPACITY_FACTOR = 1.5; // Controls how fast it fades. Higher = sharper fade.
+
 function Number({ mv, number, height, className, style }) {
-    let y = useTransform(mv, latest => {
+    let styleParams = useTransform(mv, latest => {
         let placeValue = latest % 10;
         let offset = (10 + number - placeValue) % 10;
+
         let memo = offset * height;
         if (offset > 5) {
             memo -= 10 * height;
         }
-        return memo;
+
+        // Calculate opacity based on distance from center (0)
+        // offset is 0 for current, 1 for next, 9 (aka -1) for prev
+        let dist = Math.min(offset, 10 - offset);
+
+        // Linear fade: 1 at dist=0, 0 at dist=1
+        // Clamp between 0 and 1
+        let opacity = Math.max(0, 1 - (dist * OPACITY_FACTOR));
+
+        return { y: memo, opacity };
     });
+
     return (
-        <motion.span className={className} style={{ ...style, y, position: 'absolute', display: 'block' }}>
+        <motion.span
+            className={className}
+            style={{
+                ...style,
+                y: useTransform(styleParams, s => s.y),
+                opacity: useTransform(styleParams, s => s.opacity),
+                position: 'absolute',
+                display: 'block'
+            }}
+        >
             {number}
         </motion.span>
     );

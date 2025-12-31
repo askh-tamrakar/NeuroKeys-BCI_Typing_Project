@@ -97,6 +97,14 @@ body {
   /* dino */
   --day: #f5f5f5;
   --night: #111111;
+  --tree-day: #bdbdbd;
+  --tree-night: #1b1b1b;
+  --cloud-day: #f5f5f5;
+  --cloud-night: #2a2a2a;
+  --sun-day: #f5f5f5;
+  --sun-night: #61dafb;
+  --moon-day: #f5f5f5;
+  --moon-night: #bdbdbd;
 }
 
 /* Theme 1 */
@@ -110,6 +118,18 @@ body {
   --accent: #88304E;
   --border: #6a3c59;
   --shadow: rgba(0,0,0,0.35);
+
+  /* dino */
+  --day: #FFE4E1; /* MistyRose */
+  --night: #2C2C2C;
+  --tree-day: #D47995; /* Faded rose */
+  --tree-night: #522546; /* Matches surface */
+  --cloud-day: #ffffff;
+  --cloud-night: #6a3c59;
+  --sun-day: #FFC0CB; /* Pinkish sun */
+  --sun-night: #F7374F; /* Bright red sunset */
+  --moon-day: #ffffff;
+  --moon-night: #e8d7df;
 }
 
 /* Theme 2 */
@@ -123,6 +143,18 @@ body {
   --accent: #720455;
   --border: #4f2a6a;
   --shadow: rgba(10, 6, 55, 0.45);
+
+  /* dino */
+  --day: #E6E6FA; /* Lavender */
+  --night: #030637;
+  --tree-day: #910A67; /* Primary */
+  --tree-night: #240046; /* Deep purple */
+  --cloud-day: #F4F0FF;
+  --cloud-night: #3C0753;
+  --sun-day: #FFD700; /* Gold */
+  --sun-night: #E100FF; /* Neon violet */
+  --moon-day: #ffffff;
+  --moon-night: #D9C8FF;
 }
 
 /* Theme 3 */
@@ -136,6 +168,18 @@ body {
   --accent: #97B067;
   --border: #5a8b74;
   --shadow: rgba(0,0,0,0.35);
+
+  /* dino */
+  --day: #F0FFF0; /* Honeydew */
+  --night: #2F5249;
+  --tree-day: #437057;
+  --tree-night: #1a332d;
+  --cloud-day: #ffffff;
+  --cloud-night: #5a8b74;
+  --sun-day: #E3DE61;
+  --sun-night: #FFB347; /* Orange sunset */
+  --moon-day: #ffffff;
+  --moon-night: #DCEBDC;
 }
 
 /* Extra: Ocean */
@@ -149,6 +193,18 @@ body {
   --accent: #1f6feb;
   --border: #17415f;
   --shadow: rgba(3, 19, 33, 0.5);
+
+  /* dino */
+  --day: #E0F7FA; /* Light Cyan */
+  --night: #071a2c;
+  --tree-day: #23a6f2; /* Blue pine */
+  --tree-night: #0f2e4a;
+  --cloud-day: #f0f9ff;
+  --cloud-night: #17415f;
+  --sun-day: #FFD700;
+  --sun-night: #FF7E5F; /* Coral sunset */
+  --moon-day: #ffffff;
+  --moon-night: #B9D8EA;
 }
 
 /* Extra: Sunset */
@@ -162,6 +218,18 @@ body {
   --accent: #ffb86b;
   --border: #4b1a22;
   --shadow: rgba(30, 11, 18, 0.5);
+
+  /* dino */
+  --day: #FFF5EE; /* Seashell */
+  --night: #1e0b12;
+  --tree-day: #ff7a59; /* Orange tree */
+  --tree-night: #4b1a22;
+  --cloud-day: #ffffff;
+  --cloud-night: #4b1a22;
+  --sun-day: #ffb86b;
+  --sun-night: #8B0000; /* Deep red */
+  --moon-day: #fff;
+  --moon-night: #FFD6C8;
 }
 
 /* Extra: Forest */
@@ -175,6 +243,18 @@ body {
   --accent: #1abc9c;
   --border: #1b332a;
   --shadow: rgba(0, 0, 0, 0.45);
+
+  /* dino */
+  --day: #E8F5E9; /* Light Green */
+  --night: #0e1512;
+  --tree-day: #2ecc71; /* Green */
+  --tree-night: #08110e;
+  --cloud-day: #ffffff;
+  --cloud-night: #1b332a;
+  --sun-day: #F1C40F;
+  --sun-night: #D35400;
+  --moon-day: #fff;
+  --moon-night: #CFE9DB;
 }
 
 /* Slate */
@@ -188,6 +268,18 @@ body {
   --accent: #a6adc8;
   --border: #202534;
   --shadow: rgba(2, 4, 9, 0.55);
+
+  /* dino */
+  --day: #F1F5F9; /* Slate 100 */
+  --night: #0b0d12;
+  --tree-day: #7aa2f7;
+  --tree-night: #0b0d12;
+  --cloud-day: #ffffff;
+  --cloud-night: #202534;
+  --sun-day: #F9A8D4; /* Pinkish */
+  --sun-night: #7C3AED;
+  --moon-day: #fff;
+  --moon-night: #C7D0DD;
 }
 
 /* Mint/Coral */
@@ -201,6 +293,18 @@ body {
   --accent: #FF847C;
   --border: #3b4950;
   --shadow: rgba(0,0,0,0.5);
+
+  /* dino */
+  --day: #FFDAB9; /* PeachPuff */
+  --night: #2A363B;
+  --tree-day: #99B898;
+  --tree-night: #2A363B;
+  --cloud-day: #fff;
+  --cloud-night: #3b4950;
+  --sun-day: #E84A5F;
+  --sun-night: #C0392B;
+  --moon-day: #fff;
+  --moon-night: #FFEADC;
 }
 
 /* Blush/Teal */
@@ -214,6 +318,18 @@ body {
   --accent: #56BEA6;
   --border: #3b7187;
   --shadow: rgba(3, 19, 33, 0.5);
+
+  /* dino */
+  --day: #E0F2F1; /* Teal 50 */
+  --night: #305F72;
+  --tree-day: #56BEA6;
+  --tree-night: #10222b;
+  --cloud-day: #fff;
+  --cloud-night: #3b7187;
+  --sun-day: #F18C8E;
+  --sun-night: #C0392B;
+  --moon-day: #fff;
+  --moon-night: #F7E7DC;
 }
 
 /* Vibrant Warm */
@@ -227,6 +343,18 @@ body {
   --accent: #E17A47;
   --border: #3e5c6c;
   --shadow: rgba(10, 19, 26, 0.5);
+
+  /* dino */
+  --day: #FFF8E1; /* Amber 50 */
+  --night: #344E5C;
+  --tree-day: #4AB19D;
+  --tree-night: #061016;
+  --cloud-day: #fff;
+  --cloud-night: #3e5c6c;
+  --sun-day: #EF3D59;
+  --sun-night: #C0392B;
+  --moon-day: #fff;
+  --moon-night: #FFEEB9;
 }
 
 /* Plum palette */
@@ -240,6 +368,18 @@ body {
   --accent: #6A1E55;
   --border: #4a2a40;
   --shadow: rgba(0,0,0,0.55);
+
+  /* dino */
+  --day: #F3E5F5; /* Purple 50 */
+  --night: #1A1A1D;
+  --tree-day: #A64D79;
+  --tree-night: #3B1C32;
+  --cloud-day: #fff;
+  --cloud-night: #4a2a40;
+  --sun-day: #E1BEE7;
+  --sun-night: #8E24AA;
+  --moon-day: #fff;
+  --moon-night: #E7CFE0;
 }
 
 /* Golden Ember */
@@ -253,6 +393,18 @@ body {
     --accent: #E3A500;
     --border: #C69C00;
     --shadow: rgba(0,0,0,0.25);
+
+    /* dino */
+    --day: var(--bg);
+    --night: #2C2B28;
+    --tree-day: #A18F3B; /* Muted Gold */
+    --tree-night: #3B392F;
+    --cloud-day: #ffffff;
+    --cloud-night: #554d24;
+    --sun-day: #ffffff;
+    --sun-night: #F2B01E;
+    --moon-day: #FFFFFF;
+    --moon-night: #FFE680;
 }
 
 /* Golden Eclipse */
@@ -266,6 +418,18 @@ body {
     --accent: #E3A500; 
     --border: #C69C00; 
     --shadow: rgba(0,0,0,0.55); 
+
+    /* dino */
+    --day: var(--text);
+    --night: var(--bg);
+    --tree-day: #D9C974;
+    --tree-night: #000;
+    --cloud-day: #fff;
+    --cloud-night: #3B392F;
+    --sun-day: #F2B01E; /* Golden Sun */
+    --sun-night: #B8860B; /* Dark Goldenrod */
+    --moon-day: #fff;
+    --moon-night: #FFF7B0;
 }
 
 /* Croimson Blaze */
@@ -279,6 +443,18 @@ body {
   --accent: #A0153E;
   --border: #3B0B2E;
   --shadow: rgba(0, 0, 0, 0.5);
+
+  /* dino */
+  --day: #FFEBEE; /* Red 50 */
+  --night: #00224D;
+  --tree-day: #5D0E41;
+  --tree-night: #000;
+  --cloud-day: #fff;
+  --cloud-night: #3B0B2E;
+  --sun-day: #FF204E;
+  --sun-night: #8B0000;
+  --moon-day: #fff;
+  --moon-night: #E6B7BE;
 }
 
 /* Inferno Burst */
@@ -292,6 +468,18 @@ body {
   --accent: #FF7600;
   --border: #8A1A3C;
   --shadow: rgba(0, 0, 0, 0.45);
+
+  /* dino */
+  --day: #FFF3E0; /* Orange 50 */
+  --night: #52006A;
+  --tree-day: #7A0B57;
+  --tree-night: #220030;
+  --cloud-day: #fff;
+  --cloud-night: #8A1A3C;
+  --sun-day: #FFA900;
+  --sun-night: #D35400;
+  --moon-day: #fff;
+  --moon-night: #FFCDA6;
 }
 
 /* Rosewood Velvet */
@@ -305,6 +493,18 @@ body {
   --accent: #EF88AD;
   --border: #53132E;
   --shadow: rgba(0, 0, 0, 0.45);
+
+  /* dino */
+  --day: #FCE4EC; /* Pink 50 */
+  --night: #3A0519;
+  --tree-day: #670D2F;
+  --tree-night: #15040A;
+  --cloud-day: #fff;
+  --cloud-night: #53132E;
+  --sun-day: #EF88AD;
+  --sun-night: #880E4F;
+  --moon-day: #fff;
+  --moon-night: #E7B3C3;
 }
 
 /* Ember Noir */
@@ -318,6 +518,18 @@ body {
   --accent: #AB4459;
   --border: #2C143D;
   --shadow: rgba(0, 0, 0, 0.5);
+
+  /* dino */
+  --day: #FFFDE7; /* Yellow 50 */
+  --night: #1B1833;
+  --tree-day: #441752;
+  --tree-night: #0a0815;
+  --cloud-day: #fff;
+  --cloud-night: #2C143D;
+  --sun-day: #F29F58;
+  --sun-night: #D35400;
+  --moon-day: #fff;
+  --moon-night: #E6C9AE;
 }
 
 /* Amethyst Dream */
@@ -331,6 +543,18 @@ body {
   --accent: #FFACAC;
   --border: #4A276F;
   --shadow: rgba(10, 0, 30, 0.5);
+
+  /* dino */
+  --day: #EDE7F6; /* Deep Purple 50 */
+  --night: #3E1E68;
+  --tree-day: #E45A92;
+  --tree-night: #220B2D;
+  --cloud-day: #fff;
+  --cloud-night: #4A276F;
+  --sun-day: #FFACAC;
+  --sun-night: #C2185B;
+  --moon-day: #fff;
+  --moon-night: #F9CEDC;
 }
 }
 

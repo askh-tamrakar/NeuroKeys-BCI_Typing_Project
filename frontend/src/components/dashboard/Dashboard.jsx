@@ -135,11 +135,11 @@ export default function Dashboard() {
   return (
     <div className="app-root">
       {/* Navigation */}
-      <div className="topbar" style={{ zIndex: 50 }}>
-        <div className="topbar-inner container">
+      <div className="header" style={{ zIndex: 50 }}>
+        <div className="header-inner container">
           <div className="flex items-center gap-3">
-            <div className="relative group">
-              <div className="absolute inset-0 bg-primary/20 blur-lg rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+            <div className="relative group cursor-pointer" onClick={logout} title="Click to Logout">
+              <div className="absolute inset-0 bg-primary/20 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
               <video muted autoPlay loop playsInline preload="auto" aria-label="logo animation" className="w-16 h-16 relative z-10 rounded-lg border border-border bg-black object-cover">
                 <source src="/Resources/brain_animation.mp4" type="video/mp4" />
               </video>
@@ -203,21 +203,36 @@ export default function Dashboard() {
 
       {/* Main Content Area */}
       <div className="scrollbar-thin scrollbar-thumb-border hover:scrollbar-thumb-primary/50 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']" style={{ flex: 1, padding: '0px 0px', overflowY: 'auto' }}>
-        {currentPage === 'live' && <LiveDashboard wsData={lastMessage} wsConfig={lastConfig} wsEvent={lastEvent} sendMessage={sendMessage} />}
-        {currentPage === 'dino' && <DinoView wsData={lastMessage} wsEvent={lastEvent} isPaused={false} />}
-        {currentPage === 'ssvep' && <SSVEPView />}
-        {currentPage === 'test' && <TestView wsData={lastMessage} wsEvent={lastEvent} config={lastConfig} />}
-        {currentPage === 'rps' && <RPSGame wsEvent={lastEvent} />}
-        {currentPage === 'calibration' && <CalibrationView wsData={lastMessage} wsEvent={lastEvent} config={lastConfig} />}
-        {currentPage === 'ml_training' && <MLTrainingView />}
-        {currentPage === 'settings' && <SettingsView />}
+
+        {/* Helper to determine if we need spacers (non-full-screen pages need them to clear fixed header/footer) */}
+        {(() => {
+          const FULL_SCREEN_PAGES = ['live', 'dino'];
+          const showSpacers = !FULL_SCREEN_PAGES.includes(currentPage);
+
+          return (
+            <>
+              {showSpacers && <div className="h-[94px] shrink-0" />}
+
+              {currentPage === 'live' && <LiveDashboard wsData={lastMessage} wsConfig={lastConfig} wsEvent={lastEvent} sendMessage={sendMessage} />}
+              {currentPage === 'dino' && <DinoView wsData={lastMessage} wsEvent={lastEvent} isPaused={false} />}
+              {currentPage === 'ssvep' && <SSVEPView />}
+              {currentPage === 'test' && <TestView wsData={lastMessage} wsEvent={lastEvent} config={lastConfig} />}
+              {currentPage === 'rps' && <RPSGame wsEvent={lastEvent} />}
+              {currentPage === 'calibration' && <CalibrationView wsData={lastMessage} wsEvent={lastEvent} config={lastConfig} />}
+              {currentPage === 'ml_training' && <MLTrainingView />}
+              {currentPage === 'settings' && <SettingsView />}
+
+              {showSpacers && <div className="h-[35px] shrink-0" />}
+            </>
+          );
+        })()}
       </div>
 
       {/* Footer */}
       <div className="footer">
         <span className="flex items-center gap-1">NeuroTECH - A BCI Project </span>  •  {' '}
         <a onClick={() => setAuthView('signup')} className="muted flex items-center gap-1" href="#signup" rel="noreferrer">
-          Sign Up
+          Sign Up |
         </a>
         {' '} • {' '}
         <a

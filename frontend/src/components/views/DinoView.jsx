@@ -230,7 +230,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         if (!worker) {
             try {
                 // Create worker
-                worker = new Worker(new URL('../../workers/game.worker.js', import.meta.url))
+                worker = new Worker(new URL('../../workers/game.worker.js', import.meta.url), { type: 'module' })
                 workerRef.current = worker
 
                 // Get OffscreenCanvas
@@ -245,7 +245,17 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                     primary: styles.getPropertyValue('--primary').trim(),
                     border: styles.getPropertyValue('--border').trim(),
                     muted: styles.getPropertyValue('--muted').trim(),
-                    accent: styles.getPropertyValue('--accent').trim()
+                    accent: styles.getPropertyValue('--accent').trim(),
+                    day: styles.getPropertyValue('--day').trim(),
+                    night: styles.getPropertyValue('--night').trim(),
+                    treeDay: styles.getPropertyValue('--tree-day').trim(),
+                    treeNight: styles.getPropertyValue('--tree-night').trim(),
+                    cloudDay: styles.getPropertyValue('--cloud-day').trim(),
+                    cloudNight: styles.getPropertyValue('--cloud-night').trim(),
+                    sunDay: styles.getPropertyValue('--sun-day').trim(),
+                    sunNight: styles.getPropertyValue('--sun-night').trim(),
+                    moonDay: styles.getPropertyValue('--moon-day').trim(),
+                    moonNight: styles.getPropertyValue('--moon-night').trim()
                 }
 
                 // Load 8 Bush Variants
@@ -317,22 +327,6 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
             } catch (err) {
                 console.warn("Canvas transfer failed or Worker init error:", err)
             }
-        } else {
-            // Worker already exists (reused). Just re-attach ResizeObserver if missing?
-            if (containerRef.current && !observerRef.current) {
-                observerRef.current = new ResizeObserver(entries => {
-                    for (let entry of entries) {
-                        const { width, height } = entry.contentRect;
-                        if (width > 0 && height > 0 && workerRef.current) {
-                            workerRef.current.postMessage({
-                                type: 'RESIZE',
-                                payload: { width, height }
-                            });
-                        }
-                    }
-                });
-                observerRef.current.observe(containerRef.current);
-            }
         }
 
         // Always re-bind events because 'worker' instance is stable but closure might not be?
@@ -371,7 +365,49 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                 }
             }, 100)
         }
-    }, [canvasResetKey])
+    }, [canvasResetKey]);
+
+    // Monitor Theme Changes and Sync to Worker
+    useEffect(() => {
+        const observer = new MutationObserver((mutations) => {
+            let shouldUpdate = false;
+            for (const mutation of mutations) {
+                if (mutation.type === 'attributes' && (mutation.attributeName === 'class' || mutation.attributeName === 'style')) {
+                    shouldUpdate = true;
+                    break;
+                }
+            }
+
+            if (shouldUpdate && workerRef.current) {
+                const styles = getComputedStyle(document.documentElement);
+                const theme = {
+                    bg: styles.getPropertyValue('--bg').trim(),
+                    surface: styles.getPropertyValue('--surface').trim(),
+                    text: styles.getPropertyValue('--text').trim(),
+                    primary: styles.getPropertyValue('--primary').trim(),
+                    border: styles.getPropertyValue('--border').trim(),
+                    muted: styles.getPropertyValue('--muted').trim(),
+                    accent: styles.getPropertyValue('--accent').trim(),
+                    day: styles.getPropertyValue('--day').trim(),
+                    night: styles.getPropertyValue('--night').trim(),
+                    treeDay: styles.getPropertyValue('--tree-day').trim(),
+                    treeNight: styles.getPropertyValue('--tree-night').trim(),
+                    cloudDay: styles.getPropertyValue('--cloud-day').trim(),
+                    cloudNight: styles.getPropertyValue('--cloud-night').trim(),
+                    sunDay: styles.getPropertyValue('--sun-day').trim(),
+                    sunNight: styles.getPropertyValue('--sun-night').trim(),
+                    moonDay: styles.getPropertyValue('--moon-day').trim(),
+                    moonNight: styles.getPropertyValue('--moon-night').trim()
+                };
+                workerRef.current.postMessage({ type: 'THEME_UPDATE', payload: theme });
+            }
+        });
+
+        observer.observe(document.body, { attributes: true });
+        observer.observe(document.documentElement, { attributes: true });
+
+        return () => observer.disconnect();
+    }, []);
 
     // Handle Resizing (Responsive)
     useEffect(() => {
@@ -589,27 +625,27 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                                     <div className="stat-group-left">
                                         <div className="stat-block stat-block-start mb-1">
                                             <span className="stat-label">Status</span>
-                                            <div className={`stat-value-status ${gameState === 'playing' ? 'playing' : 'default'}`}>
+                                            <div className={`stat-value-status ${gameState}`}>
                                                 {gameState}
                                             </div>
                                         </div>
-                                        <div className="stat-block stat-block-start">
-                                            <span className="stat-label">Score</span>
-                                            <Counter value={Math.floor(score / 10)} fontSize={48} places={[10000, 1000, 100, 10, 1]} className="stat-counter-large" />
+                                        <div className="stat-block-row stat-block-start">
+                                            <span className="stat-label ">Score :</span>
+                                            <Counter value={Math.floor(score / 10)} fontSize={48} digitHeight={75} places={[10000, 1000, 100, 10, 1]} className="stat-counter-large" />
                                         </div>
                                     </div>
 
                                     {/* Right Side: Best & Sensor */}
                                     <div className="stat-group-right">
-                                        <div className="stat-block stat-block-end">
-                                            <span className="stat-label">Best</span>
-                                            <CountUp
-                                                from={0}
-                                                to={Math.floor(highScore / 10)}
-                                                duration={2}
-                                                separator=","
-                                                className="text-text font-mono font-bold text-3xl leading-none"
+                                        <div className="stat-block-row stat-block-end">
+                                            <Counter
+                                                value={Math.floor(highScore / 10)}
+                                                fontSize={48}
+                                                digitHeight={75}
+                                                places={[10000, 1000, 100, 10, 1]}
+                                                className="stat-counter-large"
                                             />
+                                            <span className="stat-label">: Best</span>
                                         </div>
                                         <div className="stat-block stat-block-end mb-1">
                                             <span className="stat-label">Sensor</span>
@@ -638,6 +674,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
 
                 {/* Right Sidebar */}
                 <div className="game-sidebar">
+                    <div className="h-[85px] shrink-0" />
                     {/* Camera Panel */}
                     <CameraPanel />
 
@@ -798,28 +835,27 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                                 <div className="space-y-3">
                                     <h4 className="text-xs font-bold text-primary border-b border-border pb-1">Visuals - Clouds</h4>
                                     <SettingInput label="Cloud Density" value={settings.CLOUDS_DENSITY} onChange={(v) => handleSettingChange('CLOUDS_DENSITY', v)} min="0.1" max="3.0" step="0.1" />
-                                    <SettingInput label="Cloud Size" value={settings.CLOUDS_SIZE} onChange={(v) => handleSettingChange('CLOUDS_SIZE', v)} min="0.5" max="2.0" step="0.1" />
-                                    <SettingInput label="Cloud Layers" value={settings.CLOUDS_LAYERS} onChange={(v) => handleSettingChange('CLOUDS_LAYERS', v)} min="1" max="10" step="1" />
+                                    <SettingInput label="Cloud Size" value={settings.CLOUDS_SIZE} onChange={(v) => handleSettingChange('CLOUDS_SIZE', v)} min="0.5" max="1.5" step="0.1" />
+                                    <SettingInput label="Cloud Layers" value={settings.CLOUDS_LAYERS} onChange={(v) => handleSettingChange('CLOUDS_LAYERS', v)} min="1" max="5" step="1" />
                                 </div>
 
                                 <div className="space-y-3">
                                     <h4 className="text-xs font-bold text-primary border-b border-border pb-1">Visuals - Stars</h4>
                                     <SettingInput label="Star Density" value={settings.STARS_DENSITY} onChange={(v) => handleSettingChange('STARS_DENSITY', v)} min="0.1" max="3.0" step="0.1" />
-                                    <SettingInput label="Star Size" value={settings.STARS_SIZE} onChange={(v) => handleSettingChange('STARS_SIZE', v)} min="0.5" max="2.0" step="0.1" />
-                                    <SettingInput label="Star Layers" value={settings.STARS_LAYERS} onChange={(v) => handleSettingChange('STARS_LAYERS', v)} min="1" max="10" step="1" />
+                                    <SettingInput label="Star Size" value={settings.STARS_SIZE} onChange={(v) => handleSettingChange('STARS_SIZE', v)} min="0.5" max="1.5" step="0.1" />
+                                    <SettingInput label="Star Layers" value={settings.STARS_LAYERS} onChange={(v) => handleSettingChange('STARS_LAYERS', v)} min="1" max="5" step="1" />
                                 </div>
 
                                 <div className="space-y-3">
                                     <h4 className="text-xs font-bold text-primary border-b border-border pb-1">Visuals - Bushes</h4>
                                     <SettingInput label="Bush Density" value={settings.BUSHES_DENSITY} onChange={(v) => handleSettingChange('BUSHES_DENSITY', v)} min="0.1" max="3.0" step="0.1" />
-                                    <SettingInput label="Bush Size" value={settings.BUSHES_SIZE} onChange={(v) => handleSettingChange('BUSHES_SIZE', v)} min="0.5" max="2.0" step="0.1" />
-                                    <SettingInput label="Bush Layers" value={settings.BUSHES_LAYERS} onChange={(v) => handleSettingChange('BUSHES_LAYERS', v)} min="1" max="7" step="1" />
+                                    <SettingInput label="Bush Size" value={settings.BUSHES_SIZE} onChange={(v) => handleSettingChange('BUSHES_SIZE', v)} min="0.5" max="1.5" step="0.1" />
+                                    <SettingInput label="Bush Layers" value={settings.BUSHES_LAYERS} onChange={(v) => handleSettingChange('BUSHES_LAYERS', v)} min="1" max="5" step="1" />
                                 </div>
                             </div>
                         </div>
                     )}
-
-
+                    <div className="spacer-footer-dino" />
                 </div>
             </div>
         </div>
@@ -828,7 +864,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
 
 // Helper outside component to avoid remounting on render (fixes slider focus)
 const SettingInput = ({ label, value, onChange, min, max, step }) => (
-    <div className="flex flex-col gap-1">
+    <div>
         <div className="flex justify-between text-xs text-muted">
             <span>{label}</span>
             <span>{value}</span>
