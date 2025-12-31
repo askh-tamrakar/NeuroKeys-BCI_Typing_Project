@@ -4,31 +4,31 @@
     "enabled": true,
     "offset": 0.0,
     "gain": 1.0,
-    "calibration_date": "2025-12-29",
+    "calibration_date": "2025-12-31",
     "calibrated": true
   },
   "ch1": {
-    "sensor": "EOG",
+    "sensor": "EMG",
     "enabled": true,
     "offset": 0.0,
     "gain": 1.0,
-    "calibration_date": "2025-12-29",
+    "calibration_date": "2025-12-31",
     "calibrated": true
   },
   "ch2": {
-    "sensor": "EOG",
+    "sensor": "EMG",
     "enabled": true,
     "offset": 0.0,
     "gain": 1.0,
-    "calibration_date": "2025-12-29",
+    "calibration_date": "2025-12-31",
     "calibrated": true
   },
   "ch3": {
-    "sensor": "EOG",
+    "sensor": "EMG",
     "enabled": true,
     "offset": 0.0,
     "gain": 1.0,
-    "calibration_date": "2025-12-29",
+    "calibration_date": "2025-12-31",
     "calibrated": true
   }
 }

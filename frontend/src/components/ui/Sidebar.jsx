@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ChevronDown, ChevronUp, Minus, Plus, Filter, Zap, Waves, Sliders, Cpu, Power, ArrowRightLeft, Check, Play, Pause, ListOrdered, Timer, Activity, CheckCircle } from 'lucide-react';
+import { ChevronDown, ChevronUp, Minus, Plus, Filter, Zap, Waves, Sliders, Cpu, Power, ArrowRightLeft, Check, Play, Pause, ListOrdered, Timer, Activity, CheckCircle, Network } from 'lucide-react';
 import ElectricBorder from './ElectricBorder';
 import ElasticSlider from './ElasticSlider';
 import CustomSelect from './CustomSelect';
@@ -115,36 +115,16 @@ export default function Sidebar({
                     </button>
                 </ElectricBorder>
 
-                {/* Time Window */}
-                <section>
-                    <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-base font-bold text-muted uppercase tracking-wider flex items-center gap-2"><Timer size={16} /> Time Window</h3>
-                        <span className="text-lg font-mono text-primary bg-primary/10 px-2 py-0.5 rounded">{config.display?.timeWindowMs / 1000}s</span>
-                    </div>
-                    <ElasticSlider
-                        defaultValue={(config.display?.timeWindowMs || 10000) / 1000}
-                        startingValue={1}
-                        maxValue={30}
-                        stepSize={1}
-                        isStepped={true}
-                        onChange={(val) => setConfig(prev => ({
-                            ...prev,
-                            display: { ...prev.display, timeWindowMs: val * 1000 }
-                        }))}
-                        leftIcon={<Minus size={14} className="text-muted" />}
-                        rightIcon={<Plus size={14} className="text-muted" />}
-                        className="w-full"
-                    />
-                </section>
+
 
                 {/* Channel Mapping */}
                 <section>
-                    <h3 className="text-sm font-bold text-muted uppercase tracking-wider mb-4">Channel Mapping</h3>
+                    <h3 className="text-sm font-bold text-muted uppercase tracking-wider mb-4 flex items-center gap-2"><Network size={16} /> Channel Mapping</h3>
 
                     {/* Channel 0 */}
                     <div className="mb-3">
                         <div className="flex justify-between items-center mb-1">
-                            <label className="text-xs font-medium text-text">Graph 1</label>
+                            <label className="text-xs font-medium text-text flex items-center gap-1"><Activity size={14} className="text-primary" /> Graph 1</label>
                             <label className={`text-[10px] flex items-center gap-1 cursor-pointer ${config.channel_mapping?.ch0?.enabled !== false ? 'text-primary' : 'text-red-500'}`}>
                                 <input
                                     type="checkbox"
@@ -166,7 +146,7 @@ export default function Sidebar({
                     {/* Channel 1 */}
                     <div className="mb-4">
                         <div className="flex justify-between items-center mb-1">
-                            <label className="text-xs font-medium text-text">Graph 2</label>
+                            <label className="text-xs font-medium text-text flex items-center gap-1"><Activity size={14} className="text-emerald-500" /> Graph 2</label>
                             <label className={`text-[10px] flex items-center gap-1 cursor-pointer ${config.channel_mapping?.ch1?.enabled !== false ? 'text-primary' : 'text-red-500'}`}>
                                 <input
                                     type="checkbox"
@@ -188,7 +168,7 @@ export default function Sidebar({
                     {/* Channel 2 */}
                     <div className="mb-4">
                         <div className="flex justify-between items-center mb-1">
-                            <label className="text-xs font-medium text-text">Graph 3</label>
+                            <label className="text-xs font-medium text-text flex items-center gap-1"><Activity size={14} className="text-orange-500" /> Graph 3</label>
                             <label className={`text-[10px] flex items-center gap-1 cursor-pointer ${config.channel_mapping?.ch2?.enabled !== false ? 'text-primary' : 'text-red-500'}`}>
                                 <input
                                     type="checkbox"
@@ -210,7 +190,7 @@ export default function Sidebar({
                     {/* Channel 3 */}
                     <div className="mb-4">
                         <div className="flex justify-between items-center mb-1">
-                            <label className="text-xs font-medium text-text">Graph 4</label>
+                            <label className="text-xs font-medium text-text flex items-center gap-1"><Activity size={14} className="text-purple-500" /> Graph 4</label>
                             <label className={`text-[10px] flex items-center gap-1 cursor-pointer ${config.channel_mapping?.ch3?.enabled !== false ? 'text-primary' : 'text-red-500'}`}>
                                 <input
                                     type="checkbox"
@@ -399,15 +379,15 @@ function FilterSection({
 
             {/* NOTCH FILTER (for 50/60Hz mains interference) */}
             <div className="flex items-center justify-between">
-                <label className={`text-xs flex items-center gap-2 cursor-pointer ${filterConfig.notch_enabled ? 'text-text' : 'text-red-500'}`}>
+                <label className="text-xs flex items-center gap-2 cursor-pointer text-text hover:text-text/80 transition-colors">
                     <input
                         type="checkbox"
                         checked={filterConfig.notch_enabled || false}
                         onChange={(e) => onFilterChange(sensorType, 'notch_enabled', e.target.checked)}
                         className="accent-primary hidden"
                     />
-                    <Power size={12} className={filterConfig.notch_enabled ? `text-${accentColor}-500` : ""} />
-                    <Zap size={12} className={filterConfig.notch_enabled ? `text-${accentColor}-500` : ""} />
+                    <Power size={12} className={filterConfig.notch_enabled ? `text-${accentColor}-500` : "text-red-500"} />
+                    <Zap size={12} className={filterConfig.notch_enabled ? `text-${accentColor}-500` : "text-muted"} />
                     Notch Filter (Mains)
                 </label>
                 {filterConfig.notch_enabled && (
@@ -426,15 +406,15 @@ function FilterSection({
 
             {/* BANDPASS FILTER */}
             <div className="space-y-1">
-                <label className={`text-xs flex items-center gap-2 cursor-pointer ${filterConfig.bandpass_enabled ? 'text-text' : 'text-red-500'}`}>
+                <label className="text-xs flex items-center gap-2 cursor-pointer text-text hover:text-text/80 transition-colors">
                     <input
                         type="checkbox"
                         checked={filterConfig.bandpass_enabled || false}
                         onChange={(e) => onFilterChange(sensorType, 'bandpass_enabled', e.target.checked)}
                         className="accent-primary hidden"
                     />
-                    <Power size={12} className={filterConfig.bandpass_enabled ? `text-${accentColor}-500` : ""} />
-                    <Waves size={12} className={filterConfig.bandpass_enabled ? `text-${accentColor}-500` : ""} />
+                    <Power size={12} className={filterConfig.bandpass_enabled ? `text-${accentColor}-500` : "text-red-500"} />
+                    <Waves size={12} className={filterConfig.bandpass_enabled ? `text-${accentColor}-500` : "text-muted"} />
                     Bandpass Filter
                 </label>
                 {filterConfig.bandpass_enabled && (

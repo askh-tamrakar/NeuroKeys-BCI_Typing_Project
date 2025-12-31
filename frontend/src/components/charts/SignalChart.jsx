@@ -1,7 +1,8 @@
 // SignalChart.jsx
 import React, { useMemo } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceDot, ReferenceArea } from 'recharts'
-import { ChartSpline, ZoomIn, ArrowUpDown, ArrowDown, ArrowUp, Sigma } from 'lucide-react'
+import { ChartSpline, ZoomIn, ArrowUpDown, ArrowDown, ArrowUp, Sigma, Clock, Minus, Plus } from 'lucide-react'
+import ElasticSlider from '../ui/ElasticSlider'
 import '../../styles/live/SignalChart.css'
 
 const DEFAULT_PALETTE = [
@@ -31,7 +32,8 @@ export default function SignalChart({
   currentZoom = 1,
   currentManual = "",
   onZoomChange = null,
-  onRangeChange = null
+  onRangeChange = null,
+  onTimeWindowChange = null
 }) {
   const merged = useMemo(() => {
     if (!byChannel || typeof byChannel !== 'object') {
@@ -194,8 +196,25 @@ export default function SignalChart({
           {title}
         </h3>
 
-        {/* Channel Controls */}
         <div className="channel-controls">
+          {/* Time Window Control (New) */}
+          <div className="time-window-control">
+            <span className="control-label"><Clock size={24} /> Time</span>
+            <div className="w-64">
+              <ElasticSlider
+                defaultValue={(timeWindowMs || 10000) / 1000}
+                startingValue={1}
+                maxValue={30}
+                stepSize={1}
+                isStepped={true}
+                onChange={(val) => onTimeWindowChange && onTimeWindowChange(val * 1000)}
+                leftIcon={<Minus size={18} className="text-muted" />}
+                rightIcon={<Plus size={18} className="text-muted" />}
+                className="w-full h-6"
+              />
+            </div>
+          </div>
+
           {/* Zoom Buttons */}
           <div className="zoom-controls">
             <span className="control-label flex items-center gap-1"><ZoomIn size={12} /> ZOOM</span>
