@@ -801,58 +801,44 @@ function drawDino(x, y) {
 
 function drawCactus(x, y, width, height) {
     ctx.save();
-    ctx.fillStyle = CURRENT_COLORS.obstacle;
-    ctx.strokeStyle = CURRENT_COLORS.obstacle;
+    ctx.save();
+    ctx.fillStyle = CURRENT_COLORS.obstacle; // Semantic Obstacle Color
+    ctx.strokeStyle = CURRENT_COLORS.obstacle; // Solid look for high contrast
     ctx.lineWidth = 2;
 
-    const w = Math.floor(width);
-    const h = Math.floor(height);
+    // Main trunk
+    const trunkWidth = Math.floor(width * 0.6);
+    const trunkX = Math.floor(x + (width - trunkWidth) / 2);
+    const trunkH = Math.floor(height);
+    const _y = Math.floor(y);
 
-    // Main Trunk
-    const trunkW = Math.floor(w * 0.4);
-    const trunkX = Math.floor(x + (w - trunkW) / 2);
-    const trunkH = h;
+    ctx.fillRect(trunkX, _y, trunkWidth, trunkH);
+    ctx.strokeRect(trunkX, _y, trunkWidth, trunkH);
 
-    ctx.fillRect(trunkX, y, trunkW, trunkH);
-    ctx.strokeRect(trunkX, y, trunkW, trunkH);
+    // Left arm
+    const armHeight = Math.floor(height * 0.4);
+    const armWidth = Math.floor(width * 0.3);
+    const leftArmX = Math.floor(trunkX - armWidth);
+    const leftArmY = Math.floor(y + height * 0.3);
+    const armConnW = Math.floor(trunkWidth * 0.3);
 
-    // Arms configuration
-    const armThick = Math.floor(trunkW * 0.8);
+    ctx.fillRect(leftArmX, leftArmY, armWidth, armHeight);
+    ctx.strokeRect(leftArmX, leftArmY, armWidth, armHeight);
+    ctx.fillRect(leftArmX + armWidth, leftArmY, armConnW, armWidth);
+    ctx.strokeRect(leftArmX + armWidth, leftArmY, armConnW, armWidth);
 
-    // Left Arm
-    const lArmH = Math.floor(h * 0.35);
-    const lArmX = Math.floor(x); // Far left
-    const lArmY = Math.floor(y + h * 0.3); // Top of the left arm
-    // Connector Y (where it meets trunk) - Should be at bottom of arm
-    const lConnY = Math.floor(lArmY + lArmH - armThick);
+    // Right arm
+    const rightArmX = Math.floor(trunkX + trunkWidth);
+    const rightArmY = Math.floor(y + height * 0.5);
+    const rightArmH = Math.floor(armHeight * 0.8);
 
-    // Draw Left Upward Part
-    ctx.fillRect(lArmX, lArmY, armThick, lArmH);
-    ctx.strokeRect(lArmX, lArmY, armThick, lArmH);
-
-    // Draw Left Connector (horizontal)
-    ctx.fillRect(lArmX, lConnY, trunkX - lArmX, armThick);
-    ctx.strokeRect(lArmX, lConnY, trunkX - lArmX, armThick);
-
-
-    // Right Arm
-    const rArmH = Math.floor(h * 0.3);
-    const rArmX = Math.floor(x + w - armThick); // Far right
-    const rArmY = Math.floor(y + h * 0.15); // Top of right arm (higher)
-    const rConnY = Math.floor(rArmY + rArmH - armThick);
-
-    // Draw Right Upward Part
-    ctx.fillRect(rArmX, rArmY, armThick, rArmH);
-    ctx.strokeRect(rArmX, rArmY, armThick, rArmH);
-
-    // Draw Right Connector
-    ctx.fillRect(trunkX + trunkW, rConnY, rArmX - (trunkX + trunkW), armThick);
-    ctx.strokeRect(trunkX + trunkW, rConnY, rArmX - (trunkX + trunkW), armThick);
+    ctx.fillRect(rightArmX, rightArmY, armWidth, rightArmH);
+    ctx.strokeRect(rightArmX, rightArmY, armWidth, rightArmH);
+    ctx.fillRect(Math.floor(trunkX + trunkWidth * 0.7), rightArmY, armConnW, armWidth);
+    ctx.strokeRect(Math.floor(trunkX + trunkWidth * 0.7), rightArmY, armConnW, armWidth);
 
     ctx.restore();
 }
-
-
 
 function draw() {
     if (!ctx) return;
