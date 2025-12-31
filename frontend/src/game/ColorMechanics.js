@@ -23,23 +23,43 @@ export function calculateDayNightColors(time, themeColors) {
         treeDay, treeNight,
         cloudDay, cloudNight,
         sunDay, sunNight,
-        moonDay, moonNight
+        moonDay, moonNight,
+        dinoDay, dinoNight,
+        obstacleDay, obstacleNight,
+        groundDay, groundNight,
+        groundLineDay, groundLineNight,
+        skyDay, skyNight
     } = themeColors;
 
     let t = 0;
 
     // Default: Night
-    let sky = night;
+    // Use explicit sky vars if available, else fallback to day/night (generic)
+    const sDay = skyDay || day;
+    const sNight = skyNight || night;
+
+    let sky = sNight;
     let tree = treeNight;
     let cloud = cloudNight;
-    let sun = sunNight; // Sunset color
+    let sun = sunNight;
     let moon = moonNight;
 
-    // Transition Logic
+    // Instant Switch Logic for Gameplay Elements (No Fading)
+    // Day Phase is roughly 0.2 to 0.7 (including transitions)
+    // We'll switch comfortably once sky starts brightening to ensure contrast is valid
+    // using a simpler threshold than the full fade window
+    const isDay = (time >= 0.18 && time < 0.62);
+
+    let dino = isDay ? (dinoDay || '#2C2C2C') : (dinoNight || '#ffffff');
+    let obstacle = isDay ? (obstacleDay || '#5D4037') : (obstacleNight || '#8D6E63');
+    let ground = isDay ? (groundDay || '#e0e0e0') : (groundNight || '#1b1b1b');
+    let groundLine = isDay ? (groundLineDay || '#5D4037') : (groundLineNight || '#8D6E63');
+
+    // Transition Logic for Environment (Sky, Trees, Clouds, Celestial)
     if (time >= 0.05 && time < 0.20) {
         // Sunrise (Night -> Day)
         t = (time - 0.05) / 0.15;
-        sky = lerpColor(night, day, t);
+        sky = lerpColor(sNight, sDay, t);
         tree = lerpColor(treeNight, treeDay, t);
         cloud = lerpColor(cloudNight, cloudDay, t);
         sun = lerpColor(sunNight, sunDay, t);
@@ -47,7 +67,7 @@ export function calculateDayNightColors(time, themeColors) {
     }
     else if (time >= 0.20 && time < 0.55) {
         // Day
-        sky = day;
+        sky = sDay;
         tree = treeDay;
         cloud = cloudDay;
         sun = sunDay;
@@ -56,21 +76,20 @@ export function calculateDayNightColors(time, themeColors) {
     else if (time >= 0.55 && time < 0.70) {
         // Sunset (Day -> Night)
         t = (time - 0.55) / 0.15;
-        sky = lerpColor(day, night, t);
+        sky = lerpColor(sDay, sNight, t);
         tree = lerpColor(treeDay, treeNight, t);
         cloud = lerpColor(cloudDay, cloudNight, t);
-        // Sun turns from bright to orange/red
         sun = lerpColor(sunDay, sunNight, t);
         moon = lerpColor(moonDay, moonNight, t);
     }
     else {
         // Night
-        sky = night;
+        sky = sNight;
         tree = treeNight;
         cloud = cloudNight;
         sun = sunNight;
         moon = moonNight;
     }
 
-    return { sky, tree, cloud, sun, moon };
+    return { sky, tree, cloud, sun, moon, dino, obstacle, ground, groundLine };
 }

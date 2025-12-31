@@ -232,7 +232,7 @@ export default function Dashboard() {
       <div className="footer">
         <span className="flex items-center gap-1">NeuroTECH - A BCI Project </span>  •  {' '}
         <a onClick={() => setAuthView('signup')} className="muted flex items-center gap-1" href="#signup" rel="noreferrer">
-          Sign Up |
+          Sign Up
         </a>
         {' '} • {' '}
         <a

@@ -19,24 +19,31 @@ let SETTINGS = {
     JUMP_DISTANCE: 150,
     JUMP_DISTANCE: 150,
     ENABLE_TREES: true,
-    OBSTACLE_BONUS_FACTOR: 0.1,
+    OBSTACLE_BONUS_FACTOR: 0.015,
 
     // Visual Customization (Defaults)
+    ENABLE_TREES: true,
     TREES_DENSITY: 1.0,
     TREES_SIZE: 1.0,
     TREES_LAYERS: 1,
 
+    ENABLE_CLOUDS: true,
     CLOUDS_DENSITY: 1.0,
     CLOUDS_SIZE: 1.0,
     CLOUDS_LAYERS: 1,
 
+    ENABLE_STARS: true,
     STARS_DENSITY: 1.0,
     STARS_SIZE: 1.0,
     STARS_LAYERS: 1,
 
+    ENABLE_BUSHES: true,
     BUSHES_DENSITY: 1.0,
     BUSHES_SIZE: 1.0,
     BUSHES_LAYERS: 3,
+
+    ENABLE_DAY_NIGHT_CYCLE: true,
+    FIXED_TIME: 0.25
 };
 
 // Game State
@@ -87,57 +94,68 @@ let CURRENT_COLORS = {
 function initVisuals() {
     // Init clouds
     clouds = [];
-    const cloudCount = Math.floor(15 * SETTINGS.CLOUDS_DENSITY);
-    const cloudLayers = Math.max(1, SETTINGS.CLOUDS_LAYERS);
+    if (SETTINGS.ENABLE_CLOUDS) {
+        const cloudCount = Math.floor(15 * SETTINGS.CLOUDS_DENSITY);
 
-    for (let i = 0; i < cloudCount; i++) {
-        // Distribute depth based on layers
-        // If layers=1, all range 0.15-1.0
-        // If layers>1, maybe discreet layers? For now, stick to random spread but multiplied count
-        const depth = 0.15 + Math.random() * 0.85;
-        // Optional: Filter depth based on active layers (e.g. only draw far ones if layers > 1 is complex, just sticking to count for density)
+        // Loop through layers to distribute clouds
+        const layers = Math.max(1, SETTINGS.CLOUDS_LAYERS);
+        for (let l = 0; l < layers; l++) {
+            // Depth from 0.15 (far) to 1.0 (near)
+            // Layer 0 is far, Layer N is near? or vice versa.
+            // Let's say l=0 is far.
+            const t = layers > 1 ? l / (layers - 1) : 0.5;
+            const depthBase = 0.15 + t * 0.85;
 
-        clouds.push({
-            x: Math.random() * SETTINGS.CANVAS_WIDTH,
-            y: Math.random() * 150 + 20,
-            width: (60 + Math.random() * 40) * depth * SETTINGS.CLOUDS_SIZE,
-            speed: (0.1 + Math.random() * 0.1) * depth,
-            depth: depth
-        });
+            // Add variance within layer
+            const countPerLayer = Math.ceil(cloudCount / layers);
+            for (let i = 0; i < countPerLayer; i++) {
+                const depth = depthBase + (Math.random() * 0.1 - 0.05); // Small jitter
+                clouds.push({
+                    x: Math.random() * SETTINGS.CANVAS_WIDTH,
+                    y: Math.random() * 150 + 20,
+                    width: (60 + Math.random() * 40) * depth * SETTINGS.CLOUDS_SIZE,
+                    speed: (0.1 + Math.random() * 0.1) * depth,
+                    depth: depth
+                });
+            }
+        }
+        clouds.sort((a, b) => a.depth - b.depth);
     }
-    clouds.sort((a, b) => a.depth - b.depth);
 
     // Init trees
     trees = [];
     if (SETTINGS.ENABLE_TREES) {
         const baseTreeCount = Math.floor(SETTINGS.CANVAS_WIDTH / 60) + 5;
-        const treeCount = Math.floor(baseTreeCount * SETTINGS.TREES_DENSITY);
+        const treeCount = Math.ceil(baseTreeCount * SETTINGS.TREES_DENSITY);
 
-        for (let i = 0; i < treeCount; i++) {
-            const depth = 0.4 + Math.random() * 0.6;
-            const size = SETTINGS.TREES_SIZE;
+        const layers = Math.max(1, SETTINGS.TREES_LAYERS);
+        for (let l = 0; l < layers; l++) {
+            const t = layers > 1 ? l / (layers - 1) : 0.5;
+            // Trees usually are background, so depth 0.4 to 1.0
+            const depthBase = 0.4 + t * 0.6;
 
-            trees.push({
-                x: Math.random() * SETTINGS.CANVAS_WIDTH * 1.2,
-                height: (50 + Math.random() * 70) * depth * size,
-                width: (25 + Math.random() * 25) * depth * size,
-                type: Math.random() > 0.5 ? 'round' : 'pine',
-                depth: depth,
-                speedFactor: 0.5 * depth
-            });
+            const countPerLayer = Math.ceil(treeCount / layers);
+            for (let i = 0; i < countPerLayer; i++) {
+                const depth = Math.min(1.0, Math.max(0.1, depthBase + (Math.random() * 0.1 - 0.05)));
+                const size = SETTINGS.TREES_SIZE;
+
+                trees.push({
+                    x: Math.random() * SETTINGS.CANVAS_WIDTH * 1.5, // Spread wider
+                    height: (50 + Math.random() * 70) * depth * size,
+                    width: (25 + Math.random() * 25) * depth * size,
+                    type: Math.random() > 0.5 ? 'round' : 'pine',
+                    depth: depth,
+                    speedFactor: 0.5 * depth
+                });
+            }
         }
         trees.sort((a, b) => a.depth - b.depth);
     }
 
     // Init bushes (Layered Sprites)
     bushes = [];
-    if (bushSprites && bushSprites.length > 0) {
-        const userLayers = Math.max(0, Math.min(7, SETTINGS.BUSHES_LAYERS));
-
-        // Procedurally generate layer configs
-        // We want a nice spread from background (small, slow, high yOff?) to foreground (large, fast, low yoff)
-        // Wait, standard parallax: background is slow, foreground is fast.
-        // BG: Scale 0.6, Speed 0.5. FG: Scale 2.5, Speed 2.0.
+    if (SETTINGS.ENABLE_BUSHES && bushSprites && bushSprites.length > 0) {
+        const userLayers = Math.max(0, Math.min(10, SETTINGS.BUSHES_LAYERS));
 
         for (let l = 0; l < userLayers; l++) {
             // Normalized layer position (0 = back, 1 = front)
@@ -148,19 +166,11 @@ function initVisuals() {
             const baseScale = 0.5 + t * 2.0;
             // Speed: 0.4 -> 2.5
             const baseSpeed = 0.4 + t * 2.1;
-            // yOff: BG might be slightly higher or grounded. FG usually lower (yOffset adds to groundY-height). 
-            // Positive yOffset pushes it DOWN (buried). Negative pushes UP (floating).
-            // Usually foreground bushes might be lower on screen (higher y value) to fake perspective if ground is flat?
-            // Actually our ground is flat line.
-            // Let's vary yOff for randomness but generally keep them grounded.
-            // Just use the previous manual tweaks as guide: 
-            // Layer 0: yOff 5. Layer 5: yOff 60 (pushed down).
+            // yOff:
             const baseYOff = 5 + t * 55;
 
-            // Count: BG has more, FG has fewer?
-            // 5 -> 1
+            // Count logic
             const baseCount = Math.max(1, Math.floor(5 - t * 4));
-
             const count = Math.floor((Math.floor(SETTINGS.CANVAS_WIDTH / (250 - t * 100)) + baseCount) * SETTINGS.BUSHES_DENSITY);
 
             for (let i = 0; i < count; i++) {
@@ -177,19 +187,33 @@ function initVisuals() {
         bushes.sort((a, b) => a.layer - b.layer);
     }
 
-    // Clear extraBushes as they are now merged into the main bush system
+    // Clear extraBushes
     extraBushes = [];
 
     // Init stars
     stars = [];
-    const starCount = Math.floor(50 * SETTINGS.STARS_DENSITY);
-    for (let i = 0; i < starCount; i++) {
-        stars.push({
-            x: Math.random() * SETTINGS.CANVAS_WIDTH,
-            y: Math.random() * SETTINGS.CANVAS_HEIGHT / 2,
-            size: (Math.random() * 2 + 1) * SETTINGS.STARS_SIZE,
-            blinkOffset: Math.random() * Math.PI
-        });
+    if (SETTINGS.ENABLE_STARS) {
+        const starCount = Math.floor(50 * SETTINGS.STARS_DENSITY);
+
+        const layers = Math.max(1, SETTINGS.STARS_LAYERS);
+
+        for (let l = 0; l < layers; l++) {
+            // Stars are just distant points, but let's vary size/opacity layers?
+            // Or just use layers to spawn MORE stars effectively?
+            // The user asked for "layers" for stars. Let's interpret as depth planes affecting parallax or just count.
+            // Stars usually don't parallax much unless they are 3d.
+            // We can just add more stars per layer.
+
+            const countPerLayer = Math.ceil(starCount / layers);
+            for (let i = 0; i < countPerLayer; i++) {
+                stars.push({
+                    x: Math.random() * SETTINGS.CANVAS_WIDTH,
+                    y: Math.random() * SETTINGS.CANVAS_HEIGHT / 2,
+                    size: (Math.random() * 2 + 1) * SETTINGS.STARS_SIZE,
+                    blinkOffset: Math.random() * Math.PI
+                });
+            }
+        }
     }
 }
 
@@ -255,8 +279,12 @@ function updatePhysics(deltaTime) {
     const GAME_SPEED = derivedSpeed * timeFactor;
     const APPLIED_GRAVITY = GRAVITY * timeFactor;
 
-    // Day/Night Cycle (Always active)
-    gameTime = (gameTime + deltaTime / (SETTINGS.CYCLE_DURATION * 1000)) % 1.0;
+    // Day/Night Cycle
+    if (SETTINGS.ENABLE_DAY_NIGHT_CYCLE) {
+        gameTime = (gameTime + deltaTime / (SETTINGS.CYCLE_DURATION * 1000)) % 1.0;
+    } else {
+        gameTime = SETTINGS.FIXED_TIME !== undefined ? SETTINGS.FIXED_TIME : 0.25;
+    }
 
     // Update Dynamic Colors using Module
     CURRENT_COLORS = calculateDayNightColors(gameTime, COLORS);
@@ -416,7 +444,19 @@ const COLORS = {
     sunDay: '#F1C40F',
     sunNight: '#D35400',
     moonDay: '#ffffff',
-    moonNight: '#CFE9DB'
+    moonDay: '#ffffff',
+    moonNight: '#CFE9DB',
+    // Semantic Defaults
+    dinoDay: '#2C2C2C',
+    dinoNight: '#ffffff',
+    obstacleDay: '#5D4037',
+    obstacleNight: '#8D6E63',
+    groundDay: '#e0e0e0',
+    groundNight: '#1b1b1b',
+    groundLineDay: '#5D4037',
+    groundLineNight: '#8D6E63',
+    skyDay: '#f8fafc',
+    skyNight: '#0f172a'
 };
 
 
@@ -603,7 +643,7 @@ function drawDino(x, y) {
     const scaleY = DINO_HEIGHT / 47;
 
     ctx.save();
-    ctx.fillStyle = COLORS.primary;
+    ctx.fillStyle = CURRENT_COLORS.dino;
 
     // Body
     ctx.fillRect(Math.floor(x + 6 * scaleX), Math.floor(y + 20 * scaleY), Math.ceil(25 * scaleX), Math.ceil(17 * scaleY));
@@ -623,7 +663,7 @@ function drawDino(x, y) {
     ctx.fillRect(Math.floor(x + 36 * scaleX), Math.floor(y + (eyeState === 'open' ? 18 : 19) * scaleY), Math.ceil(2 * scaleX), Math.ceil((eyeState === 'open' ? 2 : 1) * scaleY));
 
     // Legs
-    ctx.fillStyle = COLORS.primary;
+    ctx.fillStyle = CURRENT_COLORS.dino;
     const legOffset = Math.floor(Date.now() / 100) % 2 === 0 ? 0 : 2;
     ctx.fillRect(Math.floor(x + 24 * scaleX), Math.floor(y + 37 * scaleY), Math.ceil(4 * scaleX), Math.ceil((10 - legOffset) * scaleY));
     ctx.fillRect(Math.floor(x + 14 * scaleX), Math.floor(y + 37 * scaleY), Math.ceil(4 * scaleX), Math.ceil((10 + legOffset) * scaleY));
@@ -636,8 +676,9 @@ function drawDino(x, y) {
 
 function drawCactus(x, y, width, height) {
     ctx.save();
-    ctx.fillStyle = COLORS.surface; // Fill with surface color
-    ctx.strokeStyle = COLORS.border; // Outline with border color
+    ctx.save();
+    ctx.fillStyle = CURRENT_COLORS.obstacle; // Semantic Obstacle Color
+    ctx.strokeStyle = CURRENT_COLORS.obstacle; // Solid look for high contrast
     ctx.lineWidth = 2;
 
     // Main trunk
@@ -706,10 +747,10 @@ function draw() {
         });
 
         // Ground
-        ctx.fillStyle = COLORS.surface;
+        ctx.fillStyle = CURRENT_COLORS.ground;
         ctx.fillRect(0, Math.floor(groundY), width, height - groundY);
-        // Draw the main line in PRIMARY color as requested ("primary color line")
-        ctx.fillStyle = COLORS.primary;
+        // Draw the main line
+        ctx.fillStyle = CURRENT_COLORS.groundLine;
         ctx.fillRect(0, Math.floor(groundY), width, 4);
 
         // Draw Bushes (Standard Layers 0-2)
@@ -844,7 +885,8 @@ self.onmessage = (e) => {
                 'TREES_DENSITY', 'TREES_SIZE', 'TREES_LAYERS',
                 'CLOUDS_DENSITY', 'CLOUDS_SIZE', 'CLOUDS_LAYERS',
                 'STARS_DENSITY', 'STARS_SIZE', 'STARS_LAYERS',
-                'BUSHES_DENSITY', 'BUSHES_SIZE', 'BUSHES_LAYERS', 'ENABLE_TREES'
+                'BUSHES_DENSITY', 'BUSHES_SIZE', 'BUSHES_LAYERS',
+                'ENABLE_TREES', 'ENABLE_CLOUDS', 'ENABLE_STARS', 'ENABLE_BUSHES'
             ];
             const shouldReInit = visualKeys.some(k => payload[k] !== undefined && payload[k] !== oldSettings[k]);
 

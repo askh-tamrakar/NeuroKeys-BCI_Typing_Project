@@ -23,7 +23,7 @@ const themePresets = [
   // 💜 Deep Purples & Violets
   { value: 'theme-violet', label: 'Royal Violet', accent: '#720455', text: '#f4f0ff' },
   //{ value: 'theme-plum',        label: 'Mulberry Mist',   accent: '#6A1E55', text: '#f7ecf4' },
-  //{ value: 'theme-amethyst',    label: 'Amethyst Dream',  accent: '#FFACAC', text: '#FFF5F9' },
+  { value: 'theme-amethyst', label: 'Amethyst Dream', accent: '#FFACAC', text: '#FFF5F9' },
 
   // 🌊 Cool & Oceanic
   //{ value: 'theme-ocean', label: 'Deep Ocean', accent: '#1f6feb', text: '#e7f6ff' },
