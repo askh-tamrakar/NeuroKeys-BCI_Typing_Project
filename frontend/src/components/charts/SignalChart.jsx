@@ -1,6 +1,9 @@
 // SignalChart.jsx
-import React, { useMemo } from 'react'
+import React, { useMemo, useRef } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceDot, ReferenceArea } from 'recharts'
+import { ChartSpline, ZoomIn, ArrowUpDown, ArrowDown, ArrowUp, Sigma, Clock, Minus, Plus, Ban } from 'lucide-react'
+import ElasticSlider from '../ui/ElasticSlider'
+import '../../styles/live/SignalChart.css'
 
 const DEFAULT_PALETTE = [
   '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
@@ -8,6 +11,7 @@ const DEFAULT_PALETTE = [
 ]
 
 export default function SignalChart({
+  graphNo,
   title,
   data = [],
   byChannel = null,
@@ -22,7 +26,16 @@ export default function SignalChart({
   channelColors = null, // New Prop { [key]: colorString }
   markedWindows = [],
   activeWindow = null,
-  tickCount = 7 // Default to 7
+  tickCount = 7, // Default to 7
+  curveType = "monotone", // Default to monotone (smooth)
+  // New props for controls
+  currentZoom = 1,
+  currentManual = "",
+  onZoomChange = null,
+  onRangeChange = null,
+  onTimeWindowChange = null,
+  onColorChange = null,
+  disabled = false
 }) {
   const merged = useMemo(() => {
     if (!byChannel || typeof byChannel !== 'object') {
@@ -172,42 +185,116 @@ export default function SignalChart({
     for (let i = 0; i < tickCount; i++) {
       result.push(min + (i * step))
     }
-    // Ensure 0 is included if it's within range (snap nearest tick to 0 if close, or just rely on math)
-    // For symmetric domains like [-500, 500] with 7 ticks, 0 will be perfectly in the middle.
     return result
   }, [finalYDomain, tickCount])
 
+  const colorInputRef = useRef(null)
+
   return (
-    <div className="bg-card surface-panel border border-border shadow-sm rounded-xl overflow-hidden flex flex-col h-full bg-surface">
-      <div className="px-5 py-3 border-b border-border bg-bg/50 backdrop-blur-sm flex justify-between items-center">
-        <h3 className="font-bold text-text flex items-center gap-2">
-          <span className="w-2 h-6 rounded-full" style={{ backgroundColor: color }}></span>
+    <div className={`signal-chart-container ${disabled ? 'signal-chart-disabled' : ''}`}>
+
+      <div className="chart-header">
+        <h3 className="chart-title">
+          <button
+            onClick={() => colorInputRef.current?.click()}
+            className="p-1 hover:bg-muted/10 rounded-full transition-colors cursor-pointer group"
+            title="Change Graph Color"
+          >
+            <ChartSpline size={32} strokeWidth={3} style={{ color: color }} className="mr-2 group-hover:scale-110 transition-transform" />
+          </button>
+
+          {/* Hidden Color Input */}
+          <input
+            type="color"
+            ref={colorInputRef}
+            value={color.length === 7 ? color : "#3b82f6"} // Ensure valid hex code if possible, though browser handles rgb usually
+            onChange={(e) => onColorChange && onColorChange(e.target.value)}
+            style={{ display: 'none' }}
+          />
+
+          {graphNo}
+          <span className="channel-color-dot" style={{ backgroundColor: color }}></span>
           {title}
         </h3>
 
-        <div className="flex gap-4 text-xs font-mono text-muted">
+        <div className="channel-controls">
+          {/* Time Window Control (New) */}
+          <div className="time-window-control">
+            <span className="control-label"><Clock size={24} /> Time</span>
+            <div className="w-64">
+              <ElasticSlider
+                defaultValue={(timeWindowMs || 10000) / 1000}
+                startingValue={1}
+                maxValue={30}
+                stepSize={1}
+                isStepped={true}
+                onChange={(val) => onTimeWindowChange && onTimeWindowChange(val * 1000)}
+                leftIcon={<Minus size={18} className="text-muted" />}
+                rightIcon={<Plus size={18} className="text-muted" />}
+                className="w-full h-6"
+              />
+            </div>
+          </div>
+
+          {/* Zoom Buttons */}
+          <div className="zoom-controls">
+            <span className="control-label flex items-center gap-1"><ZoomIn size={24} /> ZOOM</span>
+            {[1, 2, 3, 5, 10, 25, 50].map(z => (
+              <button
+                key={z}
+                onClick={() => onZoomChange && onZoomChange(z)}
+                className={`zoom-btn ${currentZoom === z && !currentManual ? 'active' : 'inactive'}`}
+              >
+                {z}x
+              </button>
+            ))}
+          </div>
+
+          <div className="separator-small"></div>
+
+          {/* Manual Range Input */}
+          <div className="range-input-container">
+            <span className="control-label flex items-center gap-1"><ArrowUpDown size={24} /> RANGE</span>
+            <input
+              type="number"
+              placeholder="+/-"
+              value={currentManual}
+              onChange={(e) => onRangeChange && onRangeChange(e.target.value)}
+              className="range-input"
+            />
+          </div>
+
+          <div className="separator-small"></div>
+
+          <div className="range-display">
+            +/-{(Math.abs(finalYDomain[1])).toFixed(0)} uV
+          </div>
+        </div>
+
+        {/* Stats */}
+        <div className="chart-stats">
           {dataArray.length > 0 && (
             <>
-              <div className="flex flex-col items-end">
-                <span className="opacity-50 text-[10px] uppercase tracking-wider">Min</span>
-                <span className="font-medium text-text">{min.toFixed(2)}</span>
+              <div className="stat-item">
+                <span className="stat-label-chart"><ArrowDown size={18} /> Min</span>
+                <span className="stat-value">{min.toFixed(2)}</span>
               </div>
-              <div className="w-[1px] h-6 bg-border/50"></div>
-              <div className="flex flex-col items-end">
-                <span className="opacity-50 text-[10px] uppercase tracking-wider">Max</span>
-                <span className="font-medium text-text">{max.toFixed(2)}</span>
+              <div className="stat-separator"></div>
+              <div className="stat-item">
+                <span className="stat-label-chart"><ArrowUp size={18} /> Max</span>
+                <span className="stat-value">{max.toFixed(2)}</span>
               </div>
-              <div className="w-[1px] h-6 bg-border/50"></div>
-              <div className="flex flex-col items-end">
-                <span className="opacity-50 text-[10px] uppercase tracking-wider">Mean</span>
-                <span className="font-medium text-text">{mean.toFixed(2)}</span>
+              <div className="stat-separator"></div>
+              <div className="stat-item">
+                <span className="stat-label-chart"><Sigma size={18} /> Mean</span>
+                <span className="stat-value">{mean.toFixed(2)}</span>
               </div>
             </>
           )}
         </div>
       </div>
 
-      <div className="relative w-full p-2 flex-grow" style={{ height: height }}>
+      <div className="chart-area" style={{ height: height }}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={dataArray}>
             {showGrid && <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} vertical={false} />}
@@ -300,7 +387,7 @@ export default function SignalChart({
               channelKeys.map((k, idx) => (
                 <Line
                   key={`ch-${k}`}
-                  type="monotone"
+                  type={curveType}
                   dataKey={`ch${k}`}
                   name={`${channelLabelPrefix ?? 'Ch'} ${k}`}
                   stroke={channelColors?.[k] || DEFAULT_PALETTE[idx % DEFAULT_PALETTE.length]}
@@ -312,13 +399,14 @@ export default function SignalChart({
               ))
             ) : (
               <Line
-                type="monotone"
+                type={curveType}
                 dataKey="value"
                 name="Signal"
                 stroke={color}
                 dot={false}
                 strokeWidth={2}
                 isAnimationActive={false}
+                connectNulls={false}
               />
             )}
           </LineChart>

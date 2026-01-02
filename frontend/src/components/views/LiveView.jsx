@@ -1,10 +1,12 @@
-// LiveView.jsx (updated)
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import SignalChart from '../charts/SignalChart'
 import { DataService } from '../../services/DataService'
+import { Radio, Square, Settings2, Wifi, Circle } from 'lucide-react'
+import '../../styles/live/LiveView.css'
 
 export default function LiveView({ wsData, wsEvent, config, isPaused }) {
-  const timeWindowMs = config?.display?.timeWindowMs || 10000
+  // Global default for initialization, but now each channel has its own
+  const defaultTimeWindowMs = config?.display?.timeWindowMs || 10000
   const samplingRate = config?.sampling_rate || 250
   const showGrid = config?.display?.showGrid ?? true
   const channelMapping = config?.channel_mapping || {}
@@ -17,6 +19,24 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
   const [scannerX, setScannerX] = useState(null)
   const [scannerPercent, setScannerPercent] = useState(0)
 
+  // -- MOVED UP TO FIX TDZ --
+  const getActiveChannels = () => {
+    const active = []
+    for (let i = 0; i < numChannels; i++) {
+      const key = `ch${i}`
+      const chConfig = channelMapping[key]
+      if (chConfig?.enabled !== false) active.push(i)
+    }
+    return active
+  }
+
+  const activeChannels = useMemo(() => getActiveChannels(), [channelMapping, numChannels])
+
+  // Channel Configuration State (Zoom & Range)
+  const [channelConfig, setChannelConfig] = useState({})
+  const BASE_AMPLITUDE = 1500 // uV assumed base range
+  // -- END MOVED UP --
+
   // Recording State
   const [isRecording, setIsRecording] = useState(false)
   const [recordingStartTime, setRecordingStartTime] = useState(null)
@@ -25,10 +45,14 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
   const [recordingChannels, setRecordingChannels] = useState([0, 1, 2, 3]) // Default to all channels
   const [isSaving, setIsSaving] = useState(false)
 
-  const addDataPoint = (dataArray, newPoint, maxAge) => {
-    const now = newPoint.time
-    const filtered = dataArray.filter(p => (now - p.time) < maxAge)
-    return [...filtered, newPoint]
+  // Optimized batch adder
+  const addDataPoints = (dataArray, newPoints, maxAge) => {
+    if (newPoints.length === 0) return dataArray
+    const latestTime = newPoints[newPoints.length - 1].time
+    const cutoff = latestTime - maxAge
+    // Filter out old points from existing data
+    const filtered = dataArray.filter(p => p.time > cutoff)
+    return [...filtered, ...newPoints]
   }
 
   // Update recording timer
@@ -47,107 +71,98 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
   useEffect(() => {
     if (!wsData || isPaused) return
 
-    let payload = null
+    let basePayload = null
     try {
-      payload = wsData.raw ?? (typeof wsData === 'string' ? JSON.parse(wsData) : wsData)
+      basePayload = wsData.raw ?? (typeof wsData === 'string' ? JSON.parse(wsData) : wsData)
     } catch (e) {
       console.warn('[LiveView] Failed to parse wsData:', e)
       return
     }
 
-    if (!payload?.channels) {
-      console.warn('[LiveView] No channels in payload')
-      return
-    }
+    if (!basePayload) return
 
-    // normalize timestamp (ms)
-    let incomingTs = Number(payload.timestamp)
+    // Handle Batch or Single Sample
+    const samples = basePayload._batch || (basePayload.channels ? [basePayload] : [])
+    if (samples.length === 0) return
 
-    if (!incomingTs || incomingTs < 1e9) {
-      incomingTs = Date.now()
-    }
-
-    // sample interval used to bump monotonic timestamps (in ms)
     const sampleIntervalMs = Math.round(1000 / (samplingRate || 250))
 
-    // global incremental timestamp
-    if (!window.__lastTs) window.__lastTs = incomingTs
-    if (incomingTs <= window.__lastTs) {
-      incomingTs = window.__lastTs + sampleIntervalMs
-    }
-    window.__lastTs = incomingTs
+    // Temporary buffers for this update
+    const batchUpdates = { 0: [], 1: [], 2: [], 3: [] }
+    const recordingUpdates = []
 
-    // If recording, accumulate data
-    if (isRecording) {
-      const recordPoint = {
-        timestamp: incomingTs,
-        channels: {}
+    samples.forEach(payload => {
+      if (!payload.channels) return
+
+      let incomingTs = Number(payload.timestamp)
+      // Fix timestamp if needed
+      if (!incomingTs || incomingTs < 1e9) incomingTs = Date.now()
+
+      // Monotonic timestamp logic
+      if (!window.__lastTs) window.__lastTs = incomingTs
+      if (incomingTs <= window.__lastTs) {
+        incomingTs = window.__lastTs + sampleIntervalMs
+      }
+      window.__lastTs = incomingTs
+
+      // Recording accumulation
+      if (isRecording) {
+        const recordPoint = { timestamp: incomingTs, channels: {} }
+        let hasData = false
+        recordingChannels.forEach(chNum => {
+          const chKey = `ch${chNum}` // payload might use integer keys, check Object.entries below
+          // Search in payload.channels (which might be object with keys '0','1'...)
+          Object.entries(payload.channels).forEach(([chIdx, chData]) => {
+            if (parseInt(chIdx) === chNum) {
+              let val = 0
+              if (typeof chData === 'number') val = chData
+              else if (typeof chData === 'object') val = chData.value ?? chData.val ?? 0
+              recordPoint.channels[`ch${chNum}`] = val
+              hasData = true
+            }
+          })
+        })
+        if (hasData) recordingUpdates.push(recordPoint)
       }
 
+      // View Buffers accumulation
       Object.entries(payload.channels).forEach(([chIdx, chData]) => {
         const chNum = parseInt(chIdx)
-        if (recordingChannels.includes(chNum)) {
-          let value = 0
-          if (typeof chData === 'number') value = chData
-          else if (typeof chData === 'object') value = chData.value ?? chData.val ?? 0
-          recordPoint.channels[`ch${chNum}`] = value
+        const chKey = `ch${chNum}`
+
+        // Skip disabled
+        const chConfig = channelMapping[chKey]
+        if (chConfig?.enabled === false) return
+
+        let value = 0
+        if (typeof chData === 'number') value = chData
+        else if (typeof chData === 'object') value = chData.value ?? chData.val ?? 0
+
+        if (!Number.isFinite(value)) return
+
+        // Push to temp buffer
+        if (batchUpdates[chNum]) {
+          batchUpdates[chNum].push({ time: incomingTs, value: Number(value) })
         }
       })
+    })
 
-      if (Object.keys(recordPoint.channels).length > 0) {
-        setRecordedData(prev => [...prev, recordPoint])
-      }
+    // Commit State Updates - using channel specific or default windows is not critical for *accumulation*, 
+    // but strict buffer management might want to use the largest window to be safe. 
+    // For now, using a safe upper bound (e.g. 30s) or just keeping the old default for buffering is fine 
+    // as long as we don't prune too aggressively.
+    // Let's use a safe large buffer (30s) for addDataPoints to avoid cutting off data needed for a large custom window.
+    const safeBufferMs = 30000
+    if (batchUpdates[0].length) setCh0Data(prev => addDataPoints(prev, batchUpdates[0], safeBufferMs))
+    if (batchUpdates[1].length) setCh1Data(prev => addDataPoints(prev, batchUpdates[1], safeBufferMs))
+    if (batchUpdates[2].length) setCh2Data(prev => addDataPoints(prev, batchUpdates[2], safeBufferMs))
+    if (batchUpdates[3].length) setCh3Data(prev => addDataPoints(prev, batchUpdates[3], safeBufferMs))
+
+    if (recordingUpdates.length > 0) {
+      setRecordedData(prev => [...prev, ...recordingUpdates])
     }
 
-    Object.entries(payload.channels).forEach(([chIdx, chData]) => {
-      const chNum = parseInt(chIdx)
-      const chKey = `ch${chNum}`
-      const chConfig = channelMapping[chKey]
-      if (chConfig?.enabled === false) return
-
-      let value = 0
-      if (typeof chData === 'number') value = chData
-      else if (typeof chData === 'object') value = chData.value ?? chData.val ?? 0
-
-      if (!Number.isFinite(value)) return
-
-      // ensure monotonic timestamp per channel: if incomingTs <= lastTs -> bump
-      const newPointFactory = (ts) => ({ time: ts, value: Number(value) })
-
-      switch (chNum) {
-        case 0:
-          setCh0Data(prev => {
-            const lastTs = prev.length ? prev[prev.length - 1].time : (incomingTs - sampleIntervalMs)
-            const ts = incomingTs <= lastTs ? lastTs + sampleIntervalMs : incomingTs
-            return addDataPoint(prev, newPointFactory(ts), timeWindowMs)
-          })
-          break
-        case 1:
-          setCh1Data(prev => {
-            const lastTs = prev.length ? prev[prev.length - 1].time : (incomingTs - sampleIntervalMs)
-            const ts = incomingTs <= lastTs ? lastTs + sampleIntervalMs : incomingTs
-            return addDataPoint(prev, newPointFactory(ts), timeWindowMs)
-          })
-          break
-        case 2:
-          setCh2Data(prev => {
-            const lastTs = prev.length ? prev[prev.length - 1].time : (incomingTs - sampleIntervalMs)
-            const ts = incomingTs <= lastTs ? lastTs + sampleIntervalMs : incomingTs
-            return addDataPoint(prev, newPointFactory(ts), timeWindowMs)
-          })
-          break
-        case 3:
-          setCh3Data(prev => {
-            const lastTs = prev.length ? prev[prev.length - 1].time : (incomingTs - sampleIntervalMs)
-            const ts = incomingTs <= lastTs ? lastTs + sampleIntervalMs : incomingTs
-            return addDataPoint(prev, newPointFactory(ts), timeWindowMs)
-          })
-          break
-        default:
-          console.warn(`[LiveView] Ch${chNum}: Unknown channel index`)
-      }
-    })
-  }, [wsData, isPaused, timeWindowMs, channelMapping, samplingRate, isRecording, recordingChannels])
+  }, [wsData, isPaused, channelMapping, samplingRate, isRecording, recordingChannels])
 
   useEffect(() => {
     const allData = [ch0Data, ch1Data, ch2Data, ch3Data].filter(d => d && d.length)
@@ -159,47 +174,39 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
 
     const oldestTs = Math.min(...allData.map(d => d[0].time))
     const newestTs = Math.max(...allData.map(d => d[d.length - 1].time))
-    const duration = Math.max(timeWindowMs, newestTs - oldestTs || 1)
+    // Use the maximum time window of any active channel for the global scanner/progress bar (if we even keep it)
+    // or just default to 10s if complex. For now, let's use the first active channel's window or default.
+    const refWindow = channelConfig[activeChannels[0]]?.timeWindowMs || defaultTimeWindowMs
+    const duration = Math.max(refWindow, newestTs - oldestTs || 1)
 
     // place scanner at newestTs (right edge of visible range)
     setScannerX(newestTs)
 
     const posRatio = Math.min((newestTs - oldestTs) / duration, 1.0)
     setScannerPercent(posRatio * 100)
-  }, [ch0Data, ch1Data, ch2Data, ch3Data, timeWindowMs])
-
-  const getActiveChannels = () => {
-    const active = []
-    for (let i = 0; i < numChannels; i++) {
-      const key = `ch${i}`
-      const chConfig = channelMapping[key]
-      if (chConfig?.enabled !== false) active.push(i)
-    }
-    return active
-  }
-
-  const activeChannels = useMemo(() => getActiveChannels(), [channelMapping, numChannels])
+  }, [ch0Data, ch1Data, ch2Data, ch3Data, channelConfig, defaultTimeWindowMs, activeChannels])
 
 
 
-  // Channel Configuration State (Zoom & Range)
-  const [channelConfig, setChannelConfig] = useState({})
-  const BASE_AMPLITUDE = 1500 // uV assumed base range
+
+
+
 
   // Initialize config for channels when they appear
   useEffect(() => {
     setChannelConfig(prev => {
       const next = { ...prev }
       let changed = false
-      activeChannels.forEach(chIdx => {
+      activeChannels.forEach((chIdx, i) => {
         if (!next[chIdx]) {
-          next[chIdx] = { zoom: 1, manualRange: "" }
+          const defaultColor = ['#3b82f6', '#10b981', '#f59e0b', '#a855f7'][i % 4]
+          next[chIdx] = { zoom: 1, manualRange: "", timeWindowMs: defaultTimeWindowMs, color: defaultColor }
           changed = true
         }
       })
       return changed ? next : prev
     })
-  }, [activeChannels])
+  }, [activeChannels, defaultTimeWindowMs])
 
   const updateChannelConfig = (chIdx, key, value) => {
     setChannelConfig(prev => ({
@@ -250,8 +257,9 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
 
   useEffect(() => {
     const now = Date.now()
-    setAnnotations(prev => prev.filter(a => (now - a.x) < timeWindowMs))
-  }, [timeWindowMs, ch0Data]) // Clean up
+    // Use a safe large window for cleaning up annotations
+    setAnnotations(prev => prev.filter(a => (now - a.x) < 30000))
+  }, [ch0Data]) // Clean up
 
   const getChannelData = (chIndex) => {
     switch (chIndex) {
@@ -358,26 +366,24 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
   }
 
   return (
-    <div className="w-full h-full flex flex-col gap-4 p-4 bg-bg rounded-lg overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
+    <div className="live-view-container">
+      <div className="h-[94px] shrink-0" />
       {/* Controls */}
-      <div className="flex flex-wrap items-center gap-4 bg-surface border border-border p-3 rounded-lg backdrop-blur-sm">
-        <div className="h-4 w-[1px] bg-border mx-2"></div>
+      <div className="controls-container">
+        <div className="separator"></div>
         {/* Zoom controls removed from here, moved to per-channel */}
 
         {/* Recording Controls */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <div className="text-xs font-bold text-muted uppercase tracking-wider">Record Ch:</div>
-            <div className="flex gap-1">
+        <div className="record-controls">
+          <div className="record-ch-group">
+            <div className="record-ch-label flex items-center gap-1"><Circle size={12} className="fill-current" /> Record Ch:</div>
+            <div className="channel-buttons">
               {activeChannels.map(chIdx => (
                 <button
                   key={chIdx}
                   disabled={isRecording}
                   onClick={() => toggleChannelSelection(chIdx)}
-                  className={`w-6 h-6 flex items-center justify-center rounded text-[10px] font-bold border transition-all ${recordingChannels.includes(chIdx)
-                    ? 'bg-primary/20 border-primary text-primary'
-                    : 'bg-surface/50 border-border text-muted hover:text-text opacity-50'
-                    }`}
+                  className={`channel-btn ${recordingChannels.includes(chIdx) ? 'active' : 'inactive'}`}
                 >
                   {chIdx}
                 </button>
@@ -388,110 +394,79 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
           <button
             onClick={toggleRecording}
             disabled={isSaving || (activeChannels.length === 0 && !isRecording)}
-            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg font-bold text-xs transition-all shadow-lg ${isRecording
-              ? 'bg-red-500 text-white animate-pulse'
-              : 'bg-emerald-500 text-emerald-contrast hover:translate-y-[-1px]'
-              }`}
+            className={`record-btn ${isRecording ? 'recording' : 'idle'}`}
           >
-            <div className={`w-2 h-2 rounded-full ${isRecording ? 'bg-white' : 'bg-white/50'}`}></div>
+            {isRecording ? <Square size={16} fill="currentColor" /> : <Radio size={16} />}
             {isRecording ? `STOP (${recordingTime}s)` : 'REC'}
           </button>
 
-          {isSaving && <div className="text-[10px] text-primary animate-pulse font-bold">SAVING...</div>}
+          {isSaving && <div className="saving-indicator">SAVING...</div>}
         </div>
 
-        <div className="text-[10px] text-muted ml-auto font-mono bg-bg/50 px-2 py-1 rounded border border-border">
+        <div className="mode-indicator">
           {/* Global range indicator removed or can be replaced with something else */}
-          <span className="text-primary font-bold">MODE:</span> INDEPENDENT SCALING
+          <span className="text-primary font-bold flex items-center gap-2 w-auto"><Settings2 size={16} /> MODE:</span> INDEPENDENT SCALING
+
         </div>
       </div>
 
-      {activeChannels.map((chIdx) => {
-        const sensorName = channelMapping[`ch${chIdx}`]?.sensor
+      {Array.from({ length: 4 }).map((_, chIdx) => {
+        const isEnabled = activeChannels.includes(chIdx);
         const rawData = getChannelData(chIdx)
-        const sweep = processSweep(rawData, timeWindowMs)
-        const chColor = ['rgb(59, 130, 246)', 'rgb(16, 185, 129)', 'rgb(245, 158, 11)', 'rgb(168, 85, 247)'][chIdx % 4]
-        const chColorHist = ['rgba(59, 130, 246, 0.3)', 'rgba(16, 185, 129, 0.3)', 'rgba(245, 158, 11, 0.3)', 'rgba(168, 85, 247, 0.3)'][chIdx % 4]
+        const sensorName = channelMapping[`ch${chIdx}`]?.sensor
 
+        // --- DEFINE VARIABLES IN CORRECT ORDER ---
         const currentZoom = channelConfig[chIdx]?.zoom || 1
         const currentManual = channelConfig[chIdx]?.manualRange || ""
+        const currentTimeWindow = channelConfig[chIdx]?.timeWindowMs || defaultTimeWindowMs
+        const currentChColor = channelConfig[chIdx]?.color || ['rgb(59, 130, 246)', 'rgb(16, 185, 129)', 'rgb(245, 158, 11)', 'rgb(168, 85, 247)'][chIdx % 4]
+
+        // Now it is safe to use currentChColor
+        const chColorHist = currentChColor + '4D'
+
         const chDomain = getChannelYDomain(chIdx)
 
+        // Moved sweep processing down to have access to currentTimeWindow
+        const sweep = processSweep(rawData, currentTimeWindow)
+
         return (
-          <div key={chIdx} className="shrink-0 flex flex-col gap-1">
-
-            {/* Per-Channel Controls Header */}
-            <div className="flex items-center justify-between bg-surface/50 p-1 rounded border border-border/50">
-              <div className="mb-0 text-sm font-semibold text-muted flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: chColor }}></span>
-                Graph {chIdx + 1}
-              </div>
-
-              <div className="flex items-center gap-4">
-                {/* Zoom Buttons */}
-                <div className="flex gap-1 items-center">
-                  <span className="text-[9px] font-bold text-muted uppercase">ZOOM</span>
-                  {[1, 5, 20, 50].map(z => (
-                    <button
-                      key={z}
-                      onClick={() => { updateChannelConfig(chIdx, 'zoom', z); updateChannelConfig(chIdx, 'manualRange', ""); }}
-                      className={`px-1.5 py-0.5 text-[9px] rounded font-bold transition-all ${currentZoom === z && !currentManual
-                        ? 'bg-primary text-white shadow-sm'
-                        : 'bg-surface hover:bg-white/10 text-muted hover:text-text border border-border'
-                        }`}
-                    >
-                      {z}x
-                    </button>
-                  ))}
-                </div>
-
-                <div className="w-[1px] h-3 bg-border"></div>
-
-                {/* Manual Range Input */}
-                <div className="flex gap-1 items-center">
-                  <span className="text-[9px] font-bold text-muted uppercase">RANGE</span>
-                  <input
-                    type="number"
-                    placeholder="+/-"
-                    value={currentManual}
-                    onChange={(e) => updateChannelConfig(chIdx, 'manualRange', e.target.value)}
-                    className="w-12 bg-bg border border-border rounded px-1 py-0.5 text-[9px] text-text focus:outline-none focus:border-primary"
-                  />
-                </div>
-
-                <div className="w-[1px] h-3 bg-border"></div>
-
-                <div className="text-[9px] font-mono text-muted">
-                  +/-{(Math.abs(chDomain[1])).toFixed(0)} uV
-                </div>
-              </div>
-            </div>
-
+          <div key={chIdx} className="channel-wrapper">
             <SignalChart
+              graphNo={`Graph ${chIdx + 1}`}
               title={`${sensorName}`}
+              disabled={!isEnabled}
               byChannel={{ active: sweep.active, history: sweep.history }}
-              channelColors={{ active: chColor, history: chColorHist }}
-              timeWindowMs={timeWindowMs}
-              color={chColor}
+              channelColors={{ active: currentChColor, history: chColorHist }} // Pass dynamic color
+              timeWindowMs={currentTimeWindow}
+              color={currentChColor} // Main color prop
               height={300}
               showGrid={showGrid}
               scannerX={sweep.scanner}
-              annotations={mapAnn(annotations.filter(a => a.channel === `ch${chIdx}`), timeWindowMs)}
+              annotations={mapAnn(annotations.filter(a => a.channel === `ch${chIdx}`), currentTimeWindow)}
               yDomainProp={chDomain}
               tickCount={7}
+              curveType="natural"
+              // New props for controls
+              currentZoom={currentZoom}
+              currentManual={currentManual}
+              onZoomChange={(z) => { updateChannelConfig(chIdx, 'zoom', z); updateChannelConfig(chIdx, 'manualRange', ""); }}
+              onRangeChange={(val) => updateChannelConfig(chIdx, 'manualRange', val)}
+              onTimeWindowChange={(val) => updateChannelConfig(chIdx, 'timeWindowMs', val)}
+              onColorChange={(val) => updateChannelConfig(chIdx, 'color', val)}
             />
           </div>
         )
       })}
 
-      <div className="bg-surface/50 border border-border rounded p-3 text-xs text-muted font-mono space-y-1">
+      <div className="footer-info">
         {/* Footer Info */}
-        <div className="flex justify-between">
+        <div className="footer-row">
           <div><span className="text-primary font-bold">MODE:</span> INDEPENDENT SCALING</div>
-          {isRecording && <div className="text-red-400 animate-pulse font-bold">● RECORDING IN PROGRESS</div>}
+          {isRecording && <div className="recording-status">● RECORDING IN PROGRESS</div>}
         </div>
-        <div><span className="text-purple-400">Stream</span>: {wsData?.raw?.stream_name || 'Disconnected'}</div>
+        <div className="flex items-center gap-2"><span className="text-purple-400 flex items-center gap-1"><Wifi size={14} /> Stream</span>: {wsData?.raw?.stream_name || 'Disconnected'}</div>
       </div>
+      <div className="h-[30px] shrink-0" />
     </div>
   )
 }

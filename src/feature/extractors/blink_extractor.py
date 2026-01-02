@@ -1,6 +1,7 @@
 import numpy as np
 import collections
 from scipy import stats
+from scipy.signal import butter, sosfilt, sosfilt_zi, find_peaks
 
 class BlinkExtractor:
     """
@@ -21,21 +22,26 @@ class BlinkExtractor:
         # User reported ~3uV blinks, so 1.5 threshold is reasonable
         self.amp_threshold = eog_cfg.get("amp_threshold", 50.0) 
         self.min_duration_ms = eog_cfg.get("min_duration_ms", 100.0)
-        self.max_duration_ms = eog_cfg.get("max_duration_ms", 500.0)
+        self.max_duration_ms = eog_cfg.get("max_duration_ms", 800.0) # Increased for double blinks
         
         # Buffer for signal (approx 1 second of data)
         self.buffer_size = sr 
         self.buffer = collections.deque(maxlen=self.buffer_size)
         
-        # Baseline estimation (rolling mean)
-        self.baseline = 0.0
-        self.alpha = 0.01 # Smoothing factor for baseline
+        # Bandpass Filter (0.5 - 10 Hz)
+        # 0.5Hz removes drift, 10Hz removes EMG/noise while keeping blink shape
+        nyquist = 0.5 * sr
+        low = 0.5 / nyquist
+        high = 10.0 / nyquist
+        self.sos = butter(4, [low, high], btype='band', output='sos')
+        self.zi = sosfilt_zi(self.sos)
         
         # State tracking
         self.is_collecting = False
         self.candidate_window = []
         self.start_idx = 0
         self.current_idx = 0
+        self.cooldown_counter = 0
         
     def process(self, sample_val: float):
         """
@@ -44,14 +50,10 @@ class BlinkExtractor:
         """
         self.current_idx += 1
         
-        # Update baseline (very slow moving average)
-        if self.current_idx == 1:
-            self.baseline = sample_val
-        else:
-            self.baseline = self.alpha * sample_val + (1 - self.alpha) * self.baseline
-            
-        # Zero-centered signal
-        zero_centered = sample_val - self.baseline
+        # Apply Bandpass Filter
+        filtered_val, self.zi = sosfilt(self.sos, [sample_val], zi=self.zi)
+        zero_centered = filtered_val[0]
+        
         self.buffer.append(zero_centered)
         
         # Detection logic:
@@ -61,25 +63,48 @@ class BlinkExtractor:
                 self.is_collecting = True
                 self.candidate_window = [zero_centered]
                 self.start_idx = self.current_idx
+                self.cooldown_counter = 0
                 
                 print(f"[Extractor] Candidate start at {self.current_idx} (Val: {zero_centered:.2f})")
         else:
             self.candidate_window.append(zero_centered)
             
-            # If window exceeds max duration, stop collecting
+            # Check if signal is active (above cutoff)
+            # We use a lower cutoff to sustain the window during valleys (like in double blinks)
+            cutoff = self.amp_threshold / 4.0
+            
+            if abs(zero_centered) > cutoff:
+                self.cooldown_counter = 0 # Signal is active, reset cooldown
+            else:
+                self.cooldown_counter += 1 # Signal is weak, count down
+            
+            # Stop conditions
+            # 1. Max Duration Exceeded
             if len(self.candidate_window) > (self.max_duration_ms / 1000.0) * self.sr:
                 features = self._extract_features(self.candidate_window)
                 self.is_collecting = False
                 self.candidate_window = []
+                self.cooldown_counter = 0
                 return features
             
-            # If it returns below threshold/4, call it an event
-            if abs(zero_centered) < self.amp_threshold / 4 and len(self.candidate_window) > (self.min_duration_ms / 1000.0) * self.sr:
-                features = self._extract_features(self.candidate_window)
-                self.is_collecting = False
-                self.candidate_window = []
-                # print(f"[DEBUG] Window finished: {len(self.candidate_window)} samples")
-                return features
+            # 2. Cooldown Exceeded (Signal stayed low for too long)
+            # Wait 150ms before giving up
+            max_cooldown_samples = int(0.15 * self.sr)
+            
+            if self.cooldown_counter > max_cooldown_samples:
+                # Signal has ended.
+                # Check min duration
+                if len(self.candidate_window) > (self.min_duration_ms / 1000.0) * self.sr:
+                    features = self._extract_features(self.candidate_window)
+                    self.is_collecting = False
+                    self.candidate_window = []
+                    self.cooldown_counter = 0
+                    return features
+                else:
+                    # Too short, discard
+                    self.is_collecting = False
+                    self.candidate_window = []
+                    self.cooldown_counter = 0
                 
         return None
 
@@ -104,10 +129,10 @@ class BlinkExtractor:
         
         asymmetry = rise_time_ms / (fall_time_ms + 1e-6)
         
-        # New Feature: Peak Counting (for Double Blink Detection)
-        # Find peaks > 50% of max amplitude to ignore noise
-        from scipy.signal import find_peaks
-        peaks, _ = find_peaks(abs_data, height=peak_amp * 0.5, distance=sr * 0.05) # 50ms distance
+        # Robust Peak Detection (Prominence based)
+        # Prominence > 50% of peak amplitude helps filter out overlapping noise
+        # Distance > 200ms (0.2 * sr) to avoid counting the same blink or rapid artifacts
+        peaks, _ = find_peaks(abs_data, prominence=peak_amp * 0.4, distance=sr * 0.2)
         peak_count = len(peaks)
         
         # Statistical features

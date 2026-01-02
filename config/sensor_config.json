@@ -3,30 +3,26 @@
   "channel_mapping": {
     "ch0": {
       "sensor": "EMG",
-      "enabled": true,
-      "label": "EEG Channel 0"
+      "enabled": true
     },
     "ch1": {
       "sensor": "EOG",
-      "enabled": true,
-      "label": "EEG Channel 1"
+      "enabled": true
     },
     "ch2": {
-      "sensor": "EEG",
-      "enabled": true,
-      "label": "EEG Channel 2"
+      "sensor": "EMG",
+      "enabled": true
     },
     "ch3": {
-      "sensor": "EEG",
-      "enabled": true,
-      "label": "EEG Channel 3"
+      "sensor": "EMG",
+      "enabled": true
     }
   },
-  "num_channels": 4,
-  "serial_port": "COM7",
+  "num_channels": 2,
+  "serial_port": "",
   "display": {
-    "scannerX": 0,
+    "timeWindowMs": 30000,
     "showGrid": true,
-    "timeWindowMs": 30000
+    "scannerX": 0
   }
 }

@@ -105,7 +105,67 @@ def train_emg_model(n_estimators=100, max_depth=None, test_size=0.2):
         "model_path": str(MODEL_PATH)
     }
 
+def evaluate_saved_model():
+    """
+    Evaluates the currently saved model against the FULL database.
+    Used to verify how well the persisted model performs on all available data.
+    """
+    if not MODEL_PATH.exists() or not SCALER_PATH.exists():
+        return {"error": "Model not found. Train a model first."}
+
+    try:
+        model = joblib.load(MODEL_PATH)
+        scaler = joblib.load(SCALER_PATH)
+    except Exception as e:
+        return {"error": f"Failed to load model: {str(e)}"}
+
+    conn = db_manager.connect()
+    try:
+        df = pd.read_sql_query("SELECT * FROM emg_windows", conn)
+    except Exception as e:
+        conn.close()
+        return {"error": f"Database read error: {str(e)}"}
+    conn.close()
+
+    if df.empty:
+        return {"error": "Database is empty."}
+
+    # Prepare Features
+    feature_cols = ['rms', 'mav', 'zcr', 'var', 'wl', 'peak', 'range', 'iemg', 'entropy', 'energy']
+    
+    # Check/Fix columns
+    missing_cols = [c for c in feature_cols if c not in df.columns]
+    if missing_cols:
+         if 'range' in missing_cols and 'rng' in df.columns:
+             df.rename(columns={'rng': 'range'}, inplace=True)
+         for col in ['entropy', 'energy']:
+             if col not in df.columns:
+                 df[col] = 0.0
+
+    X = df[feature_cols]
+    y = df['label']
+
+    # Inference on FULL dataset
+    try:
+        X_scaled = scaler.transform(X)
+        y_pred = model.predict(X_scaled)
+        
+        acc = accuracy_score(y, y_pred)
+        cm = confusion_matrix(y, y_pred).tolist()
+        
+        return {
+            "status": "success",
+            "accuracy": acc,
+            "confusion_matrix": cm,
+            "n_samples": len(df),
+            "model_path": str(MODEL_PATH)
+        }
+    except Exception as e:
+        return {"error": f"Inference error: {str(e)}"}
+
 if __name__ == "__main__":
     # Test run
-    result = train_emg_model()
-    print(result)
+    # result = train_emg_model()
+    # print(result)
+    print("Testing Evaluation...")
+    print(evaluate_saved_model())

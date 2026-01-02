@@ -1,34 +1,34 @@
 {
   "ch0": {
-    "sensor": "EEG",
+    "sensor": "EMG",
     "enabled": true,
     "offset": 0.0,
     "gain": 1.0,
-    "calibration_date": "2025-12-27",
+    "calibration_date": "2025-12-31",
     "calibrated": true
   },
   "ch1": {
-    "sensor": "EEG",
+    "sensor": "EMG",
     "enabled": true,
     "offset": 0.0,
     "gain": 1.0,
-    "calibration_date": "2025-12-27",
+    "calibration_date": "2025-12-31",
     "calibrated": true
   },
   "ch2": {
-    "sensor": "EEG",
+    "sensor": "EMG",
     "enabled": true,
     "offset": 0.0,
     "gain": 1.0,
-    "calibration_date": "2025-12-27",
+    "calibration_date": "2025-12-31",
     "calibrated": true
   },
   "ch3": {
-    "sensor": "EEG",
+    "sensor": "EMG",
     "enabled": true,
     "offset": 0.0,
     "gain": 1.0,
-    "calibration_date": "2025-12-27",
+    "calibration_date": "2025-12-31",
     "calibrated": true
   }
 }

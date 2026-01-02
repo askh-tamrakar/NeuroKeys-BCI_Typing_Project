@@ -1,5 +1,12 @@
-import React from 'react'
-
+import React, { useState, useRef, useEffect } from 'react';
+import {
+    ChevronDown, ChevronUp, Minus, Plus, Filter, Zap,
+    Waves, Sliders, Cpu, Power, ArrowRightLeft, Check, Play,
+    Pause, ListOrdered, Timer, Activity, CheckCircle, Network
+} from 'lucide-react';
+import ElectricBorder from './ElectricBorder';
+import CustomSelect from './CustomSelect';
+import { soundHandler } from '../../handlers/SoundHandler';
 export default function Sidebar({
     config,
     setConfig,
@@ -8,15 +15,8 @@ export default function Sidebar({
     onSave,
     className = ''
 }) {
-
-    /**
-     * Handle filter changes for a SENSOR TYPE (not channel)
-     * 
-     * OLD (WRONG): filters.ch0, filters.ch1 (per-channel)
-     * NEW (CORRECT): filters.EMG, filters.EOG, filters.EEG (per-sensor)
-     * 
-     * When ch0=EMG and ch1=EMG, BOTH use filters.EMG
-     */
+    // Safety check to prevent crash if config is not yet loaded
+    if (!config) return null;
     const handleSensorFilterChange = (sensorType, field, value) => {
         setConfig(prev => ({
             ...prev,
@@ -44,9 +44,9 @@ export default function Sidebar({
     }
 
     /*
-     * Get the sensor type for a given channel
-     * E.g., getSensorTypeForChannel('ch0') returns 'EMG'
-     */
+    * Get the sensor type for a given channel
+    * E.g., getSensorTypeForChannel('ch0') returns 'EMG'
+    */
     const getSensorTypeForChannel = (chKey) => {
         return config.channel_mapping?.[chKey]?.sensor || 'EMG'
     }
@@ -66,7 +66,11 @@ export default function Sidebar({
             channel_mapping: {
                 ...config.channel_mapping,
                 [chKey]: {
+                    // Start with existing properties
                     ...config.channel_mapping?.[chKey],
+                    // Explicitly preserve sensor (or default to current getter value if missing)
+                    // This ensures "sensor" key exists in the config even if it was implicit before
+                    sensor: config.channel_mapping?.[chKey]?.sensor || 'EMG',
                     enabled: enabled
                 }
             }
@@ -81,178 +85,146 @@ export default function Sidebar({
     }
 
     return (
-        <aside className={`w-80 bg-surface border-r border-border h-full flex flex-col overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] ${className}`}>
-            <div className="p-6 border-b border-border">
-                <h2 className="text-xl font-bold text-text mb-1">Controls</h2>
-                <p className="text-xs text-muted">LSL Stream Configuration</p>
+        <aside className={`w-80 bg-surface/80 backdrop-blur-md border-r border-border h-full flex flex-col overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] ${className}`}>
+            <div className="h-[94px] shrink-0" />
+
+            <div className="p-4 border-b border-border">
+                <h2 className="text-3xl font-bold text-text mb-1 flex items-center gap-3">
+                    <Cpu size={32} className="text-primary animate-pulse" />
+                    <span style={{ letterSpacing: '2.3px' }}>Controls</span>
+                </h2>
+                <p className="text-base text-muted">LSL Stream Configuration</p>
             </div>
 
-            <div className="p-6 space-y-8">
+            <div className="p-4 space-y-8">
 
                 {/* Stream Control */}
-                <section>
-                    <h3 className="text-sm font-bold text-muted uppercase tracking-wider mb-4">Stream Status</h3>
+                <ElectricBorder
+                    color={isPaused ? "#ef4444" : "#10b981"}
+                    speed={isPaused ? .5 : 1.1}
+                    chaos={isPaused ? .025 : .035}
+                    thickness={2}
+                    borderRadius={12}
+
+                >
                     <button
-                        onClick={() => setIsPaused(!isPaused)}
-                        className={`w-full py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${isPaused
-                            ? 'bg-accent/10 text-accent border border-accent/20 hover:bg-accent/20'
-                            : 'bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20'
+                        onClick={() => {
+                            soundHandler.playToggle(!isPaused);
+                            setIsPaused(!isPaused);
+                        }}
+
+                        className={`w-full py-3 font-bold transition-all flex items-center justify-center gap-2 ${isPaused
+                            ? 'bg-accent/10 text-accent hover:bg-accent/20'
+                            : 'bg-primary/10 text-primary hover:bg-primary/20'
                             }`}
                     >
-                        <span className={`w-2 h-2 rounded-full ${isPaused ? 'bg-accent' : 'bg-primary animate-pulse'}`}></span>
-                        {isPaused ? 'RESUME STREAM' : 'PAUSE STREAM'}
+                        {isPaused ? <Play size={20} className="fill-current pulse" style={{ color: "#ef4444" }} /> : <Pause size={20} className="fill-current pulse" style={{ color: "#10b981" }} />}
+                        {isPaused
+                            ? <span className="text-red-400">STREAM PAUSED</span>
+                            : <span className="text-emerald-400">STREAMING</span>}
                     </button>
-                </section>
+                </ElectricBorder>
 
-                {/* Time Window */}
-                <section>
-                    <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-sm font-bold text-muted uppercase tracking-wider">Time Window</h3>
-                        <span className="text-xs font-mono text-primary bg-primary/10 px-2 py-0.5 rounded">{config.display?.timeWindowMs / 1000}s</span>
-                    </div>
-                    <input
-                        type="range"
-                        min="1000"
-                        max="30000"
-                        step="1000"
-                        value={config.display?.timeWindowMs || 10000}
-                        onChange={(e) => setConfig(prev => ({
-                            ...prev,
-                            display: { ...prev.display, timeWindowMs: Number(e.target.value) }
-                        }))}
-                        className="w-full accent-primary h-2 bg-bg rounded-lg appearance-none cursor-pointer"
-                    />
-                    <div className="flex justify-between text-[10px] text-muted font-mono mt-2">
-                        <span>1s</span>
-                        <span>30s</span>
-                    </div>
-                </section>
+
 
                 {/* Channel Mapping */}
                 <section>
-                    <h3 className="text-sm font-bold text-muted uppercase tracking-wider mb-4">Channel Mapping</h3>
+                    <h3 className="text-sm font-bold text-muted uppercase tracking-wider mb-4 flex items-center gap-2"><Network size={16} /> Channel Mapping</h3>
 
                     {/* Channel 0 */}
                     <div className="mb-3">
                         <div className="flex justify-between items-center mb-1">
-                            <label className="text-xs font-medium text-text">Graph 1</label>
-                            <label className="text-[10px] text-muted flex items-center gap-1 cursor-pointer">
+                            <label className="text-xs font-medium text-text flex items-center gap-1"><Activity size={14} className="text-primary" /> Graph 1</label>
+                            <label className={`text-[10px] flex items-center gap-1 cursor-pointer ${config.channel_mapping?.ch0?.enabled !== false ? 'text-primary' : 'text-red-500'}`}>
                                 <input
                                     type="checkbox"
                                     checked={config.channel_mapping?.ch0?.enabled !== false}
                                     onChange={(e) => handleChannelToggle('ch0', e.target.checked)}
-                                    className="accent-primary"
+                                    className="accent-primary hidden"
                                 />
-                                Enable
+                                <Power size={14} className={config.channel_mapping?.ch0?.enabled !== false ? "stroke-2" : ""} />
+                                {config.channel_mapping?.ch0?.enabled !== false ? 'ON' : 'OFF'}
                             </label>
                         </div>
-                        <select
+                        <SensorSelector
                             value={getSensorTypeForChannel('ch0')}
-                            onChange={(e) => handleChannelMapping('ch0', e.target.value)}
+                            onChange={(val) => handleChannelMapping('ch0', val)}
                             disabled={config.channel_mapping?.ch0?.enabled === false}
-                            className={`w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm outline-none focus:border-primary/50 ${config.channel_mapping?.ch0?.enabled === false ? 'opacity-50' : ''}`}
-                        >
-                            <option value="EMG">EMG</option>
-                            <option value="EOG">EOG</option>
-                            <option value="EEG">EEG</option>
-                        </select>
+                        />
                     </div>
 
                     {/* Channel 1 */}
                     <div className="mb-4">
                         <div className="flex justify-between items-center mb-1">
-                            <label className="text-xs font-medium text-text">Graph 2</label>
-                            <label className="text-[10px] text-muted flex items-center gap-1 cursor-pointer">
+                            <label className="text-xs font-medium text-text flex items-center gap-1"><Activity size={14} className="text-emerald-500" /> Graph 2</label>
+                            <label className={`text-[10px] flex items-center gap-1 cursor-pointer ${config.channel_mapping?.ch1?.enabled !== false ? 'text-primary' : 'text-red-500'}`}>
                                 <input
                                     type="checkbox"
                                     checked={config.channel_mapping?.ch1?.enabled !== false}
                                     onChange={(e) => handleChannelToggle('ch1', e.target.checked)}
-                                    className="accent-primary"
+                                    className="accent-primary hidden"
                                 />
-                                Enable
+                                <Power size={14} className={config.channel_mapping?.ch1?.enabled !== false ? "stroke-2" : ""} />
+                                {config.channel_mapping?.ch1?.enabled !== false ? 'ON' : 'OFF'}
                             </label>
                         </div>
-                        <select
+                        <SensorSelector
                             value={getSensorTypeForChannel('ch1')}
-                            onChange={(e) => handleChannelMapping('ch1', e.target.value)}
+                            onChange={(val) => handleChannelMapping('ch1', val)}
                             disabled={config.channel_mapping?.ch1?.enabled === false}
-                            className={`w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm outline-none focus:border-primary/50 ${config.channel_mapping?.ch1?.enabled === false ? 'opacity-50' : ''}`}
-                        >
-                            <option value="EMG">EMG</option>
-                            <option value="EOG">EOG</option>
-                            <option value="EEG">EEG</option>
-                        </select>
+                        />
                     </div>
 
                     {/* Channel 2 */}
                     <div className="mb-4">
                         <div className="flex justify-between items-center mb-1">
-                            <label className="text-xs font-medium text-text">Graph 3</label>
-                            <label className="text-[10px] text-muted flex items-center gap-1 cursor-pointer">
+                            <label className="text-xs font-medium text-text flex items-center gap-1"><Activity size={14} className="text-orange-500" /> Graph 3</label>
+                            <label className={`text-[10px] flex items-center gap-1 cursor-pointer ${config.channel_mapping?.ch2?.enabled !== false ? 'text-primary' : 'text-red-500'}`}>
                                 <input
                                     type="checkbox"
                                     checked={config.channel_mapping?.ch2?.enabled !== false}
                                     onChange={(e) => handleChannelToggle('ch2', e.target.checked)}
-                                    className="accent-primary"
+                                    className="accent-primary hidden"
                                 />
-                                Enable
+                                <Power size={14} className={config.channel_mapping?.ch2?.enabled !== false ? "stroke-2" : ""} />
+                                {config.channel_mapping?.ch2?.enabled !== false ? 'ON' : 'OFF'}
                             </label>
                         </div>
-                        <select
+                        <SensorSelector
                             value={getSensorTypeForChannel('ch2')}
-                            onChange={(e) => handleChannelMapping('ch2', e.target.value)}
+                            onChange={(val) => handleChannelMapping('ch2', val)}
                             disabled={config.channel_mapping?.ch2?.enabled === false}
-                            className={`w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm outline-none focus:border-primary/50 ${config.channel_mapping?.ch2?.enabled === false ? 'opacity-50' : ''}`}
-                        >
-                            <option value="EMG">EMG</option>
-                            <option value="EOG">EOG</option>
-                            <option value="EEG">EEG</option>
-                        </select>
+                        />
                     </div>
 
                     {/* Channel 3 */}
                     <div className="mb-4">
                         <div className="flex justify-between items-center mb-1">
-                            <label className="text-xs font-medium text-text">Graph 4</label>
-                            <label className="text-[10px] text-muted flex items-center gap-1 cursor-pointer">
+                            <label className="text-xs font-medium text-text flex items-center gap-1"><Activity size={14} className="text-purple-500" /> Graph 4</label>
+                            <label className={`text-[10px] flex items-center gap-1 cursor-pointer ${config.channel_mapping?.ch3?.enabled !== false ? 'text-primary' : 'text-red-500'}`}>
                                 <input
                                     type="checkbox"
                                     checked={config.channel_mapping?.ch3?.enabled !== false}
                                     onChange={(e) => handleChannelToggle('ch3', e.target.checked)}
-                                    className="accent-primary"
+                                    className="accent-primary hidden"
                                 />
-                                Enable
+                                <Power size={14} className={config.channel_mapping?.ch3?.enabled !== false ? "stroke-2" : ""} />
+                                {config.channel_mapping?.ch3?.enabled !== false ? 'ON' : 'OFF'}
                             </label>
                         </div>
-                        <select
+                        <SensorSelector
                             value={getSensorTypeForChannel('ch3')}
-                            onChange={(e) => handleChannelMapping('ch3', e.target.value)}
+                            onChange={(val) => handleChannelMapping('ch3', val)}
                             disabled={config.channel_mapping?.ch3?.enabled === false}
-                            className={`w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm outline-none focus:border-primary/50 ${config.channel_mapping?.ch3?.enabled === false ? 'opacity-50' : ''}`}
-                        >
-                            <option value="EMG">EMG</option>
-                            <option value="EOG">EOG</option>
-                            <option value="EEG">EEG</option>
-                        </select>
+                        />
                     </div>
 
-                    <button
-                        onClick={() => {
-                            if (onSave) {
-                                onSave();
-                            } else {
-                                console.warn("Sidebar: No onSave handler provided");
-                            }
-                        }}
-                        className="w-full py-2 bg-primary text-primary-contrast rounded-lg font-bold text-sm shadow-glow hover:opacity-90 active:scale-95 transition-all"
-                    >
-                        🔄 Map Sensors
-                    </button>
+                    <MapButton onSave={onSave} />
                 </section>
 
                 {/* SENSOR-BASED FILTERS (Not Channel-Based) */}
                 <section className="space-y-6">
-                    <h3 className="text-sm font-bold text-muted uppercase tracking-wider">Signal Filters</h3>
+                    <h3 className="text-sm font-bold text-muted uppercase tracking-wider flex items-center gap-2"><Filter size={16} /> Signal Filters</h3>
 
                     {/* EMG FILTER (applies to all EMG channels) */}
                     <FilterSection
@@ -303,7 +275,49 @@ export default function Sidebar({
                     />
                 </section>
             </div>
-        </aside>
+
+            <div className="h-[30px] shrink-0" />
+        </aside >
+    )
+}
+
+function SensorSelector({ value, onChange, disabled }) {
+    return (
+        <CustomSelect
+            value={value}
+            onChange={onChange}
+            disabled={disabled}
+            options={['EMG', 'EOG', 'EEG']}
+            placeholder="Select Sensor"
+        />
+    );
+}
+
+
+function MapButton({ onSave }) {
+    const [status, setStatus] = useState("Map Sensors");
+
+    const handleClick = () => {
+        soundHandler.playClick();
+        setStatus("Mapping...");
+        // Simulate delay or wait for onSave
+        setTimeout(() => {
+            if (onSave) onSave();
+            setStatus("Mapped!");
+            setTimeout(() => setStatus("Map Sensors"), 2000);
+        }, 500);
+    };
+
+    return (
+        <button
+            onClick={handleClick}
+            className="w-full py-2 bg-primary text-primary-contrast rounded-lg font-bold text-sm shadow-glow hover:opacity-90 active:scale-95 transition-all flex items-center justify-center gap-2"
+        >
+            {status === "Map Sensors" && <ArrowRightLeft size={16} />}
+            {status === "Mapping..." && <ArrowRightLeft size={16} className="animate-spin" />}
+            {status === "Mapped!" && <CheckCircle size={16} />}
+            {status}
+        </button>
     )
 }
 
@@ -341,6 +355,13 @@ function FilterSection({
         )
     }
 
+    const bgColors = {
+        primary: 'bg-primary',
+        emerald: 'bg-emerald-500',
+        orange: 'bg-orange-500'
+    };
+    const buttonBg = bgColors[accentColor] || 'bg-primary';
+
     return (
         <div className="space-y-3 p-3 rounded-lg border border-border bg-surface/50">
             {/* Header: Sensor Type + Which Channels Use It */}
@@ -355,9 +376,9 @@ function FilterSection({
                 </div>
                 <button
                     onClick={() => onSave?.()}
-                    className={`px-2 py-0.5 text-[10px] bg-${accentColor}-500 text-white rounded font-bold hover:opacity-90`}
+                    className={`px-2 py-0.5 text-[10px] ${buttonBg} text-white rounded font-bold hover:opacity-90 flex items-center gap-1`}
                 >
-                    APPLY
+                    <Check size={10} /> APPLY
                 </button>
             </div>
 
@@ -370,13 +391,15 @@ function FilterSection({
 
             {/* NOTCH FILTER (for 50/60Hz mains interference) */}
             <div className="flex items-center justify-between">
-                <label className="text-xs text-text flex items-center gap-2">
+                <label className="text-xs flex items-center gap-2 cursor-pointer text-text hover:text-text/80 transition-colors">
                     <input
                         type="checkbox"
                         checked={filterConfig.notch_enabled || false}
                         onChange={(e) => onFilterChange(sensorType, 'notch_enabled', e.target.checked)}
-                        className={`accent-${accentColor}-500`}
+                        className="accent-primary hidden"
                     />
+                    <Power size={12} className={filterConfig.notch_enabled ? `text-${accentColor}-500` : "text-red-500"} />
+                    <Zap size={12} className={filterConfig.notch_enabled ? `text-${accentColor}-500` : "text-muted"} />
                     Notch Filter (Mains)
                 </label>
                 {filterConfig.notch_enabled && (
@@ -395,13 +418,15 @@ function FilterSection({
 
             {/* BANDPASS FILTER */}
             <div className="space-y-1">
-                <label className="text-xs text-text flex items-center gap-2">
+                <label className="text-xs flex items-center gap-2 cursor-pointer text-text hover:text-text/80 transition-colors">
                     <input
                         type="checkbox"
                         checked={filterConfig.bandpass_enabled || false}
                         onChange={(e) => onFilterChange(sensorType, 'bandpass_enabled', e.target.checked)}
-                        className={`accent-${accentColor}-500`}
+                        className="accent-primary hidden"
                     />
+                    <Power size={12} className={filterConfig.bandpass_enabled ? `text-${accentColor}-500` : "text-red-500"} />
+                    <Waves size={12} className={filterConfig.bandpass_enabled ? `text-${accentColor}-500` : "text-muted"} />
                     Bandpass Filter
                 </label>
                 {filterConfig.bandpass_enabled && (
@@ -428,8 +453,8 @@ function FilterSection({
 
             {/* HIGH-PASS FILTER CUTOFF */}
             <div className="space-y-1 pt-2 border-t border-border/30">
-                <label className="text-[10px] text-muted flex justify-between">
-                    <span>High-Pass Cutoff</span>
+                <label className="text-[10px] text-muted flex justify-between items-center">
+                    <span className="flex items-center gap-1"><Sliders size={10} /> High-Pass Cutoff</span>
                     <span className={colorClass} style={{ fontWeight: 'bold' }}>
                         {filterConfig.cutoff || 1} Hz
                     </span>
@@ -453,7 +478,7 @@ function FilterSection({
             {filterConfig.order && (
                 <div className="space-y-1 pt-2 border-t border-border/30">
                     <label className="text-[10px] text-muted flex justify-between">
-                        <span>Filter Order</span>
+                        <span className="flex items-center gap-1"><ListOrdered size={10} /> Filter Order</span>
                         <span className={colorClass} style={{ fontWeight: 'bold' }}>
                             {filterConfig.order}
                         </span>
@@ -473,6 +498,7 @@ function FilterSection({
                     </div>
                 </div>
             )}
+            <div className="h-[35px] shrink-0" />
         </div>
     )
 }
