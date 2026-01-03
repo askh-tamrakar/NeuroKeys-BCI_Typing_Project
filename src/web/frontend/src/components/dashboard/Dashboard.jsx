@@ -216,7 +216,7 @@ export default function Dashboard() {
               {currentPage === 'live' && <LiveDashboard wsData={lastMessage} wsConfig={lastConfig} wsEvent={lastEvent} sendMessage={sendMessage} />}
               {currentPage === 'dino' && <DinoView wsData={lastMessage} wsEvent={lastEvent} isPaused={false} />}
               {currentPage === 'ssvep' && <SSVEPView />}
-              {currentPage === 'test' && <TestView wsData={lastMessage} wsEvent={lastEvent} config={lastConfig} />}
+              {/* {currentPage === 'test' && <TestView wsData={lastMessage} wsEvent={lastEvent} config={lastConfig} />} */}
               {currentPage === 'rps' && <RPSGame wsEvent={lastEvent} />}
               {currentPage === 'calibration' && <CalibrationView wsData={lastMessage} wsEvent={lastEvent} config={lastConfig} />}
               {currentPage === 'ml_training' && <MLTrainingView />}

@@ -14,7 +14,10 @@ import time
 from pathlib import Path
 from typing import Dict, Optional
 import math
+import math
 import statistics
+import collections
+
 
 try:
     import pylsl
@@ -38,6 +41,7 @@ from scipy import signal as scipy_signal
 from src.database.db_manager import db_manager
 from src.learning.emg_trainer import train_emg_model, evaluate_saved_model
 from src.learning.eog_trainer import train_eog_model, evaluate_saved_eog_model
+from src.feature.detectors.rps_detector import RPSDetector
 
 
 # ========== Configuration ==========
@@ -88,6 +92,10 @@ class WebServerState:
         self.sr = DEFAULT_SR
         self.num_channels = 0
         self.config = {}
+        self.rps_detector = None
+        self.emg_buffer = collections.deque(maxlen=512) # 1 second buffer at 512Hz
+        self.last_pred_time = 0
+
 
 state = WebServerState()
 
@@ -405,12 +413,32 @@ def broadcast_data():
                          elif state.session.recording_type == 'EOG' and eog_vals:
                              state.session.add_sample('EOG', eog_vals if len(eog_vals) > 1 else eog_vals[0])
 
-                    # --- LIVE PREDICTION (Basic) ---
-                    # Only rudimentary trigger here. Real extraction needs windowing.
-                    # We'll just emit raw events for now if we detect simple peaks?
-                    # Or rely on client-side or separate thread.
-                    # For now, let's leave prediction logic to the existing threads or client.
-                    pass
+                    if state.session.prediction_active.get('EMG', False):
+                        if state.rps_detector and emg_vals:
+                            # Add to buffer (assuming single channel or taking mean/first for now)
+                            val = emg_vals[0] if len(emg_vals) > 0 else 0
+                            state.emg_buffer.append(val)
+                            
+                            # Predict every ~100ms if buffer is full
+                            now = time.time()
+                            if len(state.emg_buffer) == 512 and (now - state.last_pred_time > 0.1):
+                                # Extract features
+                                window_data = list(state.emg_buffer)
+                                feats = extract_emg_features(window_data, state.sr)
+                                feats['timestamp'] = now
+                                
+                                # Detect
+                                result = state.rps_detector.detect(feats)
+                                
+                                # Emit if result (passing None if no confidence to let UI handle it or just skip)
+                                socketio.emit('emg_prediction', {
+                                    "label": result,
+                                    "confidence": 1.0 if result else 0.0, # Detector prints confidence but doesn't return it yet, assume high if returned
+                                    "timestamp": now
+                                })
+                                
+                                state.last_pred_time = now
+
 
                 # Check if it's time to flush batch
                 now = time.time()
@@ -569,9 +597,13 @@ def api_emg_stop():
         
         saved_count = 0
         
+
         for label_str, samples in data_store.items():
-            print(f"[DEBUG] Processing label {label_str}, samples: {len(samples)}")
-            if not samples or len(samples) < 100:
+            print(f"[DEBUG] Processing label {label_str}, samples type: {type(samples)}")
+            # Paranoid check: ensure we don't do 'if samples'
+            if samples is None:
+                continue
+            if len(samples) < 64:  # Relaxed from 100 to 64 (~0.125s) just to capture *something*
                 print(f"[DEBUG] Skipping {label_str}: too few samples ({len(samples)})")
                 continue
                 
@@ -630,6 +662,8 @@ def api_emg_stop():
                 if db_manager.insert_window(feats, label_int, session_id):
                     saved_count += 1
                     windows_saved += 1
+                else:
+                    print(f"[DEBUG] ❌ Insert failed for {label_str} window {i}")
                     
             print(f"[DEBUG] Saved {windows_saved} windows for {label_str}")
                     
@@ -637,8 +671,9 @@ def api_emg_stop():
         
     except Exception as e:
         import traceback
-        traceback.print_exc()
-        print(f"[WebServer] ❌ Error processing EMG session: {e}")
+        tb_str = traceback.format_exc()
+        print(f"[WebServer] ❌ Error processing EMG session: {tb_str}")
+        return jsonify({"status": "stopped", "error": str(e), "traceback": tb_str, "saved_windows": 0})
 
     return jsonify({"status": "stopped", "saved_windows": saved_count if 'saved_count' in locals() else 0})
 
@@ -671,6 +706,12 @@ def api_emg_status():
 @app.route('/api/emg/data', methods=['DELETE'])
 def api_emg_clear():
     state.session.clear_data('EMG')
+    # Also clear the database to ensure fresh start (schema fix etc)
+    try:
+        db_manager.connect().execute("DELETE FROM emg_windows").connection.commit()
+        print("[WebServer] 🗑️  Cleared emg_windows table in DB")
+    except Exception as e:
+        print(f"[WebServer] ⚠️  Failed to clear DB table: {e}")
     return jsonify({"status": "cleared"})
 
 @app.route('/api/emg/predict/<action>', methods=['POST'])
@@ -709,7 +750,7 @@ def api_eog_stop():
         saved_count = 0
         
         for label_str, samples in data_store.items():
-            if not samples or len(samples) < 50:
+            if len(samples) < 50:
                 continue
 
             # Map labels: '0' (Rest), '1' (Single), '2' (Double)
@@ -776,6 +817,17 @@ def api_eog_predict_toggle(action):
 @app.route('/api/train-emg-rf', methods=['POST'])
 def api_train_emg():
     try:
+        # Debug: Check DB count first
+        try:
+            conn = db_manager.connect()
+            n = conn.execute("SELECT COUNT(*) FROM emg_windows").fetchone()[0]
+            conn.close()
+            print(f"[WebServer] Train Request. DB contains {n} samples.")
+            if n == 0:
+                return jsonify({"error": "Database is empty (0 samples). Please Record Data and hit Stop."}), 400
+        except Exception as e:
+            print(f"[WebServer] DB Check failed: {e}")
+
         params = request.get_json() or {}
         n_est = int(params.get('n_estimators', 100))
         max_d = params.get('max_depth')
@@ -961,11 +1013,8 @@ def api_get_recording(filename):
 
 
 def extract_emg_features(samples: list, sr: int = 512) -> dict:
-    """Extract EMG features matching RPSExtractor.
-    
-    Features: rms, mav, zcr, var, wl, peak, range, iemg, entropy, energy
-    """
-    if not samples or len(samples) < 2:
+    """Extract EMG features matching RPSExtractor."""
+    if samples is None or len(samples) < 2:
         return {}
     
     data = np.array(samples, dtype=float)
@@ -1005,11 +1054,8 @@ def extract_emg_features(samples: list, sr: int = 512) -> dict:
 
 
 def extract_eog_features(samples: list, sr: int = 512) -> dict:
-    """Extract EOG blink features matching BlinkExtractor.
-    
-    Features: amplitude, duration_ms, rise_time_ms, fall_time_ms, asymmetry, kurtosis, skewness
-    """
-    if not samples or len(samples) < 2:
+    """Extract EOG blink features matching BlinkExtractor."""
+    if samples is None or len(samples) < 2:
         return {}
     
     data = np.array(samples, dtype=float)
@@ -1041,11 +1087,8 @@ def extract_eog_features(samples: list, sr: int = 512) -> dict:
 
 
 def extract_eeg_features(samples: list, sr: int = 512) -> dict:
-    """Extract EEG features matching EEGExtractor.
-    
-    Features: band powers (delta, theta, alpha, beta) and relative powers
-    """
-    if not samples or len(samples) < 16:
+    """Extract EEG features matching EEGExtractor."""
+    if samples is None or len(samples) < 16:
         return {}
     
     data = np.array(samples, dtype=float)
@@ -1562,6 +1605,7 @@ def main():
 
     # Load config from disk first
     state.config = load_config()
+    state.rps_detector = RPSDetector(state.config)
 
     # Resolve LSL stream
     if not resolve_lsl_stream():

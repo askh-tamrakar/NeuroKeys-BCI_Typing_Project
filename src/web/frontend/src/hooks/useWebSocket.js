@@ -224,6 +224,11 @@ export function useWebSocket(url = 'http://localhost:1972') {
       setLastEvent(eventData)
     })
 
+    socketRef.current.on('emg_prediction', (data) => {
+      // console.log('🧠 Prediction:', data) // Optional logging
+      setLastEvent({ type: 'emg_prediction', ...data })
+    })
+
     // === STATUS EVENTS ===
     socketRef.current.on('status', (data) => {
       console.log('📊 Server status:', data)

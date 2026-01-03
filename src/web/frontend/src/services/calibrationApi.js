@@ -251,6 +251,22 @@ export const CalibrationApi = {
             console.error('[CalibrationApi] Error getting EMG status:', error);
             return null;
         }
+    },
+
+    /**
+     * Toggle real-time prediction for a sensor.
+     * @param {string} sensorType 
+     * @param {boolean} isActive 
+     */
+    async togglePrediction(sensorType, isActive) {
+        if (sensorType !== 'EMG' && sensorType !== 'EOG') return;
+        const action = isActive ? 'start' : 'stop';
+        try {
+            const response = await fetch(`/api/${sensorType.toLowerCase()}/predict/${action}`, { method: 'POST' });
+            return response.json();
+        } catch (error) {
+            console.error(`[CalibrationApi] Error toggling ${sensorType} prediction:`, error);
+        }
     }
 };
 

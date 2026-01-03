@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
 import Tree from 'react-d3-tree';
+import { useState, useEffect, useRef } from 'react';
 import { useWebSocket } from '../../hooks/useWebSocket';
 
 const TabButton = ({ active, onClick, children }) => (
@@ -51,7 +51,7 @@ export default function MLTrainingView() {
     const [activeTab, setActiveTab] = useState('EMG'); // 'EMG' or 'EOG'
 
     // --- SOCKET & PREDICTION STATE ---
-    const { connect, lastEvent } = useWebSocket('http://localhost:1972');
+    const { connect, lastEvent, lastMessage } = useWebSocket('http://localhost:1972');
 
     // EOG Prediction State
     const [isEogPredicting, setIsEogPredicting] = useState(false);
@@ -528,7 +528,7 @@ export default function MLTrainingView() {
                         </div>
                     </div>
 
-                    {/* EMG Data Collection */}
+                    {/* Controls */}
                     <div className="card mb-8">
                         <div className="flex justify-between items-start mb-4">
                             <h2 className="text-xl font-semibold text-[var(--text)]">Data Collection (Gestures)</h2>
@@ -536,7 +536,6 @@ export default function MLTrainingView() {
                                 Delete All Data
                             </button>
                         </div>
-
                     </div>
 
                     {/* Channel Selector */}
@@ -559,58 +558,7 @@ export default function MLTrainingView() {
                         )}
                     </div>
 
-                    {/* Recording & Pacer UI */}
-                    {emgStatus.recording ? (
-                        <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4 animate-fadeIn">
-                            <div className="p-4 bg-red-900/20 border border-red-500 rounded-lg flex flex-col items-center justify-center">
-                                <div className="text-red-400 font-bold text-lg mb-2 animate-pulse">🔴 RECORDING ACTIVE</div>
-                                <div className="text-[var(--muted)] mb-4 text-center">
-                                    Recording Label: <strong className="text-white">{['Rest', 'Rock', 'Paper', 'Scissors'][emgStatus.current_label] || emgStatus.current_label}</strong>
-                                </div>
-                                <button
-                                    onClick={stopEmgRec}
-                                    className="btn bg-red-600 hover:bg-red-700 w-full"
-                                >
-                                    STOP RECORDING
-                                </button>
-                            </div>
-                            <Pacer actionText={['Rest', 'ROCK!', 'PAPER!', 'SCISSORS!'][emgStatus.current_label] || "ACTION!"} />
-                        </div>
-                    ) : null}
 
-                    <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
-                        <div className="card bg-[var(--bg)] borderable">
-                            <div className="text-xs text-[var(--muted)] uppercase">Rest</div>
-                            <div className="text-2xl font-bold text-[var(--text)]">{emgStatus.counts["0"] || 0}</div>
-                        </div>
-                        <div className="card bg-[var(--bg)] borderable">
-                            <div className="text-xs text-[var(--muted)] uppercase">Rock</div>
-                            <div className="text-2xl font-bold text-[var(--text)]">{emgStatus.counts["1"] || 0}</div>
-                        </div>
-                        <div className="card bg-[var(--bg)] borderable">
-                            <div className="text-xs text-[var(--muted)] uppercase">Paper</div>
-                            <div className="text-2xl font-bold text-[var(--text)]">{emgStatus.counts["2"] || 0}</div>
-                        </div>
-                        <div className="card bg-[var(--bg)] borderable">
-                            <div className="text-xs text-[var(--muted)] uppercase">Scissors</div>
-                            <div className="text-2xl font-bold text-[var(--text)]">{emgStatus.counts["3"] || 0}</div>
-                        </div>
-                        <div className={`card flex items-center justify-center ${emgStatus.recording ? 'bg-red-500/20 border-red-500 animate-pulse' : 'bg-[var(--bg)]'}`}>
-                            <div className="font-bold text-[var(--text)]">{emgStatus.recording ? `RECORDING...` : 'IDLE'}</div>
-                        </div>
-                    </div>
-
-                    {!emgStatus.recording ? (
-                        <div className="flex gap-4">
-                            <button onClick={() => startEmgRec(0)} className="btn bg-gray-600 hover:bg-gray-500 flex-1">Record Rest</button>
-                            <button onClick={() => startEmgRec(1)} className="btn bg-red-600 hover:bg-red-500 flex-1">Record Rock</button>
-                            <button onClick={() => startEmgRec(2)} className="btn bg-blue-600 hover:bg-blue-500 flex-1">Record Paper</button>
-                            <button onClick={() => startEmgRec(3)} className="btn bg-orange-600 hover:bg-orange-500 flex-1">Record Scissors</button>
-                        </div>
-                    ) : (
-                        <button onClick={stopEmgRec} className="btn bg-red-600 hover:bg-red-500 w-full animate-pulse">STOP RECORDING</button>
-                    )}
-                    <p className="text-xs text-[var(--muted)] mt-2">* Perform the action REPEATEDLY while recording.</p>
 
 
                     {/* Controls */}
