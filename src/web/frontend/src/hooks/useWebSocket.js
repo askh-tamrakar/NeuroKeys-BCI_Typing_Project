@@ -103,8 +103,14 @@ export function useWebSocket(url = 'http://localhost:1972') {
     // === DATA EVENTS ===
 
     // Batch Listener
+    let lastBatchUpdate = 0
     socketRef.current.on('bio_data_batch', (batchData) => {
       try {
+        const now = Date.now()
+        // Throttle to ~30Hz (33ms) to prevent "Maximum update depth exceeded"
+        if (now - lastBatchUpdate < 33) return
+        lastBatchUpdate = now
+
         if (!batchData || !batchData.samples || batchData.samples.length === 0) return
 
         // compatibility: use last sample for simple views

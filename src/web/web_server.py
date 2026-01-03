@@ -30,8 +30,14 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 
 # Feature extraction and detection imports
 import numpy as np
+import uuid
 from scipy import stats as scipy_stats
 from scipy import signal as scipy_signal
+
+# Project imports
+from src.database.db_manager import db_manager
+from src.learning.emg_trainer import train_emg_model, evaluate_saved_model
+from src.learning.eog_trainer import train_eog_model, evaluate_saved_eog_model
 
 
 # ========== Configuration ==========
@@ -372,6 +378,39 @@ def broadcast_data():
                     "timestamp": ts,
                     "sample_count": state.sample_count
                 })
+                
+                # --- RECORDING & PREDICTION hooks ---
+                if hasattr(state, 'session'):
+                    # Group values by sensor type for recording
+                    eog_vals = []
+                    emg_vals = []
+                    
+                    for ch_idx, data in channels_data.items():
+                        stype = data['type'].upper()
+                        if stype == 'EOG':
+                            eog_vals.append(data['value'])
+                        elif stype == 'EMG':
+                            emg_vals.append(data['value'])
+                    
+                    # Add to session recorder (taking mean if multiple channels, or just raw? 
+                    # Usually we record raw. Let's send the list of values.)
+                    # But session manager expects single "sample" or list?
+                    # The simple recorder usually tracks raw stream.
+                    # For simplicity, if recording is active for EMG, we save the EMG channel data.
+                    
+                    if state.session.is_recording:
+                         if state.session.recording_type == 'EMG' and emg_vals:
+                             # Store raw vector
+                             state.session.add_sample('EMG', emg_vals if len(emg_vals) > 1 else emg_vals[0])
+                         elif state.session.recording_type == 'EOG' and eog_vals:
+                             state.session.add_sample('EOG', eog_vals if len(eog_vals) > 1 else eog_vals[0])
+
+                    # --- LIVE PREDICTION (Basic) ---
+                    # Only rudimentary trigger here. Real extraction needs windowing.
+                    # We'll just emit raw events for now if we detect simple peaks?
+                    # Or rely on client-side or separate thread.
+                    # For now, let's leave prediction logic to the existing threads or client.
+                    pass
 
                 # Check if it's time to flush batch
                 now = time.time()
@@ -405,16 +444,74 @@ def broadcast_data():
 # ========== FLASK ROUTES ==========
 
 
+# ========== SESSION MANAGER ==========
+
+class SessionManager:
+    def __init__(self):
+        self.reset()
+    
+    def reset(self):
+        self.is_recording = False
+        self.recording_type = None  # 'EMG' or 'EOG'
+        self.current_label = None
+        self.data_store = {
+            'EMG': {},
+            'EOG': {}
+        }
+        # Counts per label
+        self.counts = {
+            'EMG': {},
+            'EOG': {}
+        }
+        self.prediction_active = {
+            'EMG': False,
+            'EOG': False
+        }
+        
+    def start_recording(self, sensor_type, label):
+        self.is_recording = True
+        self.recording_type = sensor_type
+        self.current_label = label
+        if label not in self.counts[sensor_type]:
+            self.counts[sensor_type][label] = 0
+            self.data_store[sensor_type][label] = []
+            
+    def stop_recording(self):
+        self.is_recording = False
+        self.recording_type = None
+        self.current_label = None
+        
+    def add_sample(self, sensor_type, sample):
+        if not self.is_recording or self.recording_type != sensor_type:
+            return
+            
+        label = self.current_label
+        if label is not None:
+            self.data_store[sensor_type][label].append(sample)
+            self.counts[sensor_type][label] += 1
+            
+    def clear_data(self, sensor_type):
+        self.data_store[sensor_type] = {}
+        self.counts[sensor_type] = {}
+
+    def get_status(self, sensor_type):
+        return {
+            "recording": self.is_recording and self.recording_type == sensor_type,
+            "current_label": self.current_label if self.recording_type == sensor_type else "",
+            "counts": self.counts.get(sensor_type, {})
+        }
+
+state.session = SessionManager()
+
+
+# ========== FLASK ROUTES ==========
+
+
 @app.route('/')
 def index():
     """Serve main dashboard."""
     return render_template('index.html')
 
-
-@app.route('/<path:path>')
-def catch_all(path):
-    """Catch-all route for SPA (React Router)."""
-    return render_template('index.html')
 
 
 @app.route('/api/status')
@@ -440,6 +537,287 @@ def api_channels():
         "rate": state.sr,
         "mapping": state.channel_mapping
     })
+
+# --- EMG ENDPOINTS ---
+
+@app.route('/api/emg/start', methods=['POST'])
+def api_emg_start():
+    try:
+        data = request.get_json()
+        label = data.get('label', 0) # Default to Rest (0)
+        # Map integer label to string if needed, or keep as int. 
+        # Frontend sends int 0,1,2,3.
+        # Let's map to strings for clarity in storage, or keep 1:1.
+        # MLTrainingView sends: 0 (Rest), 1 (Rock), 2 (Paper), 3 (Scissors)
+        
+        label_map = {0: 'Rest', 1: 'Rock', 2: 'Paper', 3: 'Scissors'}
+        label_str = label_map.get(int(label), f"Unknown_{label}")
+        
+        state.session.start_recording('EMG', label_str)
+        return jsonify({"status": "started", "label": label_str})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/emg/stop', methods=['POST'])
+def api_emg_stop():
+    state.session.stop_recording()
+    
+    # Process and save collected data to DB
+    try:
+        session_id = str(uuid.uuid4())
+        data_store = state.session.data_store['EMG']
+        
+        saved_count = 0
+        
+        for label_str, samples in data_store.items():
+            print(f"[DEBUG] Processing label {label_str}, samples: {len(samples)}")
+            if not samples or len(samples) < 100:
+                print(f"[DEBUG] Skipping {label_str}: too few samples ({len(samples)})")
+                continue
+                
+            # Convert label string to int if possible (for DB efficiency/schema)
+            # Schema expects int label. Map generic strings?
+            # 'Rest':0, 'Rock':1, 'Paper':2, 'Scissors':3
+            label_map = {'Rest': 0, 'Rock': 1, 'Paper': 2, 'Scissors': 3}
+            label_int = label_map.get(label_str, -1)
+            
+            # Fallback if map fails: 
+            if label_int == -1:
+                # 1. Try case-insensitive matching
+                label_map_lower = {k.lower(): v for k, v in label_map.items()}
+                label_int = label_map_lower.get(label_str.lower(), -1)
+                
+            if label_int == -1:
+                # 2. Try simple integer parse
+                try:
+                    label_int = int(label_str)
+                except:
+                    # 3. Last resort: arbitrary hash or just 0? 
+                    # If we skip, user gets "Empty DB". Let's force it to 0 (Rest) or 99 (Unknown) and log warning
+                    print(f"[DEBUG] ⚠️ Warning: Unknown label '{label_str}'. Defaulting to -1 (may be ignored by trainer).")
+                    label_int = -1
+                    # continue # Don't continue, let's try to save it if we can
+                    
+            print(f"[DEBUG] Label '{label_str}' mapped to ID {label_int}")
+            
+            # Convert samples to numpy array
+            # samples is list of floats (or lists if multichannel)
+            raw_data = np.array(samples)
+            if raw_data.ndim > 1 and raw_data.shape[1] == 1:
+                raw_data = raw_data.flatten()
+            
+            # Windowing parameters
+            sr = state.sr or 512
+            window_size = int(sr * 0.5)  # 0.5s window
+            step_size = int(window_size * 0.5) # 50% overlap
+            
+            # Slice and dice
+            num_samples = len(raw_data)
+            if num_samples < window_size:
+                print(f"[DEBUG] Skipping {label_str}: data {num_samples} < window {window_size}")
+                continue
+                
+            print(f"[DEBUG] Slicing {label_str} (N={num_samples}) into windows...")
+            windows_saved = 0
+            for i in range(0, num_samples - window_size, step_size):
+                window = raw_data[i : i + window_size]
+                
+                # Extract features
+                feats = extract_emg_features(window, sr)
+                feats['timestamp'] = time.time()
+                
+                # Save to DB
+                if db_manager.insert_window(feats, label_int, session_id):
+                    saved_count += 1
+                    windows_saved += 1
+                    
+            print(f"[DEBUG] Saved {windows_saved} windows for {label_str}")
+                    
+        print(f"[WebServer] 💾 Saved {saved_count} EMG windows to DB (Session {session_id[:8]})")
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"[WebServer] ❌ Error processing EMG session: {e}")
+
+    return jsonify({"status": "stopped", "saved_windows": saved_count if 'saved_count' in locals() else 0})
+
+@app.route('/api/emg/status', methods=['GET'])
+def api_emg_status():
+    status = state.session.get_status('EMG')
+    # Frontend expects: { recording: bool, current_label: int/str, counts: {0: N, 1: N...} }
+    # My SessionManager stores counts by 'Rest', 'Rock'...
+    # Need to map back if frontend expects specific keys or just display.
+    # Frontend: Sample counts: {emgStatus.counts[0] || 0}
+    # check MLTrainingView.jsx: keys are 0,1,2,3.
+    
+    # Remap counts to frontend keys
+    label_map_inv = {'Rest': '0', 'Rock': '1', 'Paper': '2', 'Scissors': '3'}
+    mapped_counts = {}
+    for k, v in status['counts'].items():
+        if k in label_map_inv:
+            mapped_counts[label_map_inv[k]] = v
+        else:
+            mapped_counts[k] = v # Fallback
+            
+    # Also map current_label
+    curr = status['current_label']
+    if curr in label_map_inv:
+        status['current_label'] = int(label_map_inv[curr])
+        
+    status['counts'] = mapped_counts
+    return jsonify(status)
+
+@app.route('/api/emg/data', methods=['DELETE'])
+def api_emg_clear():
+    state.session.clear_data('EMG')
+    return jsonify({"status": "cleared"})
+
+@app.route('/api/emg/predict/<action>', methods=['POST'])
+def api_emg_predict_toggle(action):
+    if action == 'start':
+        state.session.prediction_active['EMG'] = True
+    elif action == 'stop':
+        state.session.prediction_active['EMG'] = False
+    return jsonify({"status": "ok", "predicting": state.session.prediction_active['EMG']})
+
+
+# --- EOG ENDPOINTS (Mirroring for consistency) ---
+
+@app.route('/api/eog/start', methods=['POST'])
+def api_eog_start():
+    try:
+        data = request.get_json()
+        label = data.get('label', 0)
+        # EOG mapping: 0: Rest, 1: Blink, 2: DoubleBlink ? 
+        # Checking MLTrainingView.jsx for EOG: 
+        # It sends label 1 for Blink? Actually EOG recorder usually collects "Blink" vs "Rest".
+        # Let's just store what we get.
+        state.session.start_recording('EOG', str(label))
+        return jsonify({"status": "started", "label": label})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/eog/stop', methods=['POST'])
+def api_eog_stop():
+    state.session.stop_recording()
+    
+    # Process and save EOG data
+    try:
+        session_id = str(uuid.uuid4())
+        data_store = state.session.data_store['EOG']
+        saved_count = 0
+        
+        for label_str, samples in data_store.items():
+            if not samples or len(samples) < 50:
+                continue
+
+            # Map labels: '0' (Rest), '1' (Single), '2' (Double)
+            try:
+                label_int = int(label_str)
+            except:
+                continue
+                
+            raw_data = np.array(samples)
+            if raw_data.ndim > 1:
+                raw_data = raw_data.flatten()
+                
+            # EOG logic: 
+            # EOG events are transient. Continuous windowing might capture many "Rest" and few "Blinks".
+            # Ideally we use a peak detector to find blinks first. 
+            # However, for the trainer, we might just want to slice it all?
+            # "Rest" is continuous. "Blink" is an event.
+            # If user recorded "Blink", they likely blinked repeatedly.
+            # Let's window it similarly: 0.5s windows? Blinks are ~200-400ms.
+            
+            sr = state.sr or 512
+            window_size = int(sr * 0.6) # 600ms to capture full blink
+            step_size = int(window_size * 0.5)
+            
+            for i in range(0, len(raw_data) - window_size, step_size):
+                window = raw_data[i : i + window_size]
+                
+                # Extract
+                feats = extract_eog_features(window, sr)
+                feats['timestamp'] = time.time()
+                
+                if db_manager.insert_eog_window(feats, label_int, session_id):
+                    saved_count += 1
+
+        print(f"[WebServer] 💾 Saved {saved_count} EOG windows to DB")
+        
+    except Exception as e:
+        print(f"[WebServer] ❌ Error processing EOG session: {e}")
+
+    return jsonify({"status": "stopped", "saved_windows": saved_count if 'saved_count' in locals() else 0})
+
+@app.route('/api/eog/status', methods=['GET'])
+def api_eog_status():
+    return jsonify(state.session.get_status('EOG'))
+
+@app.route('/api/eog/data', methods=['DELETE'])
+def api_eog_clear():
+    state.session.clear_data('EOG')
+    return jsonify({"status": "cleared"})
+
+@app.route('/api/eog/predict/<action>', methods=['POST'])
+def api_eog_predict_toggle(action):
+    if action == 'start':
+        state.session.prediction_active['EOG'] = True
+    elif action == 'stop':
+        state.session.prediction_active['EOG'] = False
+    return jsonify({"status": "ok", "predicting": state.session.prediction_active['EOG']})
+
+
+
+
+# --- TRAINING ENDPOINTS ---
+
+@app.route('/api/train-emg-rf', methods=['POST'])
+def api_train_emg():
+    try:
+        params = request.get_json() or {}
+        n_est = int(params.get('n_estimators', 100))
+        max_d = params.get('max_depth')
+        if max_d == 'None' or max_d is None: max_d = None
+        else: max_d = int(max_d)
+        
+        result = train_emg_model(n_estimators=n_est, max_depth=max_d)
+        if "error" in result:
+             return jsonify(result), 400
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/train-eog-rf', methods=['POST'])
+def api_train_eog():
+    try:
+        params = request.get_json() or {}
+        n_est = int(params.get('n_estimators', 100))
+        max_d = params.get('max_depth')
+        if max_d == 'None' or max_d is None: max_d = None
+        else: max_d = int(max_d)
+        
+        result = train_eog_model(n_estimators=n_est, max_depth=max_d)
+        if "error" in result:
+             return jsonify(result), 400
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/model/evaluate', methods=['POST'])
+def api_eval_emg():
+    res = evaluate_saved_model()
+    if "error" in res:
+        return jsonify(res), 400
+    return jsonify(res)
+
+@app.route('/api/model/evaluate/eog', methods=['POST'])
+def api_eval_eog():
+    res = evaluate_saved_eog_model()
+    if "error" in res:
+        return jsonify(res), 400
+    return jsonify(res)
 
 
 # ========== CONFIG ENDPOINTS (CRITICAL) ==========
@@ -1090,6 +1468,16 @@ def api_calibrate():
     except Exception as e:
         print(f"[WebServer] ❌ Calibration error: {e}")
         return jsonify({"error": str(e)}), 500
+
+
+# ========== CATCH-ALL ROUTE (MUST BE LAST) ==========
+
+@app.route('/<path:path>')
+def catch_all(path):
+    """Catch-all route for SPA (React Router)."""
+    if path.startswith('api/'):
+        return jsonify({"error": "API endpoint not found"}), 404
+    return render_template('index.html')
 
 
 # ========== SOCKETIO EVENTS ==========
