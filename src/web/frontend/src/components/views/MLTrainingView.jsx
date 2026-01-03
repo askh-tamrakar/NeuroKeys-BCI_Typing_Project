@@ -51,7 +51,7 @@ export default function MLTrainingView() {
     const [activeTab, setActiveTab] = useState('EMG'); // 'EMG' or 'EOG'
 
     // --- SOCKET & PREDICTION STATE ---
-    const { connect, lastEvent } = useWebSocket('http://localhost:5000');
+    const { connect, lastEvent } = useWebSocket('http://localhost:1972');
     const [isPredicting, setIsPredicting] = useState(false);
     const [predictionHistory, setPredictionHistory] = useState([]);
 
@@ -62,7 +62,7 @@ export default function MLTrainingView() {
     // Initial Fetch: Config for channels
     useEffect(() => {
         connect();
-        fetch('http://localhost:5000/api/config')
+        fetch('http://localhost:1972/api/config')
             .then(res => res.json())
             .then(config => {
                 if (config && config.channel_mapping) {
@@ -117,7 +117,7 @@ export default function MLTrainingView() {
     const togglePrediction = async () => {
         try {
             const endpoint = isPredicting ? 'stop' : 'start';
-            await fetch(`http://localhost:5000/api/eog/predict/${endpoint}`, {
+            await fetch(`http://localhost:1972/api/eog/predict/${endpoint}`, {
                 method: 'POST',
                 body: JSON.stringify({ channel: selectedEogChannel }),
                 headers: { 'Content-Type': 'application/json' }
@@ -169,7 +169,7 @@ export default function MLTrainingView() {
     const trainEmg = async () => {
         setLoading(true); setError(null); setEmgResult(null);
         try {
-            const res = await fetch('http://localhost:5000/api/train-emg-rf', {
+            const res = await fetch('http://localhost:1972/api/train-emg-rf', {
                 method: 'POST', body: JSON.stringify(emgParams), headers: { 'Content-Type': 'application/json' }
             });
             const data = await res.json();
@@ -182,7 +182,7 @@ export default function MLTrainingView() {
     const evalEmg = async () => {
         setEvalLoading(true); setError(null); setEmgEvalResult(null);
         try {
-            const res = await fetch('http://localhost:5000/api/model/evaluate', { method: 'POST' });
+            const res = await fetch('http://localhost:1972/api/model/evaluate', { method: 'POST' });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Eval failed');
             setEmgEvalResult(data);
@@ -193,7 +193,7 @@ export default function MLTrainingView() {
     const trainEog = async () => {
         setLoading(true); setError(null); setEogResult(null);
         try {
-            const res = await fetch('http://localhost:5000/api/train-eog-rf', {
+            const res = await fetch('http://localhost:1972/api/train-eog-rf', {
                 method: 'POST', body: JSON.stringify(eogParams), headers: { 'Content-Type': 'application/json' }
             });
             const data = await res.json();
@@ -206,7 +206,7 @@ export default function MLTrainingView() {
     const evalEog = async () => {
         setEvalLoading(true); setError(null); setEogEvalResult(null);
         try {
-            const res = await fetch('http://localhost:5000/api/model/evaluate/eog', { method: 'POST' });
+            const res = await fetch('http://localhost:1972/api/model/evaluate/eog', { method: 'POST' });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Eval failed');
             setEogEvalResult(data);
@@ -216,7 +216,7 @@ export default function MLTrainingView() {
     // EOG RECORDING
     const updateEogStatus = async () => {
         try {
-            const res = await fetch('http://localhost:5000/api/eog/status');
+            const res = await fetch('http://localhost:1972/api/eog/status');
             if (res.ok) setEogStatus(await res.json());
         } catch (e) { console.error(e); }
     };
@@ -233,7 +233,7 @@ export default function MLTrainingView() {
 
     const startEogRec = async (label) => {
         try {
-            await fetch('http://localhost:5000/api/eog/start', {
+            await fetch('http://localhost:1972/api/eog/start', {
                 method: 'POST',
                 body: JSON.stringify({ label, channel: selectedEogChannel }),
                 headers: { 'Content-Type': 'application/json' }
@@ -244,7 +244,7 @@ export default function MLTrainingView() {
 
     const stopEogRec = async () => {
         try {
-            await fetch('http://localhost:5000/api/eog/stop', { method: 'POST' });
+            await fetch('http://localhost:1972/api/eog/stop', { method: 'POST' });
             updateEogStatus();
         } catch (e) { setError(e.message); }
     };
@@ -252,7 +252,7 @@ export default function MLTrainingView() {
     const deleteEogData = async () => {
         if (!window.confirm("Are you sure you want to DELETE ALL EOG data? This cannot be undone.")) return;
         try {
-            const res = await fetch('http://localhost:5000/api/eog/data', { method: 'DELETE' });
+            const res = await fetch('http://localhost:1972/api/eog/data', { method: 'DELETE' });
             if (res.ok) {
                 updateEogStatus();
                 setEogResult(null); // Clear previous training results
