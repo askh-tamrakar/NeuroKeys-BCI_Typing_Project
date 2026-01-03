@@ -1,40 +1,4 @@
 {
-<<<<<<< HEAD
-  "EEG": {
-    "filters": [
-      {
-        "Q": 30,
-        "freq": 50,
-        "type": "notch"
-      },
-      {
-        "high": 45,
-        "low": 0.5,
-        "order": 4,
-        "type": "bandpass"
-      }
-    ]
-  },
-  "EMG": {
-    "cutoff": 75.1,
-    "order": 4,
-    "type": "high_pass"
-  },
-  "EOG": {
-    "bandpass_enabled": true,
-    "cutoff": 123.1,
-    "high": 10,
-    "low": 0.5,
-    "notch_enabled": true,
-    "order": 5,
-    "type": "bandpass"
-  },
-  "bandpass": {
-    "enabled": true
-  },
-  "notch": {
-    "enabled": false
-=======
   "filters": {
     "EEG": {
       "filters": [
@@ -69,6 +33,5 @@
       "order": 4,
       "type": "low_pass"
     }
->>>>>>> EOG-done
   }
 }
