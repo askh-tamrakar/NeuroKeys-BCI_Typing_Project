@@ -9,12 +9,12 @@
       "sensor": "EOG"
     },
     "ch2": {
-      "sensor": "EMG",
-      "enabled": true
+      "enabled": true,
+      "sensor": "EMG"
     },
     "ch3": {
-      "sensor": "EMG",
-      "enabled": true
+      "enabled": true,
+      "sensor": "EMG"
     }
   },
   "display": {
@@ -22,41 +22,6 @@
     "showGrid": true,
     "timeWindowMs": 10000
   },
-  "filters": {
-    "EEG": {
-      "filters": [
-        {
-          "Q": 30,
-          "freq": 50,
-          "type": "notch"
-        },
-        {
-          "high": 45,
-          "low": 0.5,
-          "order": 4,
-          "type": "bandpass"
-        }
-      ]
-    },
-    "EMG": {
-      "cutoff": 20.1,
-      "order": 4,
-      "type": "high_pass",
-      "bandpass_enabled": true,
-      "notch_enabled": true,
-      "bandpass_low": 20,
-      "bandpass_high": 250
-    },
-    "EOG": {
-      "bandpass_enabled": true,
-      "bandpass_high": 10,
-      "bandpass_low": 0.4,
-      "cutoff": 10,
-      "notch_enabled": true,
-      "order": 4,
-      "type": "low_pass"
-    }
-  },
-  "num_channels": 2,
+  "num_channels": 4,
   "sampling_rate": 512
 }

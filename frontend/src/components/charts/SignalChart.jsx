@@ -22,13 +22,12 @@ export default function SignalChart({
   yDomainProp = null,
   showGrid = true,
   scannerX = null,
-  annotations = [], // New Prop [{ x: timestamp, y: value, label: string, color: string }]
-  channelColors = null, // New Prop { [key]: colorString }
+  annotations = [],
+  channelColors = null,
   markedWindows = [],
   activeWindow = null,
-  tickCount = 7, // Default to 7
-  curveType = "monotone", // Default to monotone (smooth)
-  // New props for controls
+  tickCount = 7,
+  curveType = "monotone",
   currentZoom = 1,
   currentManual = "",
   onZoomChange = null,
@@ -105,14 +104,12 @@ export default function SignalChart({
   let dataArray = merged.dataArray || []
   const channelKeys = merged.channelKeys || []
 
-  // If timestamps have almost no variance (dataMin === dataMax or tiny range), synthesize an even timescale
   const xTimes = dataArray.map(d => Number(d.time)).filter(t => Number.isFinite(t))
   let dataMin = xTimes.length ? Math.min(...xTimes) : null
   let dataMax = xTimes.length ? Math.max(...xTimes) : null
 
   const tinyThreshold = Math.max(1, timeWindowMs * 0.001) // e.g., 1ms or 0.1% of window
   if (dataMin === null || dataMax === null || (dataMax - dataMin) < tinyThreshold) {
-    // synthesize times evenly spaced across the timeWindowMs so chart can render smoothly
     const now = Date.now()
     const n = Math.max(1, dataArray.length)
     const base = now - timeWindowMs
