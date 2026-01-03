@@ -105,14 +105,14 @@ body {
   --sun-night: #61dafb;
   --moon-day: #f5f5f5;
   --moon-night: #bdbdbd;
-  /* New Semantic System */
-  --sky-day: #f5f5f5;
+  /* Semantic Overrides */
+  --sky-day: #E0E0E0;
   --sky-night: #111111;
-  --dino: #2C2C2C;
-  --obstacle: #5D4037;
-  --obstacle-border: var(--border);
-  --ground: #1b1b1b;
-  --ground-line: #5D4037;
+  --dino: var(--primary);
+  --obstacle: var(--primary);
+  --obstacle-border: var(--text);
+  --ground: var(--surface);
+  --ground-line: var(--accent);
 }
 
 /* Theme 1 */
@@ -141,14 +141,11 @@ body {
   /* Semantic Overrides */
   --sky-day: #FFE4E1;
   --sky-night: #2C2C2C;
-  --dino-day: #2C2C2C;
-  --dino-night: #2C2C2C;
-  --obstacle-day: #88304E;
-  --obstacle-night: #88304E;
-  --ground-day: #522546;
-  --ground-night: #522546;
-  --ground-line-day: #88304E;
-  --ground-line-night: #88304E;
+  --dino: var(--primary);
+  --obstacle: var(--primary);
+  --obstacle-border: var(--text);
+  --ground: var(--surface);
+  --ground-line: var(--accent);
 }
 
 /* Theme 2 */
@@ -177,14 +174,11 @@ body {
   /* Semantic Overrides */
   --sky-day: #E6E6FA;
   --sky-night: #030637;
-  --dino-day: #3C0753;
-  --dino-night: #3C0753;
-  --obstacle-day: #3C0753;
-  --obstacle-night: #3C0753;
-  --ground-day: #3C0753;
-  --ground-night: #3C0753;
-  --ground-line-day: #720455;
-  --ground-line-night: #720455;
+  --dino: var(--primary);
+  --obstacle: var(--primary);
+  --obstacle-border: var(--text);
+  --ground: var(--surface);
+  --ground-line: var(--accent);
 }
 
 /* Theme 3 */
@@ -211,16 +205,13 @@ body {
   --moon-day: #ffffff;
   --moon-night: #DCEBDC;
   /* Semantic Overrides */
-  --sky-day: #E6F5E6; /* Darker Honeydew */
+  --sky-day: #E6F5E6;
   --sky-night: #2F5249;
-  --dino-day: #1a332d;
-  --dino-night: #1a332d;
-  --obstacle-day: #437057;
-  --obstacle-night: #437057;
-  --ground-day: #437057;
-  --ground-night: #437057;
-  --ground-line-day: #5a8b74;
-  --ground-line-night: #5a8b74;
+  --dino: var(--primary);
+  --obstacle: var(--primary);
+  --obstacle-border: var(--text);
+  --ground: var(--surface);
+  --ground-line: var(--accent);
 }
 
 /* Extra: Ocean */
@@ -247,16 +238,13 @@ body {
   --moon-day: #ffffff;
   --moon-night: #B9D8EA;
   /* Semantic Overrides */
-  --sky-day: #B2EBF2; /* Cyan 100 - Blue Sky */
+  --sky-day: #B2EBF2;
   --sky-night: #071a2c;
-  --dino-day: #0f2e4a;
-  --dino-night: #0f2e4a;
-  --obstacle-day: #17415f;
-  --obstacle-night: #17415f;
-  --ground-day: #17415f;
-  --ground-night: #17415f;
-  --ground-line-day: #23a6f2;
-  --ground-line-night: #23a6f2;
+  --dino: var(--primary);
+  --obstacle: var(--primary);
+  --obstacle-border: var(--text);
+  --ground: var(--surface);
+  --ground-line: var(--accent);
 }
 
 /* Extra: Sunset */
@@ -285,14 +273,11 @@ body {
   /* Semantic Overrides */
   --sky-day: #FFF5EE;
   --sky-night: #1e0b12;
-  --dino-day: #2b0f18;
-  --dino-night: #2b0f18;
-  --obstacle-day: #4b1a22;
-  --obstacle-night: #4b1a22;
-  --ground-day: #2b0f18;
-  --ground-night: #2b0f18;
-  --ground-line-day: #ff7a59;
-  --ground-line-night: #ff7a59;
+  --dino: var(--primary);
+  --obstacle: var(--primary);
+  --obstacle-border: var(--text);
+  --ground: var(--surface);
+  --ground-line: var(--accent);
 }
 
 /* Extra: Forest */
@@ -321,14 +306,11 @@ body {
   /* Semantic Overrides */
   --sky-day: #E8F5E9;
   --sky-night: #0e1512;
-  --dino-day: #08110e;
-  --dino-night: #08110e;
-  --obstacle-day: #1b332a;
-  --obstacle-night: #1b332a;
-  --ground-day: #14201b;
-  --ground-night: #14201b;
-  --ground-line-day: #2ecc71;
-  --ground-line-night: #2ecc71;
+  --dino: var(--primary);
+  --obstacle: var(--primary);
+  --obstacle-border: var(--text);
+  --ground: var(--surface);
+  --ground-line: var(--accent);
 }
 
 /* Slate */
@@ -355,16 +337,13 @@ body {
   --moon-day: #fff;
   --moon-night: #C7D0DD;
   /* Semantic Overrides */
-  --sky-day: #E2E8F0; /* Slate 200 */
+  --sky-day: #E2E8F0;
   --sky-night: #0b0d12;
-  --dino-day: #0f172a;
-  --dino-night: #0f172a;
-  --obstacle-day: #334155;
-  --obstacle-night: #334155;
-  --ground-day: #1e293b;
-  --ground-night: #1e293b;
-  --ground-line-day: #475569;
-  --ground-line-night: #475569;
+  --dino: var(--primary);
+  --obstacle: var(--primary);
+  --obstacle-border: var(--text);
+  --ground: var(--surface);
+  --ground-line: var(--accent);
 }
 
 /* Mint/Coral */
@@ -393,14 +372,11 @@ body {
   /* Semantic Overrides */
   --sky-day: #FFDAB9;
   --sky-night: #2A363B;
-  --dino-day: #E84A5F;
-  --dino-night: #E84A5F;
-  --obstacle-day: #E84A5F;
-  --obstacle-night: #E84A5F;
-  --ground-day: #3a4b52;
-  --ground-night: #3a4b52;
-  --ground-line-day: #E84A5F;
-  --ground-line-night: #E84A5F;
+  --dino: var(--primary);
+  --obstacle: var(--primary);
+  --obstacle-border: var(--text);
+  --ground: var(--surface);
+  --ground-line: var(--accent);
 }
 
 /* Blush/Teal */
@@ -427,16 +403,13 @@ body {
   --moon-day: #fff;
   --moon-night: #F7E7DC;
   /* Semantic Overrides */
-  --sky-day: #B2DFDB; /* Teal 100 */
+  --sky-day: #B2DFDB;
   --sky-night: #305F72;
-  --dino-day: #F18C8E;
-  --dino-night: #F18C8E;
-  --obstacle-day: #F1D1B5;
-  --obstacle-night: #F1D1B5;
-  --ground-day: #263238;
-  --ground-night: #263238;
-  --ground-line-day: #00695c;
-  --ground-line-night: #00695c;
+  --dino: var(--primary);
+  --obstacle: var(--primary);
+  --obstacle-border: var(--text);
+  --ground: var(--bg);
+  --ground-line: var(--accent);
 }
 
 /* Vibrant Warm */
@@ -463,16 +436,13 @@ body {
   --moon-day: #fff;
   --moon-night: #FFEEB9;
   /* Semantic Overrides */
-  --sky-day: #FFECB3; /* Amber 100 - Sunny */
+  --sky-day: #FFECB3;
   --sky-night: #344E5C;
-  --dino-day: #4AB19D;
-  --dino-night: #4AB19D;
-  --obstacle-day: #bf360c;
-  --obstacle-night: #bf360c;
-  --ground-day: #263238;
-  --ground-night: #263238;
-  --ground-line-day: #e65100;
-  --ground-line-night: #e65100;
+  --dino: var(--primary);
+  --obstacle: var(--primary);
+  --obstacle-border: var(--text);
+  --ground: var(--surface);
+  --ground-line: var(--accent);
 }
 
 /* Plum palette */
@@ -501,14 +471,11 @@ body {
   /* Semantic Overrides */
   --sky-day: #F3E5F5;
   --sky-night: #1A1A1D;
-  --dino-day: #1A1A1D;
-  --dino-night: #1A1A1D;
-  --obstacle-day: #3B1C32;
-  --obstacle-night: #3B1C32;
-  --ground-day: #1A1A1D;
-  --ground-night: #1A1A1D;
-  --ground-line-day: #6A1E55;
-  --ground-line-night: #6A1E55;
+  --dino: var(--primary);
+  --obstacle: var(--primary);
+  --obstacle-border: var(--text);
+  --ground: var(--surface);
+  --ground-line: var(--accent);
 }
 
 /* Golden Ember */
@@ -570,11 +537,11 @@ body {
   /* Semantic Overrides */
   --sky-day: #FFFFE0;
   --sky-night: #2C2B28;
-  --dino: #F2B01E;
+  --dino: var(--primary);
   --obstacle: var(--surface);
   --obstacle-border: var(--border);
-  --ground: #2C2B28;
-  --ground-line: #C69C00;
+  --ground: var(--bg);
+  --ground-line: var(--accent);
 }
 
 /* Croimson Blaze */
@@ -603,11 +570,11 @@ body {
   /* Semantic Overrides */
   --sky-day: #FFEBEE;
   --sky-night: #00224D;
-  --dino: #2b0f18;
-  --obstacle: #5D0E41;
-  --obstacle-border: var(--border);
-  --ground: #00224D;
-  --ground-line: #A0153E;
+  --dino: var(--primary);
+  --obstacle: var(--primary);
+  --obstacle-border: var(--text);
+  --ground: var(--surface);
+  --ground-line: var(--accent);
 }
 
 /* Inferno Burst */
@@ -636,11 +603,11 @@ body {
   /* Semantic Overrides */
   --sky-day: #FFF3E0;
   --sky-night: #52006A;
-  --dino: #220030;
-  --obstacle: #7A0B57;
-  --obstacle-border: var(--border);
-  --ground: #52006A;
-  --ground-line: #FF7600;
+  --dino: var(--primary);
+  --obstacle: var(--primary);
+  --obstacle-border: var(--text);
+  --ground: var(--surface);
+  --ground-line: var(--accent);
 }
 
 /* Rosewood Velvet */
@@ -667,13 +634,13 @@ body {
   --moon-day: #fff;
   --moon-night: #E7B3C3;
   /* Semantic Overrides */
-  --sky-day: #F8BBD0; /* Pink 100 */
+  --sky-day: #F8BBD0;
   --sky-night: #3A0519;
-  --dino: #15040A;
-  --obstacle: #670D2F;
-  --obstacle-border: var(--border);
-  --ground: #3A0519;
-  --ground-line: #A53860;
+  --dino: var(--primary);
+  --obstacle: var(--primary);
+  --obstacle-border: var(--text);
+  --ground: var(--surface);
+  --ground-line: var(--accent);
 }
 
 /* Ember Noir */
@@ -702,11 +669,11 @@ body {
   /* Semantic Overrides */
   --sky-day: #FFFDE7;
   --sky-night: #1B1833;
-  --dino: #1A0E12;
-  --obstacle: #441752;
-  --obstacle-border: var(--border);
-  --ground: #1B1833;
-  --ground-line: #AB4459;
+  --dino: var(--primary);
+  --obstacle: var(--primary);
+  --obstacle-border: var(--text);
+  --ground: var(--surface);
+  --ground-line: var(--accent);
 }
 
 /* Amethyst Dream */
@@ -735,11 +702,11 @@ body {
   /* Semantic Overrides */
   --sky-day: #EDE7F6;
   --sky-night: #3E1E68;
-  --dino: #220B2D;
-  --obstacle: #5D2F77;
-  --obstacle-border: var(--border);
-  --ground: #3E1E68;
-  --ground-line: #FFACAC;
+  --dino: var(--primary);
+  --obstacle: var(--primary);
+  --obstacle-border: var(--text);
+  --ground: var(--surface);
+  --ground-line: var(--accent);
 }
 }
 
