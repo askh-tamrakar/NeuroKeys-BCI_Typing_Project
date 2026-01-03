@@ -22,8 +22,13 @@ const CONFIG_DEFAULTS = {
     filters: {
         EMG: {
             type: 'high_pass',
-            cutoff: 70.0,
-            order: 4
+            cutoff: 20.0,
+            order: 4,
+            notch_enabled: true,
+            notch_freq: 50,
+            bandpass_enabled: true,
+            bandpass_low: 20,
+            bandpass_high: 250
         },
         EOG: {
             type: 'low_pass',

@@ -1,27 +1,4 @@
 {
-  "channel_mapping": {
-    "ch0": {
-      "enabled": true,
-      "sensor": "EMG"
-    },
-    "ch1": {
-      "enabled": true,
-      "sensor": "EOG"
-    },
-    "ch2": {
-      "sensor": "EMG",
-      "enabled": true
-    },
-    "ch3": {
-      "sensor": "EMG",
-      "enabled": true
-    }
-  },
-  "display": {
-    "scannerX": 0,
-    "showGrid": true,
-    "timeWindowMs": 10000
-  },
   "filters": {
     "EEG": {
       "filters": [
@@ -56,7 +33,5 @@
       "order": 4,
       "type": "low_pass"
     }
-  },
-  "num_channels": 2,
-  "sampling_rate": 512
+  }
 }

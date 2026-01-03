@@ -156,17 +156,20 @@ function initVisuals() {
     // Init bushes (Layered Sprites)
     bushes = [];
     if (SETTINGS.ENABLE_BUSHES && bushSprites && bushSprites.length > 0) {
-        const userLayers = Math.max(0, Math.min(10, SETTINGS.BUSHES_LAYERS));
+        const MAX_POTENTIAL_LAYERS = 10; // Fixed reference for normalization
+        const userLayers = Math.max(0, Math.min(MAX_POTENTIAL_LAYERS, SETTINGS.BUSHES_LAYERS));
 
         for (let l = 0; l < userLayers; l++) {
             // Normalized layer position (0 = back, 1 = front)
-            const t = userLayers > 1 ? l / (userLayers - 1) : 0.5;
+            // We divide by (MAX - 1) so that layer 0 is always 0.0 and layer 9 is always 1.0
+            // This ensures that reducing the count keeps the BACK layers (low t) and removes FRONT layers (high t)
+            const t = l / (MAX_POTENTIAL_LAYERS - 1);
 
             // Interpolate params
             // Scale: 0.5 -> 2.5
             const baseScale = 0.5 + t * 2.0;
-            // Speed: 0.4 -> 2.5
-            const baseSpeed = 0.4 + t * 2.1;
+            // Speed: Slower now (0.2 -> 1.2 instead of 0.4 -> 2.5)
+            const baseSpeed = 0.2 + t * 1.0;
             // yOff:
             const baseYOff = 5 + t * 55;
 
@@ -468,7 +471,9 @@ const COLORS = {
     groundLineDay: '#5D4037',
     groundLineNight: '#8D6E63',
     skyDay: '#f8fafc',
-    skyNight: '#0f172a'
+    skyDay: '#f8fafc',
+    skyNight: '#0f172a',
+    obstacleBorder: '#e5e7eb' // Default
 };
 
 
@@ -799,45 +804,58 @@ function drawDino(x, y) {
     ctx.restore();
 }
 
-function drawCactus(x, y, width, height) {
-    ctx.save();
-    ctx.save();
-    ctx.fillStyle = CURRENT_COLORS.obstacle; // Semantic Obstacle Color
-    ctx.strokeStyle = CURRENT_COLORS.obstacle; // Solid look for high contrast
-    ctx.lineWidth = 2;
+const drawCactus = (ctx, x, y, width, height, color, borderColor) => {
+    ctx.save()
+    ctx.fillStyle = color
+    ctx.strokeStyle = borderColor
+    ctx.lineWidth = 3
 
     // Main trunk
-    const trunkWidth = Math.floor(width * 0.6);
-    const trunkX = Math.floor(x + (width - trunkWidth) / 2);
-    const trunkH = Math.floor(height);
-    const _y = Math.floor(y);
+    const trunkWidth = Math.floor(width * 0.65)
+    const trunkX = Math.floor(x + (width - trunkWidth) / 2)
+    const trunkH = Math.floor(height)
+    const _y = Math.floor(y)
 
-    ctx.fillRect(trunkX, _y, trunkWidth, trunkH);
-    ctx.strokeRect(trunkX, _y, trunkWidth, trunkH);
+    ctx.fillRect(trunkX, _y, trunkWidth, trunkH)
+    ctx.strokeRect(trunkX, _y, trunkWidth, trunkH)
+
+    // Arms configuration
+    const armWidth = Math.floor(width * 0.325)
+    const outwardOffset = Math.floor(width * 0.2)
 
     // Left arm
-    const armHeight = Math.floor(height * 0.4);
-    const armWidth = Math.floor(width * 0.3);
-    const leftArmX = Math.floor(trunkX - armWidth);
-    const leftArmY = Math.floor(y + height * 0.3);
-    const armConnW = Math.floor(trunkWidth * 0.3);
+    const leftArmY = Math.floor(y + height * 0.35)
+    const leftArmH = Math.floor(height * 0.35)
+    const leftArmX = Math.floor(trunkX - armWidth - outwardOffset)
+    const leftVertY = Math.floor(leftArmY - leftArmH + armWidth)
 
-    ctx.fillRect(leftArmX, leftArmY, armWidth, armHeight);
-    ctx.strokeRect(leftArmX, leftArmY, armWidth, armHeight);
-    ctx.fillRect(leftArmX + armWidth, leftArmY, armConnW, armWidth);
-    ctx.strokeRect(leftArmX + armWidth, leftArmY, armConnW, armWidth);
+    ctx.beginPath()
+    ctx.moveTo(trunkX + 2, leftArmY) // Start inside trunk
+    ctx.lineTo(leftArmX + armWidth, leftArmY) // Inner elbow
+    ctx.lineTo(leftArmX + armWidth, leftVertY) // Inner top
+    ctx.lineTo(leftArmX, leftVertY) // Outer top
+    ctx.lineTo(leftArmX, leftArmY + armWidth) // Outer elbow
+    ctx.lineTo(trunkX + 2, leftArmY + armWidth) // Back to trunk
+    ctx.fill()
+    ctx.stroke()
 
     // Right arm
-    const rightArmX = Math.floor(trunkX + trunkWidth);
-    const rightArmY = Math.floor(y + height * 0.5);
-    const rightArmH = Math.floor(armHeight * 0.8);
+    const rightArmY = Math.floor(y + height * 0.55)
+    const rightArmH = Math.floor(height * 0.3)
+    const rightArmX = Math.floor(trunkX + trunkWidth + outwardOffset)
+    const rightVertY = Math.floor(rightArmY - rightArmH + armWidth)
 
-    ctx.fillRect(rightArmX, rightArmY, armWidth, rightArmH);
-    ctx.strokeRect(rightArmX, rightArmY, armWidth, rightArmH);
-    ctx.fillRect(Math.floor(trunkX + trunkWidth * 0.7), rightArmY, armConnW, armWidth);
-    ctx.strokeRect(Math.floor(trunkX + trunkWidth * 0.7), rightArmY, armConnW, armWidth);
+    ctx.beginPath()
+    ctx.moveTo(trunkX + trunkWidth - 2, rightArmY) // Start inside trunk
+    ctx.lineTo(rightArmX, rightArmY) // Inner elbow
+    ctx.lineTo(rightArmX, rightVertY) // Inner top
+    ctx.lineTo(rightArmX + armWidth, rightVertY) // Outer top
+    ctx.lineTo(rightArmX + armWidth, rightArmY + armWidth) // Outer elbow
+    ctx.lineTo(trunkX + trunkWidth - 2, rightArmY + armWidth) // Back to trunk
+    ctx.fill()
+    ctx.stroke()
 
-    ctx.restore();
+    ctx.restore()
 }
 
 function draw() {
@@ -887,7 +905,7 @@ function draw() {
 
         // Obstacles
         obstacles.forEach(obs => {
-            drawCactus(obs.x, groundY - obs.height, obs.width, obs.height);
+            drawCactus(ctx, obs.x, groundY - obs.height, obs.width, obs.height, CURRENT_COLORS.obstacle, COLORS.obstacleBorder);
         });
 
         // Visual Bushes (Front Layer - Layer 4)

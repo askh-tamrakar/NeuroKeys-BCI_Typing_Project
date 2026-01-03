@@ -39,6 +39,7 @@ from scipy import signal as scipy_signal
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 CONFIG_PATH = PROJECT_ROOT / "config" / "sensor_config.json"
+FILTER_CONFIG_PATH = PROJECT_ROOT / "config" / "filter_config.json"
 TEMPLATES_DIR = PROJECT_ROOT / "src" / "web" / "templates"
 DEFAULT_SR = 512
 
@@ -88,7 +89,7 @@ state = WebServerState()
 
 
 def load_config() -> dict:
-#     """Load channel mapping from disk or return defaults."""
+    """Load config from sensor_config.json and filter_config.json, returning a merged view."""
     defaults = {
         "sampling_rate": DEFAULT_SR,
         "channel_mapping": {
@@ -102,11 +103,7 @@ def load_config() -> dict:
             }
         },
         "filters": {
-            "EMG": {
-                "type": "high_pass",
-                "cutoff": 70.0,
-                "order": 4
-            },
+             "EMG": {"cutoff": 20.0, "order": 4, "notch_enabled": True, "notch_freq": 50, "bandpass_enabled": True, "bandpass_low": 20, "bandpass_high": 250},
             "EOG": {
                 "type": "low_pass",
                 "cutoff": 10.0,
@@ -136,40 +133,61 @@ def load_config() -> dict:
         "num_channels": 2
     }
 
-    if not CONFIG_PATH.exists():
-        print(f"[WebServer] ℹ️  Config file not found at {CONFIG_PATH}")
-        return defaults
+    merged = defaults.copy()
 
-    try:
-        with open(CONFIG_PATH) as f:
-            cfg = json.load(f)
-        print(f"[WebServer] ✅ Loaded config from {CONFIG_PATH}")
-        # Merge with defaults to ensure all keys present
-        merged = {**defaults, **cfg}
-        # Deep merge for nested objects
-        if 'channel_mapping' in cfg:
-            merged['channel_mapping'] = {**defaults.get('channel_mapping', {}), **cfg['channel_mapping']}
-        return merged
-    except Exception as e:
-        print(f"[WebServer] ⚠️  Error loading config: {e}")
-        return defaults
+    # 1. Load Sensor Config
+    if CONFIG_PATH.exists():
+        try:
+            with open(CONFIG_PATH) as f:
+                cfg = json.load(f)
+            # Merge with defaults
+            merged.update(cfg)
+            # Deep merge channel_mapping if needed
+            if 'channel_mapping' in cfg:
+                merged['channel_mapping'] = {**defaults.get('channel_mapping', {}), **cfg['channel_mapping']}
+        except Exception as e:
+             print(f"[WebServer] ⚠️  Error loading sensor config: {e}")
+    else:
+        print(f"[WebServer] ℹ️  Config file not found at {CONFIG_PATH}")
+
+    # 2. Load Filter Config (Overrides 'filters' key)
+    if FILTER_CONFIG_PATH.exists():
+        try:
+             with open(FILTER_CONFIG_PATH) as f:
+                filter_cfg = json.load(f)
+             if 'filters' in filter_cfg:
+                 merged['filters'] = filter_cfg['filters']
+        except Exception as e:
+            print(f"[WebServer] ⚠️  Error loading filter config: {e}")
+
+    return merged
 
 
 def save_config(config: dict) -> bool:
-    """Save config to disk."""
+    """Save config to disk (Splits into sensor_config.json and filter_config.json)."""
     try:
-        # Validate config structure
         if not isinstance(config, dict):
             raise ValueError("Config must be dict")
         
         # Ensure directory exists
         CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         
-        # Write to file
-        with open(CONFIG_PATH, 'w') as f:
-            json.dump(config, f, indent=2)
+        # 1. Save Filters to filter_config.json
+        if 'filters' in config:
+            filter_payload = {"filters": config['filters']}
+            with open(FILTER_CONFIG_PATH, 'w') as f:
+                json.dump(filter_payload, f, indent=2)
+            print(f"[WebServer] 💾 Filters saved to {FILTER_CONFIG_PATH}")
+
+        # 2. Save Sensor/Display Config to sensor_config.json (exclude filters)
+        sensor_payload = config.copy()
+        if 'filters' in sensor_payload:
+            del sensor_payload['filters']
         
-        print(f"[WebServer] 💾 Config saved to {CONFIG_PATH}")
+        with open(CONFIG_PATH, 'w') as f:
+            json.dump(sensor_payload, f, indent=2)
+        
+        print(f"[WebServer] 💾 Sensor config saved to {CONFIG_PATH}")
         state.config = config
         return True
     except Exception as e:

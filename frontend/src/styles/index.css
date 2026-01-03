@@ -108,14 +108,11 @@ body {
   /* New Semantic System */
   --sky-day: #f5f5f5;
   --sky-night: #111111;
-  --dino-day: #2C2C2C;
-  --dino-night: #2C2C2C;
-  --obstacle-day: #5D4037;
-  --obstacle-night: #5D4037;
-  --ground-day: #1b1b1b;
-  --ground-night: #1b1b1b;
-  --ground-line-day: #5D4037;
-  --ground-line-night: #5D4037;
+  --dino: #2C2C2C;
+  --obstacle: #5D4037;
+  --obstacle-border: var(--border);
+  --ground: #1b1b1b;
+  --ground-line: #5D4037;
 }
 
 /* Theme 1 */
@@ -540,14 +537,11 @@ body {
   /* Semantic Overrides */
   --sky-day: #FFF7B0;
   --sky-night: #2C2B28;
-  --dino-day: #F2B01E;
-  --dino-night: #F2B01E;
-  --obstacle-day: #F2B01E;
-  --obstacle-night: #F2B01E;
-  --ground-day: #3B392F;
-  --ground-night: #3B392F;
-  --ground-line-day: #E3A500;
-  --ground-line-night: #E3A500;
+  --dino: #F2B01E;
+  --obstacle: var(--primary);
+  --obstacle-border: var(--text);
+  --ground: #3B392F;
+  --ground-line: #E3A500;
 }
 
 /* Golden Eclipse */
@@ -565,7 +559,7 @@ body {
     /* dino */
     --day: var(--text);
     --night: var(--bg);
-    --tree-day: #2C2B28;
+    --tree-day: #D9C974;
     --tree-night: #FFFFE0;
     --cloud-day: #D9C974;
     --cloud-night: #554d24;
@@ -576,14 +570,11 @@ body {
   /* Semantic Overrides */
   --sky-day: #FFFFE0;
   --sky-night: #2C2B28;
-  --dino-day: #F2B01E;
-  --dino-night: #F2B01E;
-  --obstacle-day: #F2B01E;
-  --obstacle-night: #F2B01E;
-  --ground-day: #2C2B28;
-  --ground-night: #2C2B28;
-  --ground-line-day: #C69C00;
-  --ground-line-night: #C69C00;
+  --dino: #F2B01E;
+  --obstacle: var(--surface);
+  --obstacle-border: var(--border);
+  --ground: #2C2B28;
+  --ground-line: #C69C00;
 }
 
 /* Croimson Blaze */
@@ -612,14 +603,11 @@ body {
   /* Semantic Overrides */
   --sky-day: #FFEBEE;
   --sky-night: #00224D;
-  --dino-day: #2b0f18;
-  --dino-night: #2b0f18;
-  --obstacle-day: #5D0E41;
-  --obstacle-night: #5D0E41;
-  --ground-day: #00224D;
-  --ground-night: #00224D;
-  --ground-line-day: #A0153E;
-  --ground-line-night: #A0153E;
+  --dino: #2b0f18;
+  --obstacle: #5D0E41;
+  --obstacle-border: var(--border);
+  --ground: #00224D;
+  --ground-line: #A0153E;
 }
 
 /* Inferno Burst */
@@ -648,14 +636,11 @@ body {
   /* Semantic Overrides */
   --sky-day: #FFF3E0;
   --sky-night: #52006A;
-  --dino-day: #220030;
-  --dino-night: #220030;
-  --obstacle-day: #7A0B57;
-  --obstacle-night: #7A0B57;
-  --ground-day: #52006A;
-  --ground-night: #52006A;
-  --ground-line-day: #FF7600;
-  --ground-line-night: #FF7600;
+  --dino: #220030;
+  --obstacle: #7A0B57;
+  --obstacle-border: var(--border);
+  --ground: #52006A;
+  --ground-line: #FF7600;
 }
 
 /* Rosewood Velvet */
@@ -684,14 +669,11 @@ body {
   /* Semantic Overrides */
   --sky-day: #F8BBD0; /* Pink 100 */
   --sky-night: #3A0519;
-  --dino-day: #15040A;
-  --dino-night: #15040A;
-  --obstacle-day: #670D2F;
-  --obstacle-night: #670D2F;
-  --ground-day: #3A0519;
-  --ground-night: #3A0519;
-  --ground-line-day: #A53860;
-  --ground-line-night: #A53860;
+  --dino: #15040A;
+  --obstacle: #670D2F;
+  --obstacle-border: var(--border);
+  --ground: #3A0519;
+  --ground-line: #A53860;
 }
 
 /* Ember Noir */
@@ -720,14 +702,11 @@ body {
   /* Semantic Overrides */
   --sky-day: #FFFDE7;
   --sky-night: #1B1833;
-  --dino-day: #1A0E12;
-  --dino-night: #1A0E12;
-  --obstacle-day: #441752;
-  --obstacle-night: #441752;
-  --ground-day: #1B1833;
-  --ground-night: #1B1833;
-  --ground-line-day: #AB4459;
-  --ground-line-night: #AB4459;
+  --dino: #1A0E12;
+  --obstacle: #441752;
+  --obstacle-border: var(--border);
+  --ground: #1B1833;
+  --ground-line: #AB4459;
 }
 
 /* Amethyst Dream */
@@ -756,14 +735,11 @@ body {
   /* Semantic Overrides */
   --sky-day: #EDE7F6;
   --sky-night: #3E1E68;
-  --dino-day: #220B2D;
-  --dino-night: #220B2D;
-  --obstacle-day: #5D2F77;
-  --obstacle-night: #5D2F77;
-  --ground-day: #3E1E68;
-  --ground-night: #3E1E68;
-  --ground-line-day: #FFACAC;
-  --ground-line-night: #FFACAC;
+  --dino: #220B2D;
+  --obstacle: #5D2F77;
+  --obstacle-border: var(--border);
+  --ground: #3E1E68;
+  --ground-line: #FFACAC;
 }
 }
 

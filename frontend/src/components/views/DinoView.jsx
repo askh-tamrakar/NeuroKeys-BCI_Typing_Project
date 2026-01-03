@@ -272,14 +272,16 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                     sunNight: styles.getPropertyValue('--sun-night').trim(),
                     moonDay: styles.getPropertyValue('--moon-day').trim(),
                     moonNight: styles.getPropertyValue('--moon-night').trim(),
-                    dinoDay: styles.getPropertyValue('--dino-day').trim(),
-                    dinoNight: styles.getPropertyValue('--dino-night').trim(),
-                    obstacleDay: styles.getPropertyValue('--obstacle-day').trim(),
-                    obstacleNight: styles.getPropertyValue('--obstacle-night').trim(),
-                    groundDay: styles.getPropertyValue('--ground-day').trim(),
-                    groundNight: styles.getPropertyValue('--ground-night').trim(),
-                    groundLineDay: styles.getPropertyValue('--ground-line-day').trim(),
-                    groundLineNight: styles.getPropertyValue('--ground-line-night').trim(),
+                    // New simplified mappings
+                    dinoDay: styles.getPropertyValue('--dino').trim(),
+                    dinoNight: styles.getPropertyValue('--dino').trim(),
+                    obstacleDay: styles.getPropertyValue('--obstacle').trim(),
+                    obstacleNight: styles.getPropertyValue('--obstacle').trim(),
+                    obstacleBorder: styles.getPropertyValue('--obstacle-border').trim(),
+                    groundDay: styles.getPropertyValue('--ground').trim(),
+                    groundNight: styles.getPropertyValue('--ground').trim(),
+                    groundLineDay: styles.getPropertyValue('--ground-line').trim(),
+                    groundLineNight: styles.getPropertyValue('--ground-line').trim(),
                     skyDay: styles.getPropertyValue('--sky-day').trim(),
                     skyNight: styles.getPropertyValue('--sky-night').trim()
                 }
@@ -424,14 +426,16 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                     sunNight: styles.getPropertyValue('--sun-night').trim(),
                     moonDay: styles.getPropertyValue('--moon-day').trim(),
                     moonNight: styles.getPropertyValue('--moon-night').trim(),
-                    dinoDay: styles.getPropertyValue('--dino-day').trim(),
-                    dinoNight: styles.getPropertyValue('--dino-night').trim(),
-                    obstacleDay: styles.getPropertyValue('--obstacle-day').trim(),
-                    obstacleNight: styles.getPropertyValue('--obstacle-night').trim(),
-                    groundDay: styles.getPropertyValue('--ground-day').trim(),
-                    groundNight: styles.getPropertyValue('--ground-night').trim(),
-                    groundLineDay: styles.getPropertyValue('--ground-line-day').trim(),
-                    groundLineNight: styles.getPropertyValue('--ground-line-night').trim(),
+                    // New simplified mappings
+                    dinoDay: styles.getPropertyValue('--dino').trim(),
+                    dinoNight: styles.getPropertyValue('--dino').trim(),
+                    obstacleDay: styles.getPropertyValue('--obstacle').trim(),
+                    obstacleNight: styles.getPropertyValue('--obstacle').trim(),
+                    obstacleBorder: styles.getPropertyValue('--obstacle-border').trim(),
+                    groundDay: styles.getPropertyValue('--ground').trim(),
+                    groundNight: styles.getPropertyValue('--ground').trim(),
+                    groundLineDay: styles.getPropertyValue('--ground-line').trim(),
+                    groundLineNight: styles.getPropertyValue('--ground-line').trim(),
                     skyDay: styles.getPropertyValue('--sky-day').trim(),
                     skyNight: styles.getPropertyValue('--sky-night').trim()
                 };
@@ -709,13 +713,13 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                 </div>
 
                 {/* Right Sidebar */}
-                <div className="game-sidebar">
+                <div className="game-sidebar pr-1.5">
                     <div className="h-[85px] shrink-0" />
                     {/* Camera Panel */}
                     <CameraPanel />
 
                     {/* Eye Controls Panel */}
-                    <div className="card bg-surface border border-border shadow-card rounded-2xl p-4" style={{ flexShrink: 0 }}>
+                    <div className="card bg-surface border border-border shadow-card rounded-2xl p-4 " style={{ flexShrink: 0 }}>
                         <h3 className="text-sm font-bold text-text uppercase tracking-wider mb-3 flex items-center gap-2"><Gamepad2 size={16} /> Controls</h3>
                         <div className="space-y-2 text-sm text-text">
                             <div className="flex justify-between items-center">
@@ -757,17 +761,17 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                             <h3 className="text-sm font-bold text-text uppercase tracking-wider flex items-center gap-2"><ScrollText size={16} /> Event Log</h3>
                             <button
                                 onClick={() => setEventLogs([])}
-                                className="text-xs text-muted hover:text-red-400 flex items-center gap-1"
+                                className="text-sm text-muted hover:text-red-400 flex items-center gap-1"
                             >
-                                <Trash2 size={12} /> Clear
+                                <Trash2 size={16} /> Clear
                             </button>
                         </div>
-                        <div className="bg-bg/50 rounded-lg p-2 h-32 overflow-y-auto font-mono text-xs space-y-1 border border-border/50 scrollbar-thin scrollbar-thumb-border hover:scrollbar-thumb-primary/50 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
+                        <div className="bg-bg/50 rounded-lg p-2 h-32 overflow-y-auto font-mono text-xs space-y-1 border border-border scrollbar-thin scrollbar-thumb-border hover:scrollbar-thumb-primary/50 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
                             {eventLogs.length === 0 ? (
                                 <div className="text-muted italic text-center py-4">No events yet...</div>
                             ) : (
                                 eventLogs.map((log) => (
-                                    <div key={log.id} className="text-muted hover:text-text transition-colors border-b border-border/20 last:border-0 pb-1 mb-1 flex items-start gap-2">
+                                    <div key={log.id} className="text-muted hover:text-text transition-colors border-b border-border last:border-0 pb-1 mb-1 flex items-start gap-2">
                                         <span className="opacity-50 text-[10px] mt-0.5">{log.time}</span>
                                         <div className="flex-1 flex items-center gap-1.5 break-words min-w-0">
                                             {log.type === 'jump' && <ArrowUp size={12} className="text-primary shrink-0" />}
@@ -790,21 +794,24 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                     {/* Settings Panel (Moved here) */}
                     {showSettings && (
                         <div className="card bg-surface border border-border shadow-card rounded-2xl p-4 animate-fade-in" style={{ flexShrink: 0 }}>
-                            <div className="flex justify-between items-center mb-4">
+                            <div className="flex justify-between flex-col gap-2 mb-4">
                                 <h3 className="text-sm font-bold text-text uppercase tracking-wider flex items-center gap-2"><Settings size={16} /> Game Constants</h3>
-                                <div className="flex gap-2 items-center">
-                                    {savedMessage && <span className="text-xs text-green-500 font-bold animate-fade-in">{savedMessage}</span>}
-                                    <button
-                                        onClick={handleSaveSettings}
-                                        className="text-xs bg-primary text-bg px-2 py-1 rounded font-bold hover:opacity-90 flex items-center gap-1"
-                                    >
-                                        <Save size={12} /> Save
-                                    </button>
+                                <div className="flex gap-2 justify-between">
+                                    <span className="flex items-center gap-2">
+                                        <button
+                                            onClick={handleSaveSettings}
+                                            className="text-sm bg-primary text-bg px-2 py-1 rounded font-bold hover:opacity-90 flex items-center gap-1"
+                                        >
+                                            <Save size={18} /> Save
+                                        </button>
+                                        {savedMessage && <span className="text-xs text-green-500 font-bold animate-fade-in">{savedMessage}</span>}
+                                    </span>
+
                                     <button
                                         onClick={handleResetSettings}
-                                        className="text-xs text-red-400 hover:text-red-300 underline flex items-center gap-1"
+                                        className="text-sm text-red-400 hover:text-red-300 flex items-center gap-1"
                                     >
-                                        <RotateCcw size={12} /> Reset Config
+                                        <RotateCcw size={18} /> Reset
                                     </button>
                                 </div>
                             </div>
@@ -814,7 +821,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                                     <div className="space-y-3 pt-2">
                                         <SettingToggle label="Manual Controls (Space)" value={settings.ENABLE_MANUAL_CONTROLS} onChange={(v) => handleSettingChange('ENABLE_MANUAL_CONTROLS', v)} icon={Hand} />
                                         <SettingInput label="Obstacle Bonus" value={settings.OBSTACLE_BONUS_FACTOR} onChange={(v) => handleSettingChange('OBSTACLE_BONUS_FACTOR', v)} min="0" max="0.5" step="0.005" icon={Zap} />
-                                        <div className="flex justify-between items-center text-xs pt-1 border-t border-border/50">
+                                        <div className="flex justify-between items-center text-xs pt-1 border-t border-border">
                                             <span className="text-muted flex items-center gap-1"><Trophy size={10} /> Highscore: {Math.floor(highScore / 10)}</span>
                                             <button
                                                 onClick={() => {
@@ -867,24 +874,24 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                                 <SettingsSection title="Visual Details" icon={Sparkles}>
                                     <div className="space-y-4 pt-2">
                                         {/* Trees */}
-                                        <div className="bg-bg/50 p-2 rounded border border-border/50">
-                                            <h5 className="text-[10px] font-bold text-primary mb-2 border-b border-border/30 pb-1 flex items-center gap-1"><TreePine size={10} /> Trees Config</h5>
+                                        <div className="bg-bg/50 p-2 rounded border border-border">
+                                            <h5 className="text-[10px] font-bold text-primary mb-2 border-b border-border pb-1 flex items-center gap-1"><TreePine size={10} /> Trees Config</h5>
                                             <SettingInput label="Layers" value={settings.TREES_LAYERS} onChange={(v) => handleSettingChange('TREES_LAYERS', v)} min="1" max="15" step="1" icon={Layers} />
                                             <SettingInput label="Density" value={settings.TREES_DENSITY} onChange={(v) => handleSettingChange('TREES_DENSITY', v)} min="0" max="5" step="0.1" icon={Grid} />
                                             <SettingInput label="Size" value={settings.TREES_SIZE} onChange={(v) => handleSettingChange('TREES_SIZE', v)} min="0.5" max="2.0" step="0.1" icon={Maximize} />
                                         </div>
 
                                         {/* Clouds */}
-                                        <div className="bg-bg/50 p-2 rounded border border-border/50">
-                                            <h5 className="text-[10px] font-bold text-primary mb-2 border-b border-border/30 pb-1 flex items-center gap-1"><Cloud size={10} /> Clouds Config</h5>
+                                        <div className="bg-bg/50 p-2 rounded border border-border">
+                                            <h5 className="text-[10px] font-bold text-primary mb-2 border-b border-border pb-1 flex items-center gap-1"><Cloud size={10} /> Clouds Config</h5>
                                             <SettingInput label="Layers" value={settings.CLOUDS_LAYERS} onChange={(v) => handleSettingChange('CLOUDS_LAYERS', v)} min="1" max="15" step="1" icon={Layers} />
                                             <SettingInput label="Density" value={settings.CLOUDS_DENSITY} onChange={(v) => handleSettingChange('CLOUDS_DENSITY', v)} min="0.1" max="3.0" step="0.1" icon={Grid} />
                                             <SettingInput label="Size" value={settings.CLOUDS_SIZE} onChange={(v) => handleSettingChange('CLOUDS_SIZE', v)} min="0.5" max="1.5" step="0.1" icon={Maximize} />
                                         </div>
 
                                         {/* Stars & Bushes */}
-                                        <div className="bg-bg/50 p-2 rounded border border-border/50">
-                                            <h5 className="text-[10px] font-bold text-primary mb-2 border-b border-border/30 pb-1 flex items-center gap-1"><Star size={10} /> Stars & Bushes</h5>
+                                        <div className="bg-bg/50 p-2 rounded border border-border">
+                                            <h5 className="text-[10px] font-bold text-primary mb-2 border-b border-border pb-1 flex items-center gap-1"><Star size={10} /> Stars & Bushes</h5>
                                             <SettingInput label="Stars Layers" value={settings.STARS_LAYERS} onChange={(v) => handleSettingChange('STARS_LAYERS', v)} min="1" max="15" step="1" icon={Layers} />
                                             <SettingInput label="Stars Density" value={settings.STARS_DENSITY} onChange={(v) => handleSettingChange('STARS_DENSITY', v)} min="0.1" max="3.0" step="0.1" icon={Grid} />
                                             <div className="h-2" />
@@ -899,7 +906,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                                         <SettingInput label="Gravity" value={settings.GRAVITY} onChange={(v) => handleSettingChange('GRAVITY', v)} min="0.1" max="2.0" step="0.05" icon={Weight} />
                                         <SettingInput label="Jump Strength" value={settings.JUMP_STRENGTH} onChange={(v) => handleSettingChange('JUMP_STRENGTH', v)} min="-20" max="-5" step="0.5" icon={MoveVertical} />
                                         <SettingInput label="Jump Distance" value={settings.JUMP_DISTANCE} onChange={(v) => handleSettingChange('JUMP_DISTANCE', v)} min="100" max="600" step="10" icon={MoveHorizontal} />
-                                        <div className="flex justify-between text-xs text-muted pt-1 opacity-75 border-t border-border/30 mt-2">
+                                        <div className="flex justify-between text-xs text-muted pt-1 opacity-75 border-t border-border mt-2">
                                             <span>Est. Speed</span>
                                             <span className="font-mono">{((settings.JUMP_DISTANCE * settings.GRAVITY) / (2 * Math.abs(settings.JUMP_STRENGTH))).toFixed(1)}</span>
                                         </div>
@@ -911,7 +918,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                                         <SettingInput label="Dino W" value={settings.DINO_WIDTH} onChange={(v) => handleSettingChange('DINO_WIDTH', v)} min="20" max="100" step="2" icon={Maximize} />
                                         <SettingInput label="Dino H" value={settings.DINO_HEIGHT} onChange={(v) => handleSettingChange('DINO_HEIGHT', v)} min="20" max="100" step="2" icon={Maximize} />
                                         <SettingInput label="Ground Offset" value={settings.GROUND_OFFSET} onChange={(v) => handleSettingChange('GROUND_OFFSET', v)} min="20" max="150" step="5" icon={ArrowDownToLine} />
-                                        <div className="h-1 border-t border-border/30 my-2" />
+                                        <div className="h-1 border-t border-border my-2" />
                                         <SettingInput label="Spawn Interval" value={settings.SPAWN_INTERVAL} onChange={(v) => handleSettingChange('SPAWN_INTERVAL', v)} min="500" max="3000" step="50" icon={Timer} />
                                         <SettingInput label="Obs Width" value={settings.OBSTACLE_WIDTH} onChange={(v) => handleSettingChange('OBSTACLE_WIDTH', v)} min="10" max="50" step="2" icon={Maximize} />
                                         <SettingInput label="Obs Max H" value={settings.OBSTACLE_MAX_HEIGHT} onChange={(v) => handleSettingChange('OBSTACLE_MAX_HEIGHT', v)} min="30" max="100" step="5" icon={Maximize} />

@@ -48,6 +48,7 @@ except ImportError:
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 CONFIG_PATH = PROJECT_ROOT / "config" / "sensor_config.json"
+FILTER_CONFIG_PATH = PROJECT_ROOT / "config" / "filter_config.json"
 RAW_STREAM_NAME = "BioSignals-Raw-uV"
 PROCESSED_STREAM_NAME = "BioSignals-Processed"
 RELOAD_INTERVAL = 2.0
@@ -55,7 +56,7 @@ DEFAULT_SR = 512
 
 
 def load_config() -> dict:
-    """Load sensor_config.json with safe fallback defaults."""
+    """Load config from sensor_config.json and filter_config.json with safe fallback defaults."""
     defaults = {
         "sampling_rate": DEFAULT_SR,
         "channel_mapping": {
@@ -63,7 +64,7 @@ def load_config() -> dict:
             "ch1": {"sensor": "EOG", "enabled": True}
         },
         "filters": {
-            "EMG": {"cutoff": 70.0, "order": 4},
+            "EMG": {"cutoff": 20.0, "order": 4, "notch_enabled": True, "notch_freq": 50, "bandpass_enabled": True, "bandpass_low": 20, "bandpass_high": 250},
             "EOG": {"cutoff": 10.0, "order": 4},
             "EEG": {
                 "filters": [
@@ -74,24 +75,35 @@ def load_config() -> dict:
         }
     }
     
-    if not CONFIG_PATH.exists():
-        return defaults
-    
-    try:
-        with open(CONFIG_PATH, "r") as f:
-            cfg = json.load(f)
-        
-        if "sampling_rate" not in cfg:
-            cfg["sampling_rate"] = defaults["sampling_rate"]
-        if "filters" not in cfg:
-            cfg["filters"] = defaults["filters"]
-        if "channel_mapping" not in cfg:
-            cfg["channel_mapping"] = defaults["channel_mapping"]
-        
-        return cfg
-    except Exception as e:
-        print(f"[Router] Failed to load config ({CONFIG_PATH}): {e} — using defaults")
-        return defaults
+    cfg = defaults.copy()
+
+    # 1. Load Sensor Config
+    if CONFIG_PATH.exists():
+        try:
+            with open(CONFIG_PATH, "r") as f:
+                sensor_cfg = json.load(f)
+            
+            if "sampling_rate" in sensor_cfg:
+                cfg["sampling_rate"] = sensor_cfg["sampling_rate"]
+            if "channel_mapping" in sensor_cfg:
+                cfg["channel_mapping"] = sensor_cfg["channel_mapping"]
+        except Exception as e:
+            print(f"[Router] Failed to load sensor config ({CONFIG_PATH}): {e} — using defaults")
+
+    # 2. Load Filter Config
+    if FILTER_CONFIG_PATH.exists():
+        try:
+            with open(FILTER_CONFIG_PATH, "r") as f:
+                filter_cfg = json.load(f)
+            
+            if "filters" in filter_cfg:
+                cfg["filters"] = filter_cfg["filters"]
+        except Exception as e:
+            print(f"[Router] Failed to load filter config ({FILTER_CONFIG_PATH}): {e} — using defaults")
+    else:
+        print(f"[Router] Filter config not found ({FILTER_CONFIG_PATH}) — using defaults")
+
+    return cfg
 
 
 def get_config_hash(cfg: dict) -> str:
