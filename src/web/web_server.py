@@ -40,7 +40,7 @@ from scipy import signal as scipy_signal
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 CONFIG_PATH = PROJECT_ROOT / "config" / "sensor_config.json"
 FILTER_CONFIG_PATH = PROJECT_ROOT / "config" / "filter_config.json"
-TEMPLATES_DIR = PROJECT_ROOT / "src" / "web" / "templates"
+TEMPLATES_DIR = PROJECT_ROOT / "src" / "web" / "frontend" / "dist"
 DEFAULT_SR = 512
 
 RAW_STREAM_NAME = "BioSignals-Processed"
@@ -52,7 +52,8 @@ EVENT_STREAM_NAME = "BioSignals-Events"
 app = Flask(
     __name__,
     template_folder=str(TEMPLATES_DIR) if TEMPLATES_DIR.exists() else None,
-    static_folder=str(TEMPLATES_DIR / "static") if (TEMPLATES_DIR / "static").exists() else None
+    static_folder=str(TEMPLATES_DIR / "assets") if (TEMPLATES_DIR / "assets").exists() else None,
+    static_url_path="/assets"
 )
 
 # CORS configuration
@@ -407,6 +408,12 @@ def broadcast_data():
 @app.route('/')
 def index():
     """Serve main dashboard."""
+    return render_template('index.html')
+
+
+@app.route('/<path:path>')
+def catch_all(path):
+    """Catch-all route for SPA (React Router)."""
     return render_template('index.html')
 
 

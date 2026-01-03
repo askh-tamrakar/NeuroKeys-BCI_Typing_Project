@@ -1,0 +1,37 @@
+.loading-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  background-color: var(--bg);
+  color: var(--text);
+}
+
+.dashboard-container {
+  display: flex;
+  height: 100vh;
+  width: 100%;
+  background-color: var(--bg);
+  overflow: hidden;
+  position: relative;
+}
+
+.sidebar-fixed {
+  flex-shrink: 0;
+  z-index: 20;
+}
+
+.main-content {
+  flex-grow: 1;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.live-view-wrapper {
+  flex-grow: 1;
+  overflow: hidden;
+  position: relative;
+}
