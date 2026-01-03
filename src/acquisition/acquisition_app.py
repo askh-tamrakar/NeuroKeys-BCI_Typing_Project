@@ -111,10 +111,7 @@ class AcquisitionApp:
             self.config.get("sampling_rate", 512) * self.window_seconds
         )
         
-<<<<<<< HEAD
-=======
         # Ring buffers (Raw)
->>>>>>> EOG-done
         self.ch0_buffer = np.zeros(self.buffer_size)
         self.ch1_buffer = np.zeros(self.buffer_size)
         
