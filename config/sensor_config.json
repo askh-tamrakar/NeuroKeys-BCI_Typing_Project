@@ -1,13 +1,31 @@
 {
+<<<<<<< HEAD
   "sampling_rate": 512,
   "channel_mapping": {
     "ch0": {
       "enabled": true,
       "sensor": "EEG"
+=======
+  "channel_mapping": {
+    "ch0": {
+      "enabled": true,
+      "sensor": "EMG"
+>>>>>>> EOG-done
     },
     "ch1": {
       "enabled": true,
       "sensor": "EOG"
+<<<<<<< HEAD
+=======
+    },
+    "ch2": {
+      "enabled": true,
+      "sensor": "EMG"
+    },
+    "ch3": {
+      "enabled": true,
+      "sensor": "EMG"
+>>>>>>> EOG-done
     }
   },
   "num_channels": 2,
@@ -15,6 +33,13 @@
   "display": {
     "scannerX": 0,
     "showGrid": true,
+<<<<<<< HEAD
     "timeWindowMs": 30000
   }
+=======
+    "timeWindowMs": 10000
+  },
+  "num_channels": 4,
+  "sampling_rate": 512
+>>>>>>> EOG-done
 }

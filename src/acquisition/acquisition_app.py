@@ -37,6 +37,14 @@ try:
 except Exception:
     SCIPY_AVAILABLE = False
 
+# pylsl import
+try:
+    import pylsl
+    LSL_AVAILABLE = True
+except ImportError:
+    pylsl = None
+    LSL_AVAILABLE = False
+
 # UTF-8 encoding
 try:
     sys.stdout.reconfigure(encoding='utf-8')
@@ -76,9 +84,15 @@ class AcquisitionApp:
         self.is_acquiring = False
         self.is_paused = False
         self.is_recording = False
+        self.is_recording = False
         self.session_start_time = None
         self.packet_count = 0
         self.last_packet_counter = None
+
+        # Processed Data Stream State
+        self.processed_inlet = None
+        self.processed_stream_name = "BioSignals-Processed"
+        self.searching_processed = False
         
         # Channel mapping
         channel_map = self.config.get("channel_mapping", {})
@@ -97,9 +111,19 @@ class AcquisitionApp:
             self.config.get("sampling_rate", 512) * self.window_seconds
         )
         
+<<<<<<< HEAD
+=======
+        # Ring buffers (Raw)
+>>>>>>> EOG-done
         self.ch0_buffer = np.zeros(self.buffer_size)
         self.ch1_buffer = np.zeros(self.buffer_size)
+        
+        # Ring buffers (Processed)
+        self.ch0_proc_buffer = np.zeros(self.buffer_size)
+        self.ch1_proc_buffer = np.zeros(self.buffer_size)
+        
         self.buffer_ptr = 0
+        self.proc_buffer_ptr = 0  # Separate pointer for processed stream if rates differ slightly
         
         # Time axis
         self.time_axis = np.linspace(0, self.window_seconds, self.buffer_size)
@@ -114,6 +138,9 @@ class AcquisitionApp:
         
         # Start Sync Thread
         self.start_sync_thread()
+        
+        # Start Processed Stream Discovery
+        self.start_processed_discovery()
 
         # Start main loop
         self.main_loop()
@@ -329,6 +356,31 @@ class AcquisitionApp:
         
         threading.Thread(target=loop, daemon=True).start()
 
+    def start_processed_discovery(self):
+        """Start a thread to find the processed stream"""
+        if not LSL_AVAILABLE:
+            return
+
+        def discover():
+            self.searching_processed = True
+            print("[App] 🔍 Searching for Processed Stream...")
+            while self.processed_inlet is None:
+                streams = pylsl.resolve_streams(wait_time=1.0)
+                for s in streams:
+                    if s.name() == self.processed_stream_name:
+                        try:
+                            self.processed_inlet = pylsl.StreamInlet(s, max_buflen=5)
+                            print(f"[App] ✅ Connected to {self.processed_stream_name}")
+                            # Only enable toggle if we found the stream
+                            self.root.after(0, lambda: self.view_toggle.config(state="normal"))
+                            return
+                        except Exception as e:
+                            print(f"[App] Error connecting to processed stream: {e}")
+                time.sleep(2)
+            self.searching_processed = False
+
+        threading.Thread(target=discover, daemon=True).start()
+
     def update_config_from_remote(self, new_config):
         """Update UI and internal state from remote config"""
         self.config = new_config
@@ -383,8 +435,26 @@ class AcquisitionApp:
         scrollbar.pack(side="right", fill="y")
         return scrollable_frame
 
+        return scrollable_frame
+
     def _build_control_panel(self, parent):
         """Build left control panel"""
+        # GRAPH CONTROLS
+        view_frame = ttk.LabelFrame(parent, text="👁️ View Settings", padding=10)
+        view_frame.pack(fill="x", pady=5)
+        
+        self.view_var = tk.StringVar(value="Raw")
+        self.view_toggle = ttk.Checkbutton(
+            view_frame, 
+            text="Show Processed Data", 
+            variable=self.view_var, 
+            onvalue="Processed", 
+            offvalue="Raw",
+            state="disabled", # Disabled until stream found
+            command=self.on_view_toggle
+        )
+        self.view_toggle.pack(anchor="w")
+        
         # CONNECTION SECTION
         conn_frame = ttk.LabelFrame(parent, text="🔌 Connection", padding=10)
         conn_frame.pack(fill="x", pady=5)
@@ -481,6 +551,14 @@ class AcquisitionApp:
         ttk.Label(status_frame, text="Recording:").pack(anchor="w")
         self.recording_label = ttk.Label(status_frame, text="❌ No", foreground="red")
         self.recording_label.pack(anchor="w")
+
+    def on_view_toggle(self):
+        """Handle view toggle change"""
+        mode = self.view_var.get()
+        print(f"[App] View switched to: {mode}")
+        if mode == "Processed" and self.processed_inlet is None:
+            messagebox.showwarning("Stream Not Found", "Processed stream not connected yet.")
+            self.view_var.set("Raw")
 
     def _build_graph_panel(self, parent):
         """Build right graph panel - FIXED: No overlapping labels"""
@@ -603,7 +681,10 @@ class AcquisitionApp:
         # Clear buffers
         self.ch0_buffer.fill(0)
         self.ch1_buffer.fill(0)
+        self.ch0_proc_buffer.fill(0)
+        self.ch1_proc_buffer.fill(0)
         self.buffer_ptr = 0
+        self.proc_buffer_ptr = 0
         
         # Update UI
         self.start_btn.config(state="disabled")
@@ -704,51 +785,75 @@ class AcquisitionApp:
     def main_loop(self):
         """Main acquisition and update loop (Optimized)"""
         try:
-            if self.is_acquiring and not self.is_paused and self.serial_reader:
-                # 1. Collect all packets currently in queue
-                batch_raw = []
-                while True:
-                    pkt_bytes = self.serial_reader.get_packet(timeout=0)
-                    if pkt_bytes is None:
-                        break
-                    batch_raw.append(pkt_bytes)
-                
-                if batch_raw:
-                    # 2. Batch parse
-                    ctrs, r0, r1 = self.packet_parser.parse_batch(batch_raw)
+            if self.is_acquiring and not self.is_paused:
+                # --- RAW DATA Handling ---
+                if self.serial_reader:
+                    # 1. Collect all packets currently in queue
+                    batch_raw = []
+                    while True:
+                        pkt_bytes = self.serial_reader.get_packet(timeout=0)
+                        if pkt_bytes is None:
+                            break
+                        batch_raw.append(pkt_bytes)
                     
-                    # 3. Convert to uV
-                    u0 = adc_to_uv(r0)
-                    u1 = adc_to_uv(r1)
-                    
-                    # 4. Push to LSL in chunk
-                    if LSL_AVAILABLE and self.lsl_raw_uV:
-                        chunk = np.column_stack((u0, u1)).tolist()
-                        self.lsl_raw_uV.push_chunk(chunk)
-                    
-                    # 5. Update buffers efficiently
-                    n = len(u0)
-                    for i in range(n):
-                        # Simple duplicate check (last counter)
-                        if self.last_packet_counter == ctrs[i]:
-                            continue
-                        self.last_packet_counter = ctrs[i]
+                    if batch_raw:
+                        # 2. Batch parse
+                        ctrs, r0, r1 = self.packet_parser.parse_batch(batch_raw)
                         
-                        self.ch0_buffer[self.buffer_ptr] = u0[i]
-                        self.ch1_buffer[self.buffer_ptr] = u1[i]
-                        self.buffer_ptr = (self.buffer_ptr + 1) % self.buffer_size
+                        # 3. Convert to uV
+                        u0 = adc_to_uv(r0)
+                        u1 = adc_to_uv(r1)
                         
-                        if self.is_recording:
-                            # Still using dict for now, but batching parser already saved time
-                            self.session_data.append({
-                                "packet_seq": int(ctrs[i]),
-                                "ch0_raw_adc": int(r0[i]),
-                                "ch1_raw_adc": int(r1[i]),
-                                "ch0_uv": float(u0[i]),
-                                "ch1_uv": float(u1[i])
-                            })
+                        # 4. Push to LSL in chunk
+                        if LSL_AVAILABLE and self.lsl_raw_uV:
+                            chunk = np.column_stack((u0, u1)).tolist()
+                            self.lsl_raw_uV.push_chunk(chunk)
                         
-                        self.packet_count += 1
+                        # 5. Update buffers efficiently
+                        n = len(u0)
+                        for i in range(n):
+                            # Simple duplicate check (last counter)
+                            if self.last_packet_counter == ctrs[i]:
+                                continue
+                            self.last_packet_counter = ctrs[i]
+                            
+                            self.ch0_buffer[self.buffer_ptr] = u0[i]
+                            self.ch1_buffer[self.buffer_ptr] = u1[i]
+                            self.buffer_ptr = (self.buffer_ptr + 1) % self.buffer_size
+                            
+                            if self.is_recording:
+                                # Still using dict for now, but batching parser already saved time
+                                self.session_data.append({
+                                    "packet_seq": int(ctrs[i]),
+                                    "ch0_raw_adc": int(r0[i]),
+                                    "ch1_raw_adc": int(r1[i]),
+                                    "ch0_uv": float(u0[i]),
+                                    "ch1_uv": float(u1[i])
+                                })
+                            
+                            self.packet_count += 1
+
+            # --- PROCESSED DATA Handling ---
+            if self.processed_inlet:
+                try:
+                    # Pull all available processed samples
+                    chunk, timestamps = self.processed_inlet.pull_chunk(timeout=0.0)
+                    if chunk:
+                        n_proc = len(chunk)
+                        chunk = np.array(chunk) # Shape (n_samples, n_channels)
+                        
+                        # Assuming CH0 is index 0, CH1 is index 1
+                        p0 = chunk[:, 0]
+                        p1 = chunk[:, 1]
+                        
+                        # Update Processed Buffers
+                        for i in range(n_proc):
+                            self.ch0_proc_buffer[self.proc_buffer_ptr] = p0[i]
+                            self.ch1_proc_buffer[self.proc_buffer_ptr] = p1[i]
+                            self.proc_buffer_ptr = (self.proc_buffer_ptr + 1) % self.buffer_size
+                            
+                except Exception as e:
+                    print(f"[App] Processed stream error: {e}")
 
             # Update UI labels
             self.packet_label.config(text=str(self.packet_count))
@@ -770,12 +875,27 @@ class AcquisitionApp:
                 return
 
             # Rotate buffers so latest data is on the right
-            ch0_rotated = np.roll(self.ch0_buffer, -self.buffer_ptr)
-            ch1_rotated = np.roll(self.ch1_buffer, -self.buffer_ptr)
+            if self.view_var.get() == "Processed" and self.processed_inlet:
+                # Use Processed Buffers
+                ch0_rotated = np.roll(self.ch0_proc_buffer, -self.proc_buffer_ptr)
+                ch1_rotated = np.roll(self.ch1_proc_buffer, -self.proc_buffer_ptr)
+                color0, color1 = 'darkred', 'darkblue' # Darker colors for processed
+                title_suffix = " (Processed)"
+            else:
+                # Use Raw Buffers
+                ch0_rotated = np.roll(self.ch0_buffer, -self.buffer_ptr)
+                ch1_rotated = np.roll(self.ch1_buffer, -self.buffer_ptr)
+                color0, color1 = 'red', 'blue'
+                title_suffix = " (Raw)"
             
             # Update line data
             self.line0.set_ydata(ch0_rotated)
+            self.line0.set_color(color0)
+            self.ax0.set_title(f"📍 Channel 0 (EMG){title_suffix}")
+            
             self.line1.set_ydata(ch1_rotated)
+            self.line1.set_color(color1)
+            self.ax1.set_title(f"📍 Channel 1 (EOG){title_suffix}")
             
             # Redraw only when needed
             self.canvas.draw_idle()

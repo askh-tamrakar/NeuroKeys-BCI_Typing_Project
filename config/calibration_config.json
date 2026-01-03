@@ -4,7 +4,11 @@
     "enabled": true,
     "offset": 0.0,
     "gain": 1.0,
+<<<<<<< HEAD
     "calibration_date": "2025-12-25",
+=======
+    "calibration_date": "2025-12-27",
+>>>>>>> EOG-done
     "calibrated": true
   },
   "ch1": {
@@ -12,7 +16,11 @@
     "enabled": true,
     "offset": 0.0,
     "gain": 1.0,
+<<<<<<< HEAD
     "calibration_date": "2025-12-25",
+=======
+    "calibration_date": "2025-12-27",
+>>>>>>> EOG-done
     "calibrated": true
   }
 }

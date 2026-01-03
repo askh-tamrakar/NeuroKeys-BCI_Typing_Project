@@ -38,7 +38,6 @@ try:
     from .emg_processor import EMGFilterProcessor
     from .eog_processor import EOGFilterProcessor
     from .eeg_processor import EEGFilterProcessor
-    from ..utils.config import config_manager
 except ImportError:
     print("[Router] Running from different context, using local imports")
     import sys
@@ -46,17 +45,65 @@ except ImportError:
     from src.processing.emg_processor import EMGFilterProcessor
     from src.processing.eog_processor import EOGFilterProcessor
     from src.processing.eeg_processor import EEGFilterProcessor
-    from src.utils.config import config_manager
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+CONFIG_PATH = PROJECT_ROOT / "config" / "sensor_config.json"
+FILTER_CONFIG_PATH = PROJECT_ROOT / "config" / "filter_config.json"
 RAW_STREAM_NAME = "BioSignals-Raw-uV"
 PROCESSED_STREAM_NAME = "BioSignals-Processed"
 RELOAD_INTERVAL = 2.0
 DEFAULT_SR = 512
 
+
 def load_config() -> dict:
-    """Load fully merged config using ConfigManager."""
-    return config_manager.get_all_configs()
+    """Load config from sensor_config.json and filter_config.json with safe fallback defaults."""
+    defaults = {
+        "sampling_rate": DEFAULT_SR,
+        "channel_mapping": {
+            "ch0": {"sensor": "EMG", "enabled": True},
+            "ch1": {"sensor": "EOG", "enabled": True}
+        },
+        "filters": {
+            "EMG": {"cutoff": 20.0, "order": 4, "notch_enabled": True, "notch_freq": 50, "bandpass_enabled": True, "bandpass_low": 20, "bandpass_high": 250},
+            "EOG": {"cutoff": 10.0, "order": 4},
+            "EEG": {
+                "filters": [
+                    {"type": "notch", "freq": 50.0, "Q": 30},
+                    {"type": "bandpass", "low": 0.5, "high": 45.0, "order": 4}
+                ]
+            }
+        }
+    }
+    
+    cfg = defaults.copy()
+
+    # 1. Load Sensor Config
+    if CONFIG_PATH.exists():
+        try:
+            with open(CONFIG_PATH, "r") as f:
+                sensor_cfg = json.load(f)
+            
+            if "sampling_rate" in sensor_cfg:
+                cfg["sampling_rate"] = sensor_cfg["sampling_rate"]
+            if "channel_mapping" in sensor_cfg:
+                cfg["channel_mapping"] = sensor_cfg["channel_mapping"]
+        except Exception as e:
+            print(f"[Router] Failed to load sensor config ({CONFIG_PATH}): {e} — using defaults")
+
+    # 2. Load Filter Config
+    if FILTER_CONFIG_PATH.exists():
+        try:
+            with open(FILTER_CONFIG_PATH, "r") as f:
+                filter_cfg = json.load(f)
+            
+            if "filters" in filter_cfg:
+                cfg["filters"] = filter_cfg["filters"]
+        except Exception as e:
+            print(f"[Router] Failed to load filter config ({FILTER_CONFIG_PATH}): {e} — using defaults")
+    else:
+        print(f"[Router] Filter config not found ({FILTER_CONFIG_PATH}) — using defaults")
+
+    return cfg
 
 
 def get_config_hash(cfg: dict) -> str:

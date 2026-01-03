@@ -1,81 +1,51 @@
 class BlinkDetector:
     """
-    Classifies EOG events (SingleBlink, DoubleBlink, Rest) based on configurable profiles.
+    Classifies an event as a blink based on extracted features.
+    Refactored to focus on robust amplitude and duration checks, removing brittle shape checks.
     """
     
     def __init__(self, config: dict):
-        self.config = config
-        self._load_config()
+        eog_cfg = config.get("features", {}).get("EOG", {})
         
-    def _load_config(self):
-        # Expecting structure: {"EOG": {"SingleBlink": {...}, "DoubleBlink": {...}}}
-        # Config merger puts feature_config content under 'features' key if using facade
-        features = self.config.get("features", {})
-        self.profiles = features.get("EOG", {})
-        if not self.profiles:
-            # Fallback for direct feature config usage
-            self.profiles = self.config.get("EOG", {})
+        # Simplified thresholds
+        self.min_duration = eog_cfg.get("min_duration_ms", 50.0)    # Relaxed from 100
+        self.max_duration = eog_cfg.get("max_duration_ms", 800.0)   # Relaxed from 600
+        self.threshold_amp = eog_cfg.get("amp_threshold", 1.5)      # Primary detector
         
-    def detect(self, features: dict) -> str | None:
+        # Debounce/Cooldown state
+        self.last_detection_ts = 0.0
+        self.cooldown_seconds = 0.5  # Ignore second phase of blink (biphasic)
+        
+    def detect(self, features: dict) -> bool:
         """
-        Classify event based on multi-feature profiles (SingleBlink vs DoubleBlink).
+        Decision logic based on features.
         """
-        if not features or not self.profiles:
-            return None
+        if not features:
+            return False
             
-        scores = {}
-        # Threshold for validation (all ranges must match for a strict detector, or high % match)
-        # For blinks, we usually want strict compliance with key metrics (duration, amplitude)
+        dur = features.get("duration_ms", 0)
+        amp = features.get("amplitude", 0)
+        ts = features.get("timestamp", 0)
         
-        candidates = []
-        
-        for event_name, profile in self.profiles.items():
-            # if event_name == "Rest": continue - Enabled Rest for calibration detection
-                
-            match_count = 0
-            total_features = 0
-            mismatches = []
-            
-            for feat_name, range_val in profile.items():
-                if feat_name in features and isinstance(range_val, list) and len(range_val) == 2:
-                    total_features += 1
-                    val = features[feat_name]
-                    
-                    # Handle None or NaN features if any
-                    if val is None:
-                        continue
-                        
-                    is_match = range_val[0] <= val <= range_val[1]
-                    if is_match:
-                        match_count += 1
-                    else:
-                        mismatches.append(f"{feat_name}={val:.2f} (Expected {range_val})")
-            
-            # Debug print
-            # print(f"Checking {event_name}: matches={match_count}/{total_features} | Misses: {mismatches}")
+        # Cooldown Check
+        if (ts - self.last_detection_ts) < self.cooldown_seconds:
+             return False
 
-            # Strict Policy: All configured constraints must pass for a blink
-            if total_features > 0:
-                score = match_count / total_features
-                if score == 1.0:
-                    candidates.append(event_name)
-                    # print(f"[BlinkDetector] Matched {event_name}")
-                # else:
-                    # print(f"[BlinkDetector] Failed {event_name}: {', '.join(mismatches)}")
+        # Robust Logic:
+        # 1. Amplitude must be significant (already checked by extractor, but verified here)
+        # 2. Duration must be physiological (not a spike, not a drift)
         
-        if len(candidates) == 1:
-            print(f"[BlinkDetector] [OK] Detected: {candidates[0]}")
-            return candidates[0]
-        elif len(candidates) > 1:
-            # Ambiguity: Choose one with "more" features or prioritize specific types?
-            # Or maybe just return the first one (Double usually encompasses Single in amplitude but Duration distinguishes them)
-            # If duration ranges are disjoint, this shouldn't happen often.
-            print(f"[BlinkDetector] [AMBIGUOUS] Matched: {candidates}. Returning {candidates[0]}")
-            return candidates[0]
+        is_valid_amp = amp >= (self.threshold_amp * 0.8) # Allow slightly lower if extractor caught it
+        is_valid_duration = self.min_duration <= dur <= self.max_duration
+        
+        if is_valid_amp and is_valid_duration:
+            self.last_detection_ts = ts
+            return True
             
-        return None
+        return False
 
     def update_config(self, config: dict):
-        self.config = config
-        self._load_config()
-
+        eog_cfg = config.get("features", {}).get("EOG", {})
+        self.min_duration = eog_cfg.get("min_duration_ms", self.min_duration)
+        self.max_duration = eog_cfg.get("max_duration_ms", self.max_duration)
+        self.threshold_amp = eog_cfg.get("amp_threshold", self.threshold_amp)
