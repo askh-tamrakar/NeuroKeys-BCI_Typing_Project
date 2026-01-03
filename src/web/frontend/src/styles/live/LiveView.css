@@ -7,14 +7,10 @@
   padding: 0rem 1rem 0rem 1rem;
   background-color: var(--bg);
   border-radius: 0.5rem;
-  overflow-y: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  overflow: hidden; /* Hide overflow to prevent scrolling */
 }
 
-.live-view-container::-webkit-scrollbar {
-  display: none;
-}
+/* Scrollbar styles removed as they are no longer needed on main container */
 
 .controls-container {
   display: flex;
@@ -26,6 +22,7 @@
   padding: 0.75rem;
   border-radius: 0.5rem;
   backdrop-filter: blur(4px);
+  flex-shrink: 0; /* Keep controls fixed size */
 }
 
 .separator {
@@ -148,10 +145,11 @@
 }
 
 .channel-wrapper {
-  flex-shrink: 0;
+  min-height: 0; /* Important for scrollable content inside flex items if needed, or just to allow shrinking */
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+  overflow: hidden; /* Ensure chart stays within bounds */
 }
 
 .channel-header {

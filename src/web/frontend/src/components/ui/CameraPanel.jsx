@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Camera, CameraOff, SwitchCamera } from 'lucide-react';
+// Imports
+import { Camera, CameraOff, SwitchCamera, ZoomIn } from 'lucide-react';
 import '../../styles/ui/CameraPanel.css';
 
 const CameraPanel = () => {
@@ -8,6 +9,7 @@ const CameraPanel = () => {
     const [devices, setDevices] = useState([]);
     const [currentDeviceIndex, setCurrentDeviceIndex] = useState(0);
     const [isCameraOn, setIsCameraOn] = useState(true);
+    const [zoom, setZoom] = useState(1);
 
     // Enumerate devices on mount
     useEffect(() => {
@@ -124,17 +126,36 @@ const CameraPanel = () => {
 
             {/* Video or Placeholder */}
             {isCameraOn ? (
-                <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="camera-video"
-                />
+                <div className="relative overflow-hidden rounded-[10px] border border-border" style={{ aspectRatio: '16/9' }}>
+                    <video
+                        ref={videoRef}
+                        autoPlay
+                        playsInline
+                        muted
+                        className="w-full h-full object-cover bg-black"
+                        style={{ transform: `scaleX(-1) scale(${zoom})`, transformOrigin: 'center center' }}
+                    />
+                </div>
             ) : (
                 <div className="camera-placeholder">
                     <CameraOff size={32} className="text-muted opacity-20" />
                     <span className="text-xs text-muted font-mono mt-2 uppercase tracking-widest">Camera Off</span>
+                </div>
+            )}
+
+            {/* Zoom Control */}
+            {isCameraOn && (
+                <div className="flex items-center gap-2 mt-3 px-1">
+                    <ZoomIn size={16} className="text-muted" />
+                    <input
+                        type="range"
+                        min="1"
+                        max="3"
+                        step="0.1"
+                        value={zoom}
+                        onChange={(e) => setZoom(parseFloat(e.target.value))}
+                        className="w-full h-1.5 bg-border rounded-lg appearance-none cursor-pointer accent-primary"
+                    />
                 </div>
             )}
         </div>

@@ -52,8 +52,8 @@ EVENT_STREAM_NAME = "BioSignals-Events"
 app = Flask(
     __name__,
     template_folder=str(TEMPLATES_DIR) if TEMPLATES_DIR.exists() else None,
-    static_folder=str(TEMPLATES_DIR / "assets") if (TEMPLATES_DIR / "assets").exists() else None,
-    static_url_path="/assets"
+    static_folder=str(TEMPLATES_DIR) if TEMPLATES_DIR.exists() else None,
+    static_url_path=""
 )
 
 # CORS configuration
@@ -1194,17 +1194,17 @@ def main():
 
     # Start SocketIO server
     print("[WebServer] 🚀 Starting WebSocket server...")
-    print(f"[WebServer] 📡 WebSocket endpoint: ws://localhost:5000")
-    print(f"[WebServer] 🌐 Dashboard: http://localhost:5000")
-    print(f"[WebServer] 📊 API: http://localhost:5000/api/status")
-    print(f"[WebServer] ⚙️  Config: http://localhost:5000/api/config")
+    print(f"[WebServer] 📡 WebSocket endpoint: ws://localhost:1972")
+    print(f"[WebServer] 🌐 Dashboard: http://localhost:1972")
+    print(f"[WebServer] 📊 API: http://localhost:1972/api/status")
+    print(f"[WebServer] ⚙️  Config: http://localhost:1972/api/config")
     print()
 
     try:
         socketio.run(
             app,
             host='0.0.0.0',
-            port=5000,
+            port=1972,
             debug=False,
             allow_unsafe_werkzeug=True
         )

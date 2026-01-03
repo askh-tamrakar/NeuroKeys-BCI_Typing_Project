@@ -1,5 +1,5 @@
 // SignalChart.jsx
-import React, { useMemo, useRef } from 'react'
+import React, { useMemo, useRef, useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceDot, ReferenceArea } from 'recharts'
 import { ChartSpline, ZoomIn, ArrowUpDown, ArrowDown, ArrowUp, Sigma, Clock, Minus, Plus, Ban } from 'lucide-react'
 import ElasticSlider from '../ui/ElasticSlider'
@@ -185,29 +185,25 @@ export default function SignalChart({
     return result
   }, [finalYDomain, tickCount])
 
-  const colorInputRef = useRef(null)
-
   return (
     <div className={`signal-chart-container ${disabled ? 'signal-chart-disabled' : ''}`}>
 
       <div className="chart-header">
-        <h3 className="chart-title">
+        <h3 className="chart-title" style={{ position: 'relative' }}>
           <button
-            onClick={() => colorInputRef.current?.click()}
+            onClick={(e) => {
+              e.preventDefault()
+              if (onColorChange) {
+                const currentIndex = DEFAULT_PALETTE.indexOf(color)
+                const nextIndex = (currentIndex + 1) % DEFAULT_PALETTE.length
+                onColorChange(DEFAULT_PALETTE[nextIndex === -1 ? 0 : nextIndex])
+              }
+            }}
             className="p-1 hover:bg-muted/10 rounded-full transition-colors cursor-pointer group"
-            title="Change Graph Color"
+            title="Click to Cycle Color"
           >
             <ChartSpline size={32} strokeWidth={3} style={{ color: color }} className="mr-2 group-hover:scale-110 transition-transform" />
           </button>
-
-          {/* Hidden Color Input */}
-          <input
-            type="color"
-            ref={colorInputRef}
-            value={color.length === 7 ? color : "#3b82f6"} // Ensure valid hex code if possible, though browser handles rgb usually
-            onChange={(e) => onColorChange && onColorChange(e.target.value)}
-            style={{ display: 'none' }}
-          />
 
           {graphNo}
           <span className="channel-color-dot" style={{ backgroundColor: color }}></span>
@@ -289,7 +285,7 @@ export default function SignalChart({
             </>
           )}
         </div>
-      </div>
+      </div >
 
       <div className="chart-area" style={{ height: height }}>
         <ResponsiveContainer width="100%" height="100%">

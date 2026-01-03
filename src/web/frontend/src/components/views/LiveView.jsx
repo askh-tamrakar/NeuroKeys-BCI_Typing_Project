@@ -363,31 +363,37 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
     <div className="live-view-container">
       <div className="h-[94px] shrink-0" />
       {/* Controls */}
-      <div className="controls-container">
-        <div className="separator"></div>
+      <div className="controls-container flex flex-row justify-between">
         {/* Zoom controls removed from here, moved to per-channel */}
 
         {/* Recording Controls */}
-        <div className="record-controls">
-
-
-          <button
-            onClick={toggleRecording}
-            disabled={isSaving || (activeChannels.length === 0 && !isRecording)}
-            className={`record-btn ${isRecording ? 'recording' : 'idle'}`}
-          >
-            {isRecording ? <Square size={16} fill="currentColor" /> : <Radio size={16} />}
-            {isRecording ? `STOP (${recordingTime}s)` : 'REC'}
-          </button>
-
-          {isSaving && <div className="saving-indicator">SAVING...</div>}
+        <div className="flex flex-row gap-2">
+          <div className="record-controls">
+            <button
+              onClick={toggleRecording}
+              disabled={isSaving || (activeChannels.length === 0 && !isRecording)}
+              className={`record-btn ${isRecording ? 'recording' : 'idle'}`}
+            >
+              {isRecording ? <Square size={16} fill="currentColor" /> : <Radio size={16} />}
+              {isRecording ? `STOP (${recordingTime}s)` : 'REC'}
+            </button>
+            {isSaving && <div className="saving-indicator">SAVING...</div>}
+          </div>
+          <div>
+            {isRecording && <div className="recording-status">● RECORDING IN PROGRESS</div>}
+          </div>
         </div>
 
-        <div className="mode-indicator">
-          {/* Global range indicator removed or can be replaced with something else */}
-          <span className="text-primary font-bold flex items-center gap-2 w-auto"><Settings2 size={16} /> MODE:</span> INDEPENDENT SCALING
-
+        <div className="flex flex-row gap-2">
+          <div className="mode-indicator">
+            {/* Global range indicator removed or can be replaced with something else */}
+            <span className="text-primary font-bold flex items-center gap-2 w-auto"><Settings2 size={16} /> MODE:</span>
+            INDEPENDENT SCALING
+            <span className='separator'></span>
+            <div className="flex items-center gap-2"><span className="text-purple-400 flex items-center gap-1"><Wifi size={16} /> Stream</span>: {wsData?.raw?.stream_name || 'Disconnected'}</div>
+          </div>
         </div>
+
       </div>
 
       {Array.from({ length: 2 }).map((_, chIdx) => {
@@ -419,7 +425,7 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
               channelColors={{ active: currentChColor, history: chColorHist }} // Pass dynamic color
               timeWindowMs={currentTimeWindow}
               color={currentChColor} // Main color prop
-              height={300}
+              height="100%"
               showGrid={showGrid}
               scannerX={sweep.scanner}
               annotations={mapAnn(annotations.filter(a => a.channel === `ch${chIdx}`), currentTimeWindow)}
@@ -437,16 +443,6 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
           </div>
         )
       })}
-
-      <div className="footer-info">
-        {/* Footer Info */}
-        <div className="footer-row">
-          <div><span className="text-primary font-bold">MODE:</span> INDEPENDENT SCALING</div>
-          {isRecording && <div className="recording-status">● RECORDING IN PROGRESS</div>}
-        </div>
-        <div className="flex items-center gap-2"><span className="text-purple-400 flex items-center gap-1"><Wifi size={14} /> Stream</span>: {wsData?.raw?.stream_name || 'Disconnected'}</div>
-      </div>
-      <div className="h-[30px] shrink-0" />
     </div>
   )
 }
