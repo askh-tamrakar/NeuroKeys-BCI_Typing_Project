@@ -5,7 +5,7 @@ const AuthContext = createContext(null)
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
-  
+
   useEffect(() => {
     const token = localStorage.getItem('bci_token')
     const userData = localStorage.getItem('bci_user')
@@ -14,8 +14,8 @@ export function AuthProvider({ children }) {
     }
     setLoading(false)
   }, [])
-  
-  const login = (email, password) => {
+
+  const login = async (email, password) => {
     const mockUser = { email, name: email.split('@')[0], avatar: '👤' }
     const mockToken = 'mock_jwt_token_' + Date.now()
     localStorage.setItem('bci_token', mockToken)
@@ -23,13 +23,13 @@ export function AuthProvider({ children }) {
     setUser(mockUser)
     return Promise.resolve(mockUser)
   }
-  
+
   const logout = () => {
     localStorage.removeItem('bci_token')
     localStorage.removeItem('bci_user')
     setUser(null)
   }
-  
+
   return (
     <AuthContext.Provider value={{ user, loading, login, logout }}>
       {children}

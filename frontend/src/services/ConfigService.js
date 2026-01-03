@@ -7,6 +7,14 @@ const CONFIG_DEFAULTS = {
             enabled: true
         },
         ch1: {
+            sensor: 'EMG',
+            enabled: true
+        },
+        ch2: {
+            sensor: 'EOG',
+            enabled: true
+        },
+        ch3: {
             sensor: 'EEG',
             enabled: true
         }
@@ -43,7 +51,7 @@ const CONFIG_DEFAULTS = {
         showGrid: true,
         scannerX: 0
     },
-    num_channels: 2
+    num_channels: 4
 }
 
 export const ConfigService = {
@@ -58,7 +66,21 @@ export const ConfigService = {
             const cached = localStorage.getItem(CONFIG_KEY)
             if (cached) {
                 console.log('✅ Config loaded from localStorage')
-                const config = JSON.parse(cached)
+                let config = JSON.parse(cached)
+
+                // --- FIX: Ensure all 4 channels exist even if cache is old ---
+                // We merge with defaults to fill missing keys (like ch2, ch3)
+                if (config.channel_mapping) {
+                    if (!config.channel_mapping.ch2) config.channel_mapping.ch2 = { sensor: 'EMG', enabled: true }
+                    if (!config.channel_mapping.ch3) config.channel_mapping.ch3 = { sensor: 'EMG', enabled: true }
+                } else {
+                    config = { ...CONFIG_DEFAULTS, ...config }
+                }
+
+                // Ensure num_channels is up to date
+                config.num_channels = Math.max(config.num_channels || 2, 4)
+
+                // -----------------------------------------------------------
 
                 // Background sync with backend (non-blocking)
                 this.syncFromBackend().catch(e => {
