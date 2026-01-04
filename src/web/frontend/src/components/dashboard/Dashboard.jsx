@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
+import { useTheme } from '../../contexts/ThemeContext'
 import { Github, UserPlus } from 'lucide-react'
 import LiveDashboard from '../views/LiveDashboard'
 import DinoView from '../views/DinoView'
@@ -11,7 +12,6 @@ import MLTrainingView from '../views/MLTrainingView'
 import SettingsView from '../views/SettingsView'
 
 import '../../styles/App.css';
-import themePresets from '../themes/presets';
 import ScrollStack, { ScrollStackItem } from '../ui/ScrollStack';
 import PillNav from '../ui/PillNav';
 import Pill from '../ui/Pill';
@@ -29,43 +29,38 @@ export default function Dashboard() {
   const [wsModalOpen, setWsModalOpen] = useState(false)
   const [localWs, setLocalWs] = useState(import.meta.env.VITE_WS_URL || 'ws://localhost:1972')
   const [ngrokWs, setNgrokWs] = useState(import.meta.env.VITE_NGROK_WS_URL || 'wss://squelchingly-thriftier-cecile.ngrok-free.dev')
-  const [theme, setTheme] = React.useState(() => localStorage.getItem('theme') || 'theme-yellow-dark');
-  const [navColors, setNavColors] = React.useState({ base: '#000000', pill: '#ffffff', pillText: '#000000', hoverText: '#ffffff' });
+
+  const { themes, currentTheme, currentThemeId, setTheme } = useTheme();
   const [authView, setAuthView] = useState(null);
   const isAuthenticated = !!user;
 
-  // Theme management
-  React.useEffect(() => {
-    const root = document.documentElement;
-    const existing = Array.from(root.classList).filter(c => c.startsWith('theme-'));
-    if (existing.length) root.classList.remove(...existing);
-    root.classList.add(theme);
-    localStorage.setItem('theme', theme);
-
-    const cs = getComputedStyle(root);
-    const accent = cs.getPropertyValue('--accent').trim() || '#121212';
-    const text = cs.getPropertyValue('--text').trim() || '#ffffff';
-    setNavColors({ base: accent, pill: text, pillText: accent, hoverText: text });
-  }, [theme]);
+  // Derived nav colors from current theme
+  const navColors = React.useMemo(() => ({
+    base: currentTheme.colors['--accent'],
+    pill: currentTheme.colors['--text'],
+    pillText: currentTheme.colors['--accent'],
+    hoverText: currentTheme.colors['--text']
+  }), [currentTheme]);
 
   // Pill size calculation
   const [pillSize, setPillSize] = React.useState({ width: 0, height: 0 });
   React.useEffect(() => {
+    if (!themes.length) return;
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
 
     context.font = '16px Inter, sans-serif';
 
     let maxWidth = 0;
-    themePresets.forEach(p => {
-      const metrics = context.measureText(p.label);
+    themes.forEach(p => {
+      const metrics = context.measureText(p.name);
       const w = metrics.width;
       if (w > maxWidth) maxWidth = w;
     });
 
     const paddedWidth = Math.ceil(maxWidth + 60);
     setPillSize({ width: paddedWidth, height: 40 });
-  }, []);
+  }, [themes]);
 
   useEffect(() => {
     connect()
@@ -108,29 +103,29 @@ export default function Dashboard() {
       href: '#',
       menu: ({ close }) => (
         <ScrollStack>
-          {themePresets.map((p) => (
-            <ScrollStackItem key={p.value}>
+          {themes.map((t) => (
+            <ScrollStackItem key={t.id}>
               <Pill
-                label={p.label}
+                label={t.name}
                 activeHref={`#${currentPage}`}
                 pillHeight={42}
                 pillWidth={pillSize.width}
-                active={theme === p.value}
+                active={currentThemeId === t.id}
                 onClick={() => {
-                  setTheme(p.value);
+                  setTheme(t.id);
                   close?.();
                 }}
-                baseColor={p.accent}
-                pillColor={p.text}
-                hoveredTextColor={p.text}
-                pillTextColor={p.accent}
+                baseColor={t.colors['--accent']}
+                pillColor={t.colors['--text']}
+                hoveredTextColor={t.colors['--text']}
+                pillTextColor={t.colors['--accent']}
               />
             </ScrollStackItem>
           ))}
         </ScrollStack>
       )
     }
-  ], [theme, pillSize.width]);
+  ], [themes, currentThemeId, pillSize.width, currentPage]);
 
   return (
     <div className="app-root">

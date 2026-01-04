@@ -9,6 +9,7 @@ import numpy as np
 import sys
 import os
 import queue
+import subprocess # Added explicit import
 
 
 # Ensure we can import sibling packages
@@ -88,6 +89,7 @@ class AcquisitionApp:
         self.session_start_time = None
         self.packet_count = 0
         self.last_packet_counter = None
+        self.pipeline_process = None # Process handle for filter_router
 
         # Processed Data Stream State
         self.processed_inlet = None
@@ -328,15 +330,25 @@ class AcquisitionApp:
         def loop():
             import urllib.request
             last_check = 0
+            consecutive_errors = 0
+            
             while True:
-                time.sleep(2)
+                # Exponential backoff for sleep: 2s normal, up to 30s max on error
+                sleep_time = min(30, 2 * (1.5 ** consecutive_errors)) if consecutive_errors > 0 else 2
+                time.sleep(sleep_time)
+                
                 try:
                     # Don't interrupt if we are actively recording/streaming to avoid jitter
                     # (optional trade-off)
                     
                     url = "http://localhost:5000/api/config"
-                    with urllib.request.urlopen(url, timeout=1) as response:
+                    # Short timeout to avoid blocking threads for long
+                    with urllib.request.urlopen(url, timeout=0.2) as response:
                         if response.status == 200:
+                            if consecutive_errors > 0:
+                                print(f"[App] ✅ Sync connection restored")
+                            consecutive_errors = 0
+                            
                             new_cfg = json.loads(response.read().decode())
                             
                             # Simple check if channel mapping changed
@@ -345,11 +357,13 @@ class AcquisitionApp:
                             
                             if json.dumps(current_map, sort_keys=True) != json.dumps(new_map, sort_keys=True):
                                 print(f"[App] 🔄 Remote config change detected!")
-                                print(f"[App] Local: {current_map}")
-                                print(f"[App] Remote: {new_map}")
                                 self.root.after(0, self.update_config_from_remote, new_cfg)
+                                
                 except Exception as e:
-                    print(f"[App] Sync loop error: {e}")
+                    consecutive_errors += 1
+                    # Only print the error the first time it happens (or if it changes), to avoid spam
+                    if consecutive_errors == 1:
+                        print(f"[App] Sync loop warning: {e} (Supressing further errors until connection restored)")
         
         threading.Thread(target=loop, daemon=True).start()
 
@@ -622,6 +636,11 @@ class AcquisitionApp:
             return
         
         self.serial_reader.start()
+        
+        # Send Handshake to trigger "Connected" state (Yellow LED)
+        time.sleep(0.1) # Brief pause to ensure thread is ready
+        self.serial_reader.send_command("WHORU")
+        
         self.is_connected = True
         
         # Update UI
@@ -779,9 +798,52 @@ class AcquisitionApp:
         
         messagebox.showinfo("Saved", f"Saved {len(self.session_data)} packets to {filepath}")
 
+
     def main_loop(self):
         """Main acquisition and update loop (Optimized)"""
         try:
+            # --- 0. CHECK ARDUINO MESSAGES (Switches) ---
+            if self.serial_reader:
+                while True:
+                    msg = self.serial_reader.get_message()
+                    if not msg:
+                        break
+                    
+                    # DEBUG: Print everything we get
+                    print(f"[App] DEBUG: Processing message '{msg}'")
+
+                    if "SWITCH_2_PRESSED" in msg:
+                        # SW2: Start Acquisition & Pipeline
+                        print("[App] 🎮 Switch 2 Pressed -> Starting...")
+                        if not self.is_acquiring:
+                            self.start_acquisition()
+                        
+                        # Start Pipeline if not running
+                        if self.pipeline_process is None:
+                            try:
+                                print("[App] 🚀 Launching Full Pipeline (pipeline.py)...")
+                                # Launch independent python process
+                                cmd = [sys.executable, "pipeline.py"]
+                                self.pipeline_process = subprocess.Popen(
+                                    cmd, 
+                                    cwd=str(self.save_path.parent.parent.parent), # Project root
+                                    creationflags=subprocess.CREATE_NEW_CONSOLE # Windows specific: Open new terminal
+                                )
+                            except Exception as e:
+                                print(f"[App] ❌ Failed to launch pipeline: {e}")
+
+                    elif "SWITCH_1_PRESSED" in msg:
+                        # SW1: Stop Acquisition & Pipeline
+                        print("[App] 🛑 Switch 1 Pressed -> Stopping...")
+                        if self.is_acquiring:
+                            self.stop_acquisition()
+                        
+                        # Kill Pipeline
+                        if self.pipeline_process:
+                            print("[App] 💀 Killing Filter Pipeline...")
+                            self.pipeline_process.terminate()
+                            self.pipeline_process = None
+
             if self.is_acquiring and not self.is_paused:
                 # --- RAW DATA Handling ---
                 if self.serial_reader:

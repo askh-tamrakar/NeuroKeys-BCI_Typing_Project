@@ -145,7 +145,9 @@ def evaluate_saved_eog_model():
             "accuracy": acc,
             "confusion_matrix": cm,
             "n_samples": len(df),
-            "model_path": str(MODEL_PATH)
+            "model_path": str(MODEL_PATH),
+            "feature_importances": dict(zip(EOG_FEATURES, model.feature_importances_.tolist())),
+            "tree_structure": tree_to_json(model.estimators_[0], EOG_FEATURES)
         }
     except Exception as e:
         return {"error": f"Inference error: {str(e)}"}

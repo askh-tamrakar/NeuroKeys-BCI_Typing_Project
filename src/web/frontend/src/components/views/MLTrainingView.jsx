@@ -528,7 +528,7 @@ export default function MLTrainingView() {
                         </div>
                     </div>
 
-                    {/* Controls */}
+                    {/* Data Collection (Gestures) */}
                     <div className="card mb-8">
                         <div className="flex justify-between items-start mb-4">
                             <h2 className="text-xl font-semibold text-[var(--text)]">Data Collection (Gestures)</h2>
@@ -536,27 +536,95 @@ export default function MLTrainingView() {
                                 Delete All Data
                             </button>
                         </div>
+
+                        {/* Channel Selector */}
+                        <div className="mb-4 p-3 bg-[var(--bg)] rounded border border-[var(--border)]">
+                            <label className="text-xs text-[var(--muted)] uppercase font-bold block mb-2">Target Channel</label>
+                            {emgChannels.length > 1 ? (
+                                <select
+                                    className="w-full bg-[var(--surface)] text-[var(--text)] p-2 rounded border border-[var(--border)]"
+                                    value={selectedEmgChannel || ''}
+                                    onChange={(e) => setSelectedEmgChannel(e.target.value)}
+                                >
+                                    {emgChannels.map(ch => (
+                                        <option key={ch.id} value={ch.id}>{ch.label} (CH{ch.id})</option>
+                                    ))}
+                                </select>
+                            ) : emgChannels.length === 1 ? (
+                                <div className="text-[var(--accent)] font-mono">{emgChannels[0].label} (CH{emgChannels[0].id})</div>
+                            ) : (
+                                <div className="text-red-500 font-bold">⚠️ No EMG Channels Configured</div>
+                            )}
+                        </div>
+
+                        {/* Recording & Pacer UI */}
+                        {emgStatus.recording ? (
+                            <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4 animate-fadeIn">
+                                <div className="p-4 bg-red-900/20 border border-red-500 rounded-lg flex flex-col items-center justify-center">
+                                    <div className="text-red-400 font-bold text-lg mb-2 animate-pulse">🔴 RECORDING ACTIVE</div>
+                                    <div className="text-[var(--muted)] mb-4 text-center">
+                                        Recording Label: <strong className="text-white">{emgStatus.current_label}</strong>
+                                        <br />
+                                        <span className="text-xs">Ch: {emgStatus.channel_index !== null ? emgStatus.channel_index : 'Default'}</span>
+                                    </div>
+                                    <button
+                                        onClick={stopEmgRec}
+                                        className="btn bg-red-600 hover:bg-red-700 w-full"
+                                    >
+                                        STOP RECORDING
+                                    </button>
+                                </div>
+                                <Pacer actionText={emgStatus.current_label || "ACTION!"} />
+                            </div>
+                        ) : null}
+
+                        {/* Status Cards */}
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
+                            {['Rest', 'Rock', 'Paper', 'Scissors'].map((label, idx) => (
+                                <div key={label} className="card bg-[var(--bg)] borderable p-4 flex flex-col items-center justify-center">
+                                    <div className="text-xs text-[var(--muted)] uppercase font-bold text-center mb-1">{label}</div>
+                                    <div className="text-2xl font-bold text-[var(--text)]">
+                                        {emgStatus.counts[String(idx)] || 0}
+                                    </div>
+                                    <div className="text-[10px] text-[var(--muted)]">samples</div>
+                                </div>
+                            ))}
+                            <div className={`card flex flex-col items-center justify-center borderable p-4 ${emgStatus.recording ? 'bg-red-500/10 border-red-500 animate-pulse' : 'bg-[var(--bg)]'}`}>
+                                <div className="text-xs text-[var(--muted)] uppercase font-bold text-center mb-1">Status</div>
+                                <div className={`font-bold ${emgStatus.recording ? 'text-red-500' : 'text-[var(--text)]'}`}>
+                                    {emgStatus.recording ? 'RECORDING' : 'IDLE'}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Recording Buttons */}
+                        {!emgStatus.recording ? (
+                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                                {['Rest', 'Rock', 'Paper', 'Scissors'].map((label, idx) => (
+                                    <button
+                                        key={idx}
+                                        onClick={() => startEmgRec(idx)}
+                                        className="btn h-12 bg-[var(--surface)] hover:bg-[var(--primary)]/20 border border-[var(--border)] hover:border-[var(--primary)] text-[var(--text)] font-bold transition-all"
+                                    >
+                                        Record {label}
+                                    </button>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="p-4 bg-[var(--bg)]/50 border border-[var(--border)] border-dashed rounded-xl flex justify-center">
+                                <button
+                                    onClick={stopEmgRec}
+                                    className="btn bg-red-600 hover:bg-red-500 w-full max-w-md animate-pulse shadow-lg"
+                                >
+                                    STOP RECORDING
+                                </button>
+                            </div>
+                        )}
+                        <p className="text-xs text-[var(--muted)] mt-4">* Select a gesture to interpret and record 3-second windows.</p>
                     </div>
 
-                    {/* Channel Selector */}
-                    <div className="mb-4 p-3 bg-[var(--bg)] rounded border border-[var(--border)]">
-                        <label className="text-xs text-[var(--muted)] uppercase font-bold block mb-2">Target Channel</label>
-                        {emgChannels.length > 1 ? (
-                            <select
-                                className="w-full bg-[var(--surface)] text-[var(--text)] p-2 rounded border border-[var(--border)]"
-                                value={selectedEmgChannel || ''}
-                                onChange={(e) => setSelectedEmgChannel(e.target.value)}
-                            >
-                                {emgChannels.map(ch => (
-                                    <option key={ch.id} value={ch.id}>{ch.label} (CH{ch.id})</option>
-                                ))}
-                            </select>
-                        ) : emgChannels.length === 1 ? (
-                            <div className="text-[var(--accent)] font-mono">{emgChannels[0].label} (CH{emgChannels[0].id})</div>
-                        ) : (
-                            <div className="text-red-500 font-bold">⚠️ No EMG Channels Configured</div>
-                        )}
-                    </div>
+                    {/* Channel Selector Placeholder (Removed from here, moved inside card) */}
+
 
 
 
@@ -583,11 +651,11 @@ export default function MLTrainingView() {
                     {/* Evals */}
                     <div className="card mb-8 flex justify-between items-center">
                         <div>
-                            <h2 className="text-xl font-semibold text-[var(--text)]">Evaluate Saved Model</h2>
-                            <p className="text-sm text-[var(--muted)]">Test `emg_rf.joblib` against full dataset.</p>
+                            <h2 className="text-xl font-semibold text-[var(--text)]">Saved Model & Trees</h2>
+                            <p className="text-sm text-[var(--muted)]">Load `emg_rf.joblib`, view decision trees, and evaluate against dataset.</p>
                         </div>
                         <button onClick={evalEmg} disabled={evalLoading} className="btn bg-[var(--surface)] text-[var(--text)] border border-[var(--border)]">
-                            {evalLoading ? 'Evaluating...' : 'Run Full Evaluation'}
+                            {evalLoading ? 'Loading...' : 'Load Model & Evaluate'}
                         </button>
                     </div>
 
@@ -767,11 +835,11 @@ export default function MLTrainingView() {
                         {/* Evals */}
                         <div className="card mb-8 flex justify-between items-center">
                             <div>
-                                <h2 className="text-xl font-semibold text-[var(--text)]">Evaluate Saved Model</h2>
-                                <p className="text-sm text-[var(--muted)]">Test `eog_rf.joblib` against full dataset.</p>
+                                <h2 className="text-xl font-semibold text-[var(--text)]">Saved Model & Trees</h2>
+                                <p className="text-sm text-[var(--muted)]">Load `eog_rf.joblib`, view decision trees, and evaluate against dataset.</p>
                             </div>
                             <button onClick={evalEog} disabled={evalLoading} className="btn bg-[var(--surface)] text-[var(--text)] border border-[var(--border)]">
-                                {evalLoading ? 'Evaluating...' : 'Run Full Evaluation'}
+                                {evalLoading ? 'Loading...' : 'Load Model & Evaluate'}
                             </button>
                         </div>
 
