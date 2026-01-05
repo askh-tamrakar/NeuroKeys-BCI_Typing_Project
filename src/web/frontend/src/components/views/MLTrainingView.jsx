@@ -68,6 +68,28 @@ export default function MLTrainingView() {
     const [emgChannels, setEmgChannels] = useState([]);
     const [selectedEmgChannel, setSelectedEmgChannel] = useState(null);
 
+    // --- SESSIONS ---
+    const [availableSessions, setAvailableSessions] = useState([]);
+    const [selectedSession, setSelectedSession] = useState(null);
+
+    // Fetch sessions
+    const fetchSessions = async () => {
+        try {
+            // Assume activeTab determines sensor
+            const sensor = activeTab;
+            const res = await fetch(`http://localhost:1972/api/sessions/${sensor}`);
+            if (res.ok) {
+                const list = await res.json();
+                setAvailableSessions(list);
+            }
+        } catch (e) {
+            console.error("Failed to list sessions:", e);
+        }
+    };
+
+    useEffect(() => {
+        fetchSessions();
+    }, [activeTab]);
 
     // Initial Fetch: Config for channels
     useEffect(() => {
@@ -235,7 +257,12 @@ export default function MLTrainingView() {
         setLoading(true); setError(null); setEmgResult(null);
         try {
             const res = await fetch('http://localhost:1972/api/train-emg-rf', {
-                method: 'POST', body: JSON.stringify(emgParams), headers: { 'Content-Type': 'application/json' }
+                method: 'POST',
+                body: JSON.stringify({
+                    ...emgParams,
+                    table_name: selectedSession || undefined
+                }),
+                headers: { 'Content-Type': 'application/json' }
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Training failed');
@@ -630,22 +657,41 @@ export default function MLTrainingView() {
 
 
                     {/* Controls */}
-                    <div className="card mb-8 grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-                        <div>
-                            <label className="block text-sm font-medium mb-1 text-[var(--text)]">Results (Trees)</label>
-                            <input type="number" name="n_estimators" value={emgParams.n_estimators} onChange={handleEmgChange} className="input" />
+                    <div className="card mb-8">
+                        <div className="mb-4 p-3 bg-bg/50 border border-border rounded flex flex-col gap-2">
+                            <label className="text-sm font-bold text-text">Training Data Source (Session)</label>
+                            <div className="flex gap-2">
+                                <select
+                                    className="flex-1 bg-surface text-text border border-border rounded p-2"
+                                    value={selectedSession || ''}
+                                    onChange={(e) => setSelectedSession(e.target.value)}
+                                >
+                                    <option value="">All Data / Default (emg_windows)</option>
+                                    {availableSessions.map(s => (
+                                        <option key={s.table} value={s.table}>{s.name}</option>
+                                    ))}
+                                </select>
+                                <button onClick={fetchSessions} className="p-2 border border-border rounded hover:bg-surface">🔄</button>
+                            </div>
                         </div>
-                        <div>
-                            <label className="block text-sm font-medium mb-1 text-[var(--text)]">Max Depth</label>
-                            <input type="number" name="max_depth" value={emgParams.max_depth} onChange={handleEmgChange} className="input" />
+
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                            <div>
+                                <label className="block text-sm font-medium mb-1 text-[var(--text)]">Results (Trees)</label>
+                                <input type="number" name="n_estimators" value={emgParams.n_estimators} onChange={handleEmgChange} className="input" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium mb-1 text-[var(--text)]">Max Depth</label>
+                                <input type="number" name="max_depth" value={emgParams.max_depth} onChange={handleEmgChange} className="input" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium mb-1 text-[var(--text)]">Test Size</label>
+                                <input type="number" step="0.05" name="test_size" value={emgParams.test_size} onChange={handleEmgChange} className="input" />
+                            </div>
+                            <button onClick={trainEmg} disabled={loading} className="btn w-full h-[46px]">
+                                {loading ? 'Training...' : 'Train EMG Model'}
+                            </button>
                         </div>
-                        <div>
-                            <label className="block text-sm font-medium mb-1 text-[var(--text)]">Test Size</label>
-                            <input type="number" step="0.05" name="test_size" value={emgParams.test_size} onChange={handleEmgChange} className="input" />
-                        </div>
-                        <button onClick={trainEmg} disabled={loading} className="btn w-full h-[46px]">
-                            {loading ? 'Training...' : 'Train EMG Model'}
-                        </button>
                     </div>
 
                     {/* Evals */}
@@ -857,3 +903,4 @@ export default function MLTrainingView() {
         </div>
     );
 }
+

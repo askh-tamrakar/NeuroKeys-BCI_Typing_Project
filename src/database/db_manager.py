@@ -1,31 +1,50 @@
 
 import sqlite3
-import json
+import re
 from pathlib import Path
 from typing import Dict, Optional, List
 
 class DatabaseManager:
-    def __init__(self, db_path: Optional[Path] = None):
-        if db_path is None:
-            # Default to data/processed/EMG/emg_data.db
-            project_root = Path(__file__).resolve().parent.parent.parent
-            self.db_path = project_root / "data" / "processed" / "EMG" / "emg_data.db"
-        else:
-            self.db_path = db_path
-            
-        # Ensure directory exists
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+    def __init__(self):
+        project_root = Path(__file__).resolve().parent.parent.parent
+        data_dir = project_root / "data" / "processed"
         
-        self._init_db()
+        self.db_paths = {
+            'EMG': data_dir / "EMG" / "emg_data.db",
+            'EOG': data_dir / "EOG" / "eog_data.db",
+            'EEG': data_dir / "EEG" / "eeg_data.db"
+        }
         
-    def _init_db(self):
-        """Initialize database tables."""
-        conn = self.connect()
-        cursor = conn.cursor()
+        # Ensure directories exist
+        for path in self.db_paths.values():
+            path.parent.mkdir(parents=True, exist_ok=True)
         
-        # Create emg_windows table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS emg_windows (
+        self._init_dbs()
+        
+    def connect(self, sensor_type: str):
+        """Get database connection for specific sensor."""
+        sensor = sensor_type.upper()
+        if sensor not in self.db_paths:
+            raise ValueError(f"Unknown sensor type: {sensor}")
+        return sqlite3.connect(self.db_paths[sensor])
+
+    def _init_dbs(self):
+        """Initialize all databases."""
+        # EMG
+        conn = self.connect('EMG')
+        self._create_emg_table(conn.cursor(), "emg_windows")
+        conn.commit()
+        conn.close()
+
+        # EOG
+        conn = self.connect('EOG')
+        self._create_eog_table(conn.cursor(), "eog_windows")
+        conn.commit()
+        conn.close()
+
+    def _create_emg_table(self, cursor, table_name):
+        cursor.execute(f'''
+            CREATE TABLE IF NOT EXISTS {table_name} (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 rms REAL NOT NULL,
                 mav REAL NOT NULL,
@@ -43,83 +62,11 @@ class DatabaseManager:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        
-        # Create index on label for faster counting
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_label ON emg_windows(label)')
+        cursor.execute(f'CREATE INDEX IF NOT EXISTS idx_{table_name}_label ON {table_name}(label)')
 
-        # Initialize EOG table
-        self._init_eog_table(cursor)
-        
-        conn.commit()
-        conn.close()
-        
-    def connect(self):
-        """Get database connection."""
-        return sqlite3.connect(self.db_path)
-        
-    def insert_window(self, features: Dict[str, float], label: int, session_id: str = None) -> bool:
-        """Insert a feature window into the database."""
-        try:
-            conn = self.connect()
-            cursor = conn.cursor()
-            
-            cursor.execute('''
-                INSERT INTO emg_windows (
-                    rms, mav, zcr, var, wl, peak, range, iemg, 
-                    entropy, energy,
-                    label, session_id, timestamp
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                features.get('rms', 0),
-                features.get('mav', 0),
-                features.get('zcr', 0),
-                features.get('var', 0),
-                features.get('wl', 0),
-                features.get('peak', 0),
-                features.get('range', 0),  
-                features.get('iemg', 0),
-                features.get('entropy', 0),
-                features.get('energy', 0),
-                label,
-                session_id,
-                features.get('timestamp', 0)
-            ))
-            
-            conn.commit()
-            conn.close()
-            return True
-        except Exception as e:
-            print(f"[DatabaseManager] ❌ Error inserting window: {e}")
-            return False
-            
-    def get_counts_by_label(self) -> Dict[str, int]:
-        """Get count of samples per label."""
-        try:
-            conn = self.connect()
-            cursor = conn.cursor()
-            
-            cursor.execute('SELECT label, COUNT(*) FROM emg_windows GROUP BY label')
-            rows = cursor.fetchall()
-            
-            counts = {
-                "0": 0, "1": 0, "2": 0, "3": 0
-            }
-            
-            for label, count in rows:
-                counts[str(label)] = count
-                
-            conn.close()
-            return counts
-        except Exception as e:
-            print(f"[DatabaseManager] ❌ Error getting counts: {e}")
-            return {}
-
-    # --- EOG Support ---
-
-    def _init_eog_table(self, cursor):
-        """Create eog_windows table."""
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS eog_windows (
+    def _create_eog_table(self, cursor, table_name):
+        cursor.execute(f'''
+            CREATE TABLE IF NOT EXISTS {table_name} (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 amplitude REAL NOT NULL,
                 duration_ms REAL NOT NULL,
@@ -135,78 +82,120 @@ class DatabaseManager:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_eog_label ON eog_windows(label)')
+        cursor.execute(f'CREATE INDEX IF NOT EXISTS idx_{table_name}_label ON {table_name}(label)')
 
-    def insert_eog_window(self, features: Dict[str, float], label: int, session_id: str = None) -> bool:
-        """Insert an EOG feature window."""
-        try:
-            conn = self.connect()
-            cursor = conn.cursor()
+    def sanitize_table_name(self, name: str) -> str:
+        safe = re.sub(r'[^a-zA-Z0-9]', '_', name)
+        return safe.strip('_')
+
+    def create_session_table(self, sensor_type: str, session_name: str) -> str:
+        safe_suffix = self.sanitize_table_name(session_name)
+        if not safe_suffix: safe_suffix = "default"
+        
+        sensor = sensor_type.upper()
+        table_name = f"{sensor.lower()}_session_{safe_suffix}"
+        
+        conn = self.connect(sensor)
+        cursor = conn.cursor()
+        
+        if sensor == "EMG":
+            self._create_emg_table(cursor, table_name)
+        elif sensor == "EOG":
+            self._create_eog_table(cursor, table_name)
             
-            cursor.execute('''
-                INSERT INTO eog_windows (
+        conn.commit()
+        conn.close()
+        return table_name
+
+    def get_session_tables(self, sensor_type: str) -> List[str]:
+        sensor = sensor_type.upper()
+        conn = self.connect(sensor)
+        cursor = conn.cursor()
+        prefix = f"{sensor.lower()}_session_"
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE ?", (f"{prefix}%",))
+        rows = cursor.fetchall()
+        conn.close()
+        return [r[0] for r in rows]
+
+    # --- EMG Methods ---
+    def insert_window(self, features: Dict[str, float], label: int, session_id: str = None, table_name: str = "emg_windows") -> bool:
+        try:
+            conn = self.connect('EMG')
+            cursor = conn.cursor()
+            cursor.execute(f'''
+                INSERT INTO {table_name} (
+                    rms, mav, zcr, var, wl, peak, range, iemg, entropy, energy,
+                    label, session_id, timestamp
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                features.get('rms', 0), features.get('mav', 0), features.get('zcr', 0),
+                features.get('var', 0), features.get('wl', 0), features.get('peak', 0),
+                features.get('range', 0), features.get('iemg', 0), features.get('entropy', 0),
+                features.get('energy', 0), label, session_id, features.get('timestamp', 0)
+            ))
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"[DB] EMG Insert Error: {e}")
+            return False
+
+    def get_counts_by_label(self, table_name: str = "emg_windows") -> Dict[str, int]:
+        try:
+            conn = self.connect('EMG')
+            cursor = conn.cursor()
+            cursor.execute(f'SELECT label, COUNT(*) FROM {table_name} GROUP BY label')
+            rows = cursor.fetchall()
+            counts = { "0": 0, "1": 0, "2": 0, "3": 0 }
+            for l, c in rows: counts[str(l)] = c
+            conn.close()
+            return counts
+        except: return { "0": 0, "1": 0, "2": 0, "3": 0 }
+        
+    def clear_table(self, sensor_type: str, table_name: str):
+        try:
+            conn = self.connect(sensor_type)
+            cursor = conn.cursor()
+            cursor.execute(f'DELETE FROM {table_name}')
+            conn.commit()
+            conn.close()
+            return {"status": "success"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    # --- EOG Methods ---
+    def insert_eog_window(self, features: Dict[str, float], label: int, session_id: str = None, table_name: str = "eog_windows") -> bool:
+        try:
+            conn = self.connect('EOG')
+            cursor = conn.cursor()
+            cursor.execute(f'''
+                INSERT INTO {table_name} (
                     amplitude, duration_ms, rise_time_ms, fall_time_ms, 
                     asymmetry, peak_count, kurtosis, skewness,
                     label, session_id, timestamp
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
-                features.get('amplitude', 0),
-                features.get('duration_ms', 0),
-                features.get('rise_time_ms', 0),
-                features.get('fall_time_ms', 0),
-                features.get('asymmetry', 0),
-                int(features.get('peak_count', 0)),
-                features.get('kurtosis', 0),
-                features.get('skewness', 0),
-                label,
-                session_id,
-                features.get('timestamp', 0)
+                features.get('amplitude', 0), features.get('duration_ms', 0), features.get('rise_time_ms', 0),
+                features.get('fall_time_ms', 0), features.get('asymmetry', 0), int(features.get('peak_count', 0)),
+                features.get('kurtosis', 0), features.get('skewness', 0), label, session_id, features.get('timestamp', 0)
             ))
-            
             conn.commit()
             conn.close()
             return True
         except Exception as e:
-            print(f"[DatabaseManager] ❌ Error inserting EOG window: {e}")
+            print(f"[DB] EOG Insert Error: {e}")
             return False
 
-    def get_eog_counts(self) -> Dict[str, int]:
-        """Get count of EOG samples per label."""
+    def get_eog_counts(self, table_name: str = "eog_windows") -> Dict[str, int]:
         try:
-            conn = self.connect()
+            conn = self.connect('EOG')
             cursor = conn.cursor()
-            
-            # Ensure table exists (deferred init if needed)
-            self._init_eog_table(cursor)
-            
-            cursor.execute('SELECT label, COUNT(*) FROM eog_windows GROUP BY label')
+            cursor.execute(f'SELECT label, COUNT(*) FROM {table_name} GROUP BY label')
             rows = cursor.fetchall()
-            
-            # Map labels to 0 (Rest), 1 (Single), 2 (Double)
             counts = {"0": 0, "1": 0, "2": 0}
-            for label, count in rows:
-                counts[str(label)] = count
-                
+            for l, c in rows: counts[str(l)] = c
             conn.close()
             return counts
-        except Exception as e:
-            print(f"[DatabaseManager] ❌ Error getting EOG counts: {e}")
-            return {}
+        except: return {"0": 0, "1": 0, "2": 0}
 
-    def clear_eog_data(self):
-        """Delete all records from eog_windows table."""
-        try:
-            conn = self.connect()
-            cursor = conn.cursor()
-            cursor.execute('DELETE FROM eog_windows')
-            conn.commit()
-            conn.close()
-            print("[DatabaseManager] 🗑️  Cleared all EOG data")
-            return {"status": "success"}
-        except Exception as e:
-            msg = f"Error clearing EOG data: {e}"
-            print(f"[DatabaseManager] ❌ {msg}")
-            return {"error": msg}
-
-# Singleton instance
 db_manager = DatabaseManager()

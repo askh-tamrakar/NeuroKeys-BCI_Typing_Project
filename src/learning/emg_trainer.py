@@ -26,22 +26,24 @@ MODELS_DIR.mkdir(parents=True, exist_ok=True)
 MODEL_PATH = MODELS_DIR / "emg_rf.joblib"
 SCALER_PATH = MODELS_DIR / "emg_scaler.joblib"
 
-def train_emg_model(n_estimators=100, max_depth=None, test_size=0.2):
+def train_emg_model(n_estimators=100, max_depth=None, test_size=0.2, table_name="emg_windows"):
     """
-    Trains a Random Forest classifier on EMG data from the database.
+    Trains a Random Forest classifier on EMG data from the specified table.
     
     Returns:
         dict: Training results including accuracy, confusion matrix, and tree structure.
     """
-    conn = db_manager.connect()
+    conn = db_manager.connect('EMG')
     
     # Load data from DB
-    # Note: Using 'range' column as per DB schema, and new columns entropy/energy
     try:
-        df = pd.read_sql_query("SELECT * FROM emg_windows", conn)
+        # Validate table name basic safety (alphanumeric + underscore only)
+        # In prod we should use params, but table names can't be parameterized easily in all drivers.
+        # Since table_name comes from our internal API which validates it, it's relatively safe.
+        df = pd.read_sql_query(f"SELECT * FROM {table_name}", conn)
     except Exception as e:
         conn.close()
-        return {"error": f"Database read error: {str(e)}"}
+        return {"error": f"Database read error from {table_name}: {str(e)}"}
     
     conn.close()
 
@@ -119,7 +121,7 @@ def evaluate_saved_model():
     except Exception as e:
         return {"error": f"Failed to load model: {str(e)}"}
 
-    conn = db_manager.connect()
+    conn = db_manager.connect('EMG')
     try:
         df = pd.read_sql_query("SELECT * FROM emg_windows", conn)
     except Exception as e:

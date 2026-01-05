@@ -1,5 +1,6 @@
 import subprocess
 import sys
+import argparse
 import time
 import signal
 import threading
@@ -71,28 +72,35 @@ def shutdown_handler(signum, frame):
     sys.exit(0)
 
 def main():
+    parser = argparse.ArgumentParser(description="Brain-To-Brain System Orchestrator")
+    parser.add_argument("-s", "--skip-build", action="store_true", help="Skip frontend build")
+    args = parser.parse_args()
+
     print("  Brain-To-Brain System Orchestrator (Pipeline)")
     print("  Sequential Launch: Filter -> Feature -> Web Server")
     print("=" * 60)
     print()
 
-    # --- FRONTEND CHECK ---
-    frontend_dir = Path("src/web/frontend").resolve()
-    
-    print("[System] 🔨 Building frontend...")
-    try:
-        # Install dependencies if node_modules missing (still good to check this to avoid errors)
-        if not (frontend_dir / "node_modules").exists():
-                print("[System] Installing npm dependencies...")
-                subprocess.run(["npm", "install"], cwd=frontend_dir, shell=True, check=True)
+    if not args.skip_build:
+        # --- FRONTEND CHECK ---
+        frontend_dir = Path("src/web/frontend").resolve()
         
-        # Always Build
-        print("[System] Running npm run build...")
-        subprocess.run(["npm", "run", "build"], cwd=frontend_dir, shell=True, check=True)
-        print("\033[92m[System] Frontend built successfully!\033[0m")
-    except Exception as e:
-        print(f"\033[91m[System] Frontend build FAILED: {e}\033[0m")
-        print("[System] Continuing anyway (Web Server might fail to serve UI)...")
+        print("[System] 🔨 Building frontend...")
+        try:
+            # Install dependencies if node_modules missing (still good to check this to avoid errors)
+            if not (frontend_dir / "node_modules").exists():
+                    print("[System] Installing npm dependencies...")
+                    subprocess.run(["npm", "install"], cwd=frontend_dir, shell=True, check=True)
+            
+            # Always Build
+            print("[System] Running npm run build...")
+            subprocess.run(["npm", "run", "build"], cwd=frontend_dir, shell=True, check=True)
+            print("\033[92m[System] Frontend built successfully!\033[0m")
+        except Exception as e:
+            print(f"\033[91m[System] Frontend build FAILED: {e}\033[0m")
+            print("[System] Continuing anyway (Web Server might fail to serve UI)...")
+    else:
+        print("[System] ⏩ Skipping frontend build...")
 
 
 

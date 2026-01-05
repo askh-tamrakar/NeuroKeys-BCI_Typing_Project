@@ -148,14 +148,15 @@ export const CalibrationApi = {
      * @param {string} sensorType
      * @param {{action: string, channel?: number, samples: number[], timestamps?: number[]}} windowPayload
      */
-    async sendWindow(sensorType, windowPayload) {
+    async sendWindow(sensorType, windowPayload, sessionName = null) {
         try {
             const body = {
                 sensor: sensorType,
                 action: windowPayload.action,
                 channel: windowPayload.channel,
                 samples: windowPayload.samples,
-                timestamps: windowPayload.timestamps
+                timestamps: windowPayload.timestamps,
+                session_name: sessionName // Pass session name
             };
 
             const resp = await fetch('/api/window', {

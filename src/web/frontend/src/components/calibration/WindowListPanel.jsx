@@ -1,4 +1,5 @@
 import React from 'react';
+import AnimatedList from '../ui/AnimatedList';
 
 /**
  * WindowListPanel
@@ -20,8 +21,31 @@ export default function WindowListPanel({
 }) {
     const stats = {
         total: windows.length,
-        correct: windows.filter(w => w.status === 'correct').length,
-        missed: windows.filter(w => w.status === 'incorrect').length,
+        saved: windows.filter(w => w.status === 'saved' || w.status === 'correct').length,
+    };
+
+    // Helper for sparkline
+    const Sparkline = ({ data, color = '#10b981' }) => {
+        if (!data || data.length < 2) return null;
+        const width = 100;
+        const height = 30;
+        const min = Math.min(...data);
+        const max = Math.max(...data);
+        const range = max - min || 1;
+
+        // Downsample for performance if needed
+        const step = Math.ceil(data.length / 50);
+        const points = data.filter((_, i) => i % step === 0).map((v, i, arr) => {
+            const x = (i / (arr.length - 1)) * width;
+            const y = height - ((v - min) / range) * height;
+            return `${x},${y}`;
+        }).join(' ');
+
+        return (
+            <svg width={width} height={height} className="overflow-visible">
+                <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" />
+            </svg>
+        );
     };
 
     // Recommended samples based on sensor
@@ -45,80 +69,68 @@ export default function WindowListPanel({
                 </h3>
                 <div className="flex gap-4 text-[10px] font-mono text-muted uppercase tracking-widest">
                     <span>Total: <span className="text-text">{stats.total}</span></span>
-                    <span>Correct: <span className="text-emerald-400">{stats.correct}</span></span>
-                    <span>Missed: <span className="text-red-400">{stats.missed}</span></span>
+                    <span>Saved: <span className="text-emerald-400">{stats.saved}</span></span>
                 </div>
             </div>
 
             {/* Window list - scrollable */}
-            <div className="flex-grow min-h-0 overflow-y-auto p-2 space-y-2 scrollbar-thin scrollbar-thumb-border hover:scrollbar-thumb-primary/50 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
+            <div className="flex-grow min-h-0 overflow-hidden relative p-0">
                 {windows.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-40 text-muted text-sm italic opacity-50 space-y-2">
                         <span className="text-2xl">📉</span>
                         <span>No windows collected yet</span>
                     </div>
                 ) : (
-                    windows.slice().reverse().map((win) => ( // Show newest first
-                        <div
-                            key={win.id}
-                            className={`p-3 rounded-lg border transition-all cursor-pointer group hover:translate-x-1 ${win.status === 'correct'
-                                ? 'bg-emerald-500/5 border-emerald-500/20 hover:border-emerald-500/40'
-                                : win.status === 'incorrect'
-                                    ? 'bg-red-500/5 border-red-500/20 hover:border-red-500/40'
-                                    : 'bg-bg border-border hover:border-primary/50'
-                                }`}
-                            onClick={() => onHighlight?.(win)}
-                        >
-                            <div className="flex justify-between items-start mb-2">
-                                <div className="flex flex-col">
-                                    <span className="font-bold text-sm text-text uppercase">{win.label}</span>
-                                    <span className="text-[10px] text-muted font-mono">
-                                        {(win.endTime - win.startTime).toFixed(0)}ms duration
-                                    </span>
-                                </div>
-                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); onMarkMissed?.(win.id); }}
-                                        className="p-1 hover:bg-red-500/10 rounded text-red-400 text-xs transition-colors"
-                                        title="Flag as missed signal"
-                                    >
-                                        🚩
-                                    </button>
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); onDelete?.(win.id); }}
-                                        className="p-1 hover:bg-red-500/10 rounded text-red-400 text-xs transition-colors"
-                                        title="Delete window"
-                                    >
-                                        🗑️
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/30">
-                                <div className="flex items-center gap-2">
-                                    <span className={`w-1.5 h-1.5 rounded-full ${win.status === 'correct' ? 'bg-emerald-500' :
-                                        win.status === 'incorrect' ? 'bg-red-500' : 'bg-gray-400'
-                                        }`}></span>
-                                    <span className="text-[10px] text-muted uppercase font-bold">
-                                        Prediction: <span className={win.predictedLabel === win.label ? 'text-emerald-400' : 'text-red-400'}>
-                                            {win.predictedLabel || 'None'}
+                    <AnimatedList
+                        items={windows.slice().reverse()}
+                        className="h-full"
+                        itemClassName="p-0 bg-transparent border-0 mb-2"
+                        onItemSelect={(win) => onHighlight?.(win)}
+                        renderItem={(win, index, isSelected) => (
+                            <div
+                                className={`p-3 rounded-lg border transition-all cursor-pointer group hover:translate-x-1 ${win.status === 'saved' || win.status === 'correct'
+                                    ? 'bg-emerald-500/5 border-emerald-500/20 hover:border-emerald-500/40'
+                                    : win.status === 'pending'
+                                        ? 'bg-yellow-500/5 border-yellow-500/20 hover:border-yellow-500/40'
+                                        : 'bg-red-500/5 border-red-500/20 hover:border-red-500/40'
+                                    }`}
+                            >
+                                <div className="flex justify-between items-center mb-2">
+                                    <div className="flex flex-col">
+                                        <span className="font-bold text-sm text-text uppercase">{win.label}</span>
+                                        <span className="text-[10px] text-muted font-mono">
+                                            {(win.endTime - win.startTime).toFixed(0)}ms
                                         </span>
-                                    </span>
+                                    </div>
+                                    <div className="flex gap-1 opacity-100">
+                                        {/* Graph */}
+                                        <div className="w-24 h-8 mr-2">
+                                            <Sparkline data={win.samples} color={win.status === 'pending' ? '#eab308' : (win.status === 'saved' ? '#10b981' : '#6b7280')} />
+                                        </div>
+
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); onDelete?.(win.id); }}
+                                            className="p-1 hover:bg-red-500/10 rounded text-red-400 text-xs transition-colors"
+                                            title="Delete window"
+                                        >
+                                            🗑️
+                                        </button>
+                                    </div>
                                 </div>
 
-                                <div className="text-[11px] font-mono">
-                                    {(() => {
-                                        const wp = windowProgress?.[win.id];
-                                        if (!wp) return null;
-                                        if (wp.status === 'saving') return <span className="text-yellow-400 animate-pulse">Saving…</span>;
-                                        if (wp.status === 'saved') return <span className="text-emerald-400">✓</span>;
-                                        if (wp.status === 'error') return <span className="text-red-400">Error</span>;
-                                        return null;
-                                    })()}
+                                {/* Status Indicator (Simplified) */}
+                                <div className="flex items-center gap-1 mt-1">
+                                    <span className={`w-1.5 h-1.5 rounded-full ${win.status === 'saved' ? 'bg-emerald-500' :
+                                        win.status === 'pending' ? 'bg-yellow-500' : 'bg-gray-400'
+                                        }`}></span>
+                                    <span className={`text-[10px] uppercase ${win.status === 'pending' ? 'text-yellow-500' : 'text-muted'
+                                        }`}>
+                                        {win.status === 'saved' ? 'Saved' : win.status}
+                                    </span>
                                 </div>
                             </div>
-                        </div>
-                    ))
+                        )}
+                    />
                 )}
             </div>
 

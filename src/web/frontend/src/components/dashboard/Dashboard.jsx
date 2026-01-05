@@ -22,12 +22,12 @@ export default function Dashboard() {
   const [currentPage, setCurrentPage] = useState('live')
   // const [sidebarOpen, setSidebarOpen] = useState(true)
   const { status, lastMessage, lastConfig, lastEvent, latency, connect, disconnect, sendMessage, currentUrl } = useWebSocket(
-    'ws://localhost:1972' // Prioritize local development port
+    'http://localhost:5000' // Prioritize local development port
   )
 
   // WebSocket modal state and preset URLs
   const [wsModalOpen, setWsModalOpen] = useState(false)
-  const [localWs, setLocalWs] = useState(import.meta.env.VITE_WS_URL || 'ws://localhost:1972')
+  const [localWs, setLocalWs] = useState(import.meta.env.VITE_WS_URL || 'http://localhost:5000')
   const [ngrokWs, setNgrokWs] = useState(import.meta.env.VITE_NGROK_WS_URL || 'wss://squelchingly-thriftier-cecile.ngrok-free.dev')
 
   const { themes, currentTheme, currentThemeId, setTheme } = useTheme();

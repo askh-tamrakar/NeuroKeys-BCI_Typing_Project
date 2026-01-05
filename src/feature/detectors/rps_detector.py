@@ -55,7 +55,7 @@ class RPSDetector:
                 row.append(val)
             
             # 2. Scale
-            X = np.array([row]) # Shape (1, 10)
+            X = pd.DataFrame([row], columns=feature_cols)
             X_scaled = self.scaler.transform(X)
             
             # 3. Predict PROBABILITY first to check confidence
