@@ -4,11 +4,11 @@ class SoundHandler {
     constructor() {
         // --- Howler Sounds (New) ---
         // Dino Game
-        this.jumpSound = new Howl({ src: ['/sounds/jump.mp3'], volume: 0.5 });
+        this.jumpSound = new Howl({ src: ['/sounds/jump.wav', '/sounds/jump.mp3'], volume: 0.5 });
         this.collisionSound = new Howl({ src: ['/sounds/collision.mp3'], volume: 0.7 });
         this.scoreSound = new Howl({ src: ['/sounds/score.mp3'], volume: 0.3 });
         this.bgMusic = new Howl({
-            src: ['/sounds/background.mp3'],
+            src: ['/sounds/background.wav', '/sounds/background.mp3'],
             loop: true,
             volume: 0.2,
             html5: true
@@ -21,6 +21,7 @@ class SoundHandler {
         this.drawSound = new Howl({ src: ['/sounds/draw.mp3'], volume: 0.5 });
 
         this.isMuted = false;
+
 
         // --- Native Audio Context (Restored) ---
         this.ctx = null;
@@ -190,4 +191,5 @@ class SoundHandler {
     getMuteStatus() { return this.isMuted; }
 }
 
-export default new SoundHandler();
+export const soundHandler = new SoundHandler();
+export default soundHandler;
