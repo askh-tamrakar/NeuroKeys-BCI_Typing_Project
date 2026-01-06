@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { motion, useInView } from 'motion/react';
 import '../../styles/ui/AnimatedList.css';
 
@@ -40,25 +40,52 @@ const AnimatedList = ({
     'Item 15'
   ],
   onItemSelect,
-  showGradients = true,
   enableArrowNavigation = true,
   className = '',
   itemClassName = '',
   displayScrollbar = true,
-  initialSelectedIndex = -1
+  initialSelectedIndex = -1,
+  selectedIndex: controlledSelectedIndex, // Optional prop for controlled usage
+  renderItem = null // Optional custom renderer: (item, index, isSelected) => Node
 }) => {
   const listRef = useRef(null);
-  const [selectedIndex, setSelectedIndex] = useState(initialSelectedIndex);
+  const [internalSelectedIndex, setInternalSelectedIndex] = useState(initialSelectedIndex);
+
+  // Use controlled index if provided, otherwise use internal state
+  const selectedIndex = controlledSelectedIndex !== undefined ? controlledSelectedIndex : internalSelectedIndex;
+
+  const setSelectedIndex = useCallback((index) => {
+    // Only update internal state if not controlled (or if we want hybrid, but usually one or other)
+    // Actually, for hybrid we can just always update internal, but the derived value takes precedence.
+    setInternalSelectedIndex(index);
+  }, []);
   const [keyboardNav, setKeyboardNav] = useState(false);
   const [topGradientOpacity, setTopGradientOpacity] = useState(0);
   const [bottomGradientOpacity, setBottomGradientOpacity] = useState(1);
 
-  const handleScroll = e => {
+  const handleItemMouseEnter = useCallback(index => {
+    // Optional: Only change selection on hover if not strictly controlled? 
+    // Usually hover effect is visual, but here selection is state.
+    // Let's keep it sync.
+    setSelectedIndex(index);
+  }, [setSelectedIndex]);
+
+  const handleItemClick = useCallback(
+    (item, index) => {
+      setSelectedIndex(index);
+      if (onItemSelect) {
+        onItemSelect(item, index);
+      }
+    },
+    [onItemSelect, setSelectedIndex]
+  );
+
+  const handleScroll = useCallback(e => {
     const { scrollTop, scrollHeight, clientHeight } = e.target;
     setTopGradientOpacity(Math.min(scrollTop / 50, 1));
     const bottomDistance = scrollHeight - (scrollTop + clientHeight);
     setBottomGradientOpacity(scrollHeight <= clientHeight ? 0 : Math.min(bottomDistance / 50, 1));
-  };
+  }, []);
 
   useEffect(() => {
     if (!enableArrowNavigation) return;
@@ -66,11 +93,17 @@ const AnimatedList = ({
       if (e.key === 'ArrowDown' || (e.key === 'Tab' && !e.shiftKey)) {
         e.preventDefault();
         setKeyboardNav(true);
-        setSelectedIndex(prev => Math.min(prev + 1, items.length - 1));
+        setSelectedIndex(prev => Math.min((typeof prev === 'function' ? prev(selectedIndex) : selectedIndex) + 1, items.length - 1)); // Handle state updater signature if needed, but here we just need value. 
+        // Wait, setSelectedIndex here wraps setInternalSelectedIndex which is a state setter.
+        // But we redefined setSelectedIndex. 
+        // Let's fix setSelectedIndex to handle function updates if we want to support it, or just calculate here.
+        const next = Math.min(selectedIndex + 1, items.length - 1);
+        setSelectedIndex(next);
       } else if (e.key === 'ArrowUp' || (e.key === 'Tab' && e.shiftKey)) {
         e.preventDefault();
         setKeyboardNav(true);
-        setSelectedIndex(prev => Math.max(prev - 1, 0));
+        const next = Math.max(selectedIndex - 1, 0);
+        setSelectedIndex(next);
       } else if (e.key === 'Enter') {
         if (selectedIndex >= 0 && selectedIndex < items.length) {
           e.preventDefault();
@@ -115,26 +148,19 @@ const AnimatedList = ({
             key={index}
             delay={0.1}
             index={index}
-            onMouseEnter={() => setSelectedIndex(index)}
-            onClick={() => {
-              setSelectedIndex(index);
-              if (onItemSelect) {
-                onItemSelect(item, index);
-              }
-            }}
+            onMouseEnter={() => handleItemMouseEnter(index)}
+            onClick={() => handleItemClick(item, index)}
           >
             <div className={`item ${selectedIndex === index ? 'selected' : ''} ${itemClassName}`}>
-              <div className="item-text">{item}</div>
+              {renderItem ? (
+                renderItem(item, index, selectedIndex === index)
+              ) : (
+                <p className="item-text">{item}</p>
+              )}
             </div>
           </AnimatedItem>
         ))}
       </div>
-      {showGradients && (
-        <>
-          <div className="top-gradient" style={{ opacity: topGradientOpacity }}></div>
-          <div className="bottom-gradient" style={{ opacity: bottomGradientOpacity }}></div>
-        </>
-      )}
     </div>
   );
 };

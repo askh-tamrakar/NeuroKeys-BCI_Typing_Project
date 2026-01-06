@@ -39,14 +39,17 @@ CONFIG_PATH = PROJECT_ROOT / "config" / "sensor_config.json"
 INPUT_STREAM_NAME = "BioSignals-Processed"
 OUTPUT_STREAM_NAME = "BioSignals-Events"
 
+try:
+    from ..utils.config import config_manager
+except ImportError:
+    # Try relative path if running as script
+    sys.path.append(str(PROJECT_ROOT / "src"))
+    from utils.config import config_manager
+
 def load_config():
-    if not CONFIG_PATH.exists():
-        return {}
-    try:
-        with open(CONFIG_PATH, "r") as f:
-            return json.load(f)
-    except:
-        return {}
+    # Use the facade to get merged config (Sensor + Features)
+    # This ensures Detectors find their 'features' key
+    return config_manager.get_all_configs()
 
 class FeatureRouter:
     def __init__(self):
@@ -157,7 +160,7 @@ class FeatureRouter:
                                 if detection_result:
                                     # Determine event name
                                     if sensor_type == "EOG":
-                                        event_name = "BLINK"
+                                        event_name = detection_result # "SingleBlink" or "DoubleBlink"
                                     elif sensor_type == "EMG":
                                         event_name = detection_result # e.g. "ROCK", "PAPER", "SCISSORS"
                                     elif sensor_type == "EEG":
@@ -173,7 +176,7 @@ class FeatureRouter:
                                         "features": features
                                     }
                                     formatted_event = json.dumps(event_data)
-                                    # print(f"[FeatureRouter] [EVENT] {formatted_event}")
+                                    print(f"[FeatureRouter] [EVENT] {formatted_event}")
                                     self.outlet.push_sample([formatted_event])
 
             except Exception as e:

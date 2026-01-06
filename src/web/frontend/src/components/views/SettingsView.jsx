@@ -1,334 +1,303 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { useTheme } from '../../contexts/ThemeContext'
+import {
+  Settings,
+  Palette,
+  Globe,
+  Database,
+  Plus,
+  Trash2,
+  Save,
+  RefreshCw,
+  Copy
+} from 'lucide-react'
+
+// Helper for color inputs
+const ColorInput = ({ label, value, onChange }) => (
+  <div className="flex items-center justify-between p-3 bg-bg/50 rounded-xl border border-border/50">
+    <label className="text-sm font-medium text-text">{label}</label>
+    <div className="flex items-center gap-3">
+      <span className="text-xs font-mono text-muted uppercase">{value}</span>
+      <input
+        type="color"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-8 h-8 rounded-lg overflow-hidden cursor-pointer border-none p-0 bg-transparent"
+        title={`Change ${label}`}
+      />
+    </div>
+  </div>
+);
 
 export default function SettingsView() {
-  const [apiUrl, setApiUrl] = useState('http://localhost:8000')
-  const [wsUrl, setWsUrl] = useState('ws://localhost:8765')
-  const [useMock, setUseMock] = useState(true)
-  const [theme, setTheme] = useState('rose')
+  const {
+    themes,
+    currentTheme,
+    currentThemeId,
+    setTheme,
+    addTheme,
+    updateTheme,
+    updateThemeColor,
+    removeTheme,
+    resetThemes
+  } = useTheme()
 
-  const themes = [
-    { value: 'rose', label: 'Rose' },
-    { value: 'violet', label: 'Violet' },
-    { value: 'olive', label: 'Olive' },
-    { value: 'ocean', label: 'Ocean' },
-    { value: 'sunset', label: 'Sunset' },
-    { value: 'forest', label: 'Forest' },
-    { value: 'slate', label: 'Slate' },
-    { value: 'mint', label: 'Mint' },
-    { value: 'blush', label: 'Blush' },
-    { value: 'vibrant', label: 'Vibrant' },
-    { value: 'plum', label: 'Plum' },
-    { value: 'yellow', label: 'Golden Ember' },
-    { value: 'yellow-dark', label: 'Golden Eclipse' },
-    { value: 'crimson', label: 'Crimson Blaze' },
-    { value: 'inferno', label: 'Inferno Burst' },
-    { value: 'rosewood', label: 'Rosewood Velvet' },
-    { value: 'ember', label: 'Ember Noir' },
-    { value: 'amethyst', label: 'Amethyst Dream' }
-  ]
+  // Local settings state
+  const [apiUrl, setApiUrl] = useState(() => localStorage.getItem('api_url') || 'http://localhost:8000')
+  const [wsUrl, setWsUrl] = useState(() => localStorage.getItem('ws_url') || 'ws://localhost:1972')
+  const [useMock, setUseMock] = useState(() => localStorage.getItem('use_mock') === 'true')
 
-  const handleSave = () => {
-    // Save settings to localStorage
-    localStorage.setItem('bci_settings', JSON.stringify({
-      apiUrl,
-      wsUrl,
-      useMock,
-      theme
-    }))
+  // Editor state
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [tempName, setTempName] = useState('');
 
-    // Apply theme
-    const root = document.documentElement
-    root.className = `root theme-${theme}`
+  // Auto-save settings
+  useEffect(() => {
+    localStorage.setItem('api_url', apiUrl)
+    localStorage.setItem('ws_url', wsUrl)
+    localStorage.setItem('use_mock', useMock)
+  }, [apiUrl, wsUrl, useMock])
 
-    alert('Settings saved!')
-  }
+  const handleCreateTheme = () => {
+    const newId = addTheme(`Custom Theme ${themes.length + 1}`);
+    // Auto-scroll or focus?
+  };
 
-  const applyTheme = (themeValue) => {
-    setTheme(themeValue)
-    const root = document.documentElement
-    root.className = `root theme-${themeValue}`
-  }
+  const handleDuplicateTheme = () => {
+    const newId = addTheme(`${currentTheme.name} (Copy)`);
+    // Ideally we would copy the colors here, but addTheme currently clones the *current* theme colors
+    // so it already does exactly what we want!
+  };
 
   return (
-    <div className="space-y-6">
-      <div className="card bg-surface border border-border shadow-card rounded-2xl p-6">
-        <h2 className="text-2xl font-bold text-text mb-6 flex items-center gap-3">
-          <span className="w-3 h-3 rounded-full bg-primary animate-pulse"></span>
-          Settings
+    <div className="max-w-4xl mx-auto space-y-8 pb-20">
+
+      {/* Header */}
+      <div className="flex items-center gap-4 mb-8">
+        <div className="p-3 bg-primary/20 rounded-2xl text-primary">
+          <Settings size={32} />
+        </div>
+        <div>
+          <h1 className="text-3xl font-bold text-text">Settings</h1>
+          <p className="text-muted">Manage your workspace preferences</p>
+        </div>
+      </div>
+
+      {/* Theme Section */}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-bold text-text flex items-center gap-2">
+            <Palette size={20} className="text-primary" />
+            Appearance
+          </h2>
+          <div className="flex gap-2">
+            <button
+              onClick={resetThemes}
+              className="px-3 py-1.5 text-xs font-bold text-muted hover:text-text hover:bg-surface rounded-lg transition-colors"
+            >
+              Reset Defaults
+            </button>
+            <button
+              onClick={handleCreateTheme}
+              className="flex items-center gap-2 px-4 py-2 bg-surface hover:bg-primary hover:text-primary-contrast border border-border rounded-xl font-bold transition-all shadow-sm"
+            >
+              <Plus size={16} />
+              New Theme
+            </button>
+          </div>
+        </div>
+
+        <div className="card p-6 bg-surface space-y-6">
+
+          {/* Theme Selector */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+            {themes.map(t => (
+              <button
+                key={t.id}
+                onClick={() => setTheme(t.id)}
+                className={`
+                  relative group p-3 rounded-xl border-2 transition-all text-left space-y-2
+                  ${currentThemeId === t.id
+                    ? 'border-primary bg-primary/5 shadow-glow'
+                    : 'border-transparent bg-bg hover:border-border'
+                  }
+                `}
+              >
+                <div className="flex gap-1.5 mb-2">
+                  <div className="w-4 h-4 rounded-full shadow-sm" style={{ background: t.colors['--bg'] }} />
+                  <div className="w-4 h-4 rounded-full shadow-sm" style={{ background: t.colors['--primary'] }} />
+                  <div className="w-4 h-4 rounded-full shadow-sm" style={{ background: t.colors['--accent'] }} />
+                </div>
+                <div className="font-bold text-sm truncate w-full" style={{ color: currentThemeId === t.id ? 'var(--primary)' : 'var(--text)' }}>
+                  {t.name}
+                </div>
+                {t.type === 'custom' && (
+                  <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="w-2 h-2 rounded-full bg-primary" />
+                  </div>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Theme Editor (Only for current theme) */}
+          <div className="mt-8 border-t border-border pt-6">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                {isEditingName ? (
+                  <input
+                    autoFocus
+                    type="text"
+                    className="bg-bg border border-primary text-text font-bold text-lg px-2 py-1 rounded-lg outline-none"
+                    value={tempName}
+                    onChange={e => setTempName(e.target.value)}
+                    onBlur={() => {
+                      updateTheme(currentThemeId, { name: tempName || currentTheme.name });
+                      setIsEditingName(false);
+                    }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        updateTheme(currentThemeId, { name: tempName || currentTheme.name });
+                        setIsEditingName(false);
+                      }
+                    }}
+                  />
+                ) : (
+                  <h3
+                    className={`text-lg font-bold ${currentTheme.type === 'custom' ? 'cursor-pointer hover:underline decoration-dashed decoration-muted' : ''}`}
+                    onClick={() => {
+                      if (currentTheme.type === 'custom') {
+                        setTempName(currentTheme.name);
+                        setIsEditingName(true);
+                      }
+                    }}
+                    title={currentTheme.type === 'custom' ? 'Click to rename' : 'Built-in theme'}
+                  >
+                    {currentTheme.name}
+                    {currentTheme.type === 'custom' && <span className="ml-2 text-xs bg-primary/20 text-primary px-2 py-0.5 rounded-full">Custom</span>}
+                  </h3>
+                )}
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={handleDuplicateTheme}
+                  className="p-2 text-muted hover:text-text hover:bg-bg rounded-lg transition-colors"
+                  title="Duplicate Theme"
+                >
+                  <Copy size={18} />
+                </button>
+                {currentTheme.type === 'custom' && (
+                  <button
+                    onClick={() => removeTheme(currentThemeId)}
+                    className="p-2 text-red-400 hover:text-red-500 hover:bg-red-400/10 rounded-lg transition-colors"
+                    title="Delete Theme"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-muted uppercase tracking-wider mb-2">Core Colors</h4>
+                <ColorInput label="Background" value={currentTheme.colors['--bg']} onChange={(v) => updateThemeColor(currentThemeId, '--bg', v)} />
+                <ColorInput label="Surface" value={currentTheme.colors['--surface']} onChange={(v) => updateThemeColor(currentThemeId, '--surface', v)} />
+                <ColorInput label="Text" value={currentTheme.colors['--text']} onChange={(v) => updateThemeColor(currentThemeId, '--text', v)} />
+              </div>
+
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-muted uppercase tracking-wider mb-2">Brand Colors</h4>
+                <ColorInput label="Primary" value={currentTheme.colors['--primary']} onChange={(v) => updateThemeColor(currentThemeId, '--primary', v)} />
+                <ColorInput label="Accent" value={currentTheme.colors['--accent']} onChange={(v) => updateThemeColor(currentThemeId, '--accent', v)} />
+                <ColorInput label="Border" value={currentTheme.colors['--border']} onChange={(v) => updateThemeColor(currentThemeId, '--border', v)} />
+              </div>
+            </div>
+
+            {currentTheme.type === 'default' && (
+              <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/20 text-blue-200 text-sm rounded-lg flex items-center gap-2">
+                <Settings size={14} />
+                <span>Standard themes are read-only. Duplicate this theme to customize it.</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* Network Section */}
+      <section className="space-y-4">
+        <h2 className="text-xl font-bold text-text flex items-center gap-2">
+          <Globe size={20} className="text-primary" />
+          Network & Data
         </h2>
 
-        <div className="space-y-8">
-          <div>
-            <h3 className="text-xl font-bold text-text mb-4">API Configuration</h3>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-bold text-text mb-3">API Base URL</label>
+        <div className="card p-6 bg-surface space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <label className="text-sm font-bold text-text">API Endpoint</label>
+              <div className="flex bg-bg border border-border rounded-xl focus-within:ring-2 ring-primary/50 transition-all overflow-hidden">
                 <input
                   type="text"
                   value={apiUrl}
-                  onChange={(e) => setApiUrl(e.target.value)}
-                  className="w-full px-4 py-3 bg-bg border border-border text-text rounded-xl focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all"
+                  onChange={e => setApiUrl(e.target.value)}
+                  className="flex-1 px-4 py-3 bg-transparent outline-none text-text placeholder-muted"
                   placeholder="http://localhost:8000"
                 />
               </div>
+            </div>
 
-              <div>
-                <label className="block text-sm font-bold text-text mb-3">WebSocket URL</label>
+            <div className="space-y-2">
+              <label className="text-sm font-bold text-text">WebSocket Endpoint</label>
+              <div className="flex bg-bg border border-border rounded-xl focus-within:ring-2 ring-primary/50 transition-all overflow-hidden">
                 <input
                   type="text"
                   value={wsUrl}
-                  onChange={(e) => setWsUrl(e.target.value)}
-                  className="w-full px-4 py-3 bg-bg border border-border text-text rounded-xl focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all"
-                  placeholder="ws://localhost:8765"
+                  onChange={e => setWsUrl(e.target.value)}
+                  className="flex-1 px-4 py-3 bg-transparent outline-none text-text placeholder-muted"
+                  placeholder="ws://localhost:1972"
                 />
-              </div>
-
-              <div className="flex items-center gap-3 p-4 bg-bg rounded-xl border border-border">
-                <input
-                  type="checkbox"
-                  checked={useMock}
-                  onChange={(e) => setUseMock(e.target.checked)}
-                  className="w-6 h-6 text-primary rounded-lg"
-                />
-                <label className="text-sm font-medium text-text">Use Mock Data (for testing without hardware)</label>
               </div>
             </div>
           </div>
 
-          <div>
-            <h3 className="text-xl font-bold text-text mb-4">Appearance</h3>
+          <div className="flex items-center justify-between p-4 bg-bg rounded-xl border border-border">
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-lg ${useMock ? 'bg-amber-500/20 text-amber-500' : 'bg-muted/20 text-muted'}`}>
+                <Database size={20} />
+              </div>
+              <div>
+                <h4 className="font-bold text-text">Mock Data Mode</h4>
+                <p className="text-xs text-muted">Generate fake signals for testing without hardware</p>
+              </div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" checked={useMock} onChange={e => setUseMock(e.target.checked)} className="sr-only peer" />
+              <div className="w-11 h-6 bg-border peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/50 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+            </label>
+          </div>
+        </div>
+      </section>
 
+      {/* Info Section */}
+      <section className="space-y-4">
+        <div className="card p-6 bg-surface/50 border-dashed">
+          <div className="flex items-center justify-between">
             <div>
-              <label className="block text-sm font-bold text-text mb-3">Theme</label>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                {themes.map(t => (
-                  <button
-                    key={t.value}
-                    onClick={() => applyTheme(t.value)}
-                    className={`px-4 py-3 rounded-xl font-bold transition-all ${theme === t.value
-                      ? 'bg-primary text-primary-contrast shadow-glow'
-                      : 'bg-bg border border-border text-text hover:border-primary/50'
-                      }`}
-                  >
-                    {t.label}
-                  </button>
-                ))}
+              <h3 className="font-bold text-text">NeuroTECH BCI Dashboard</h3>
+              <p className="text-sm text-muted">v2.0.0 • Early Access Build</p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs font-mono text-muted mb-1">Session ID: {Math.random().toString(36).substring(7)}</p>
+              <div className="flex gap-2 justify-end">
+                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                <span className="text-xs font-bold text-green-500">System Active</span>
               </div>
             </div>
           </div>
-
-          <button
-            onClick={handleSave}
-            className="w-full bg-primary text-primary-contrast py-4 rounded-xl font-bold text-lg hover:opacity-90 transition-all shadow-glow hover:translate-y-[-2px] active:translate-y-[0px]"
-          >
-            💾 Save Settings
-          </button>
         </div>
-      </div>
+      </section>
 
-      <div className="card bg-surface border border-border shadow-card rounded-2xl p-6">
-        <h3 className="text-xl font-bold text-text mb-4">About</h3>
-        <div className="bg-bg/50 backdrop-blur-sm rounded-xl p-5 space-y-3 border border-border">
-          <div className="flex justify-between items-center">
-            <span className="text-muted font-medium">Version:</span>
-            <span className="font-bold text-text">1.0.0</span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-muted font-medium">Mode:</span>
-            <span className="font-bold text-text">{useMock ? 'Mock/Demo' : 'Hardware Connected'}</span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-muted font-medium">WebSocket:</span>
-            <span className="font-bold text-text text-sm">{wsUrl}</span>
-          </div>
-        </div>
-      </div>
     </div>
   )
 }
-
-
-// import React, { useState, useEffect } from 'react'
-
-// export default function SettingsView({ sendMessage }) {
-//   const [apiUrl, setApiUrl] = useState('http://localhost:8000')
-//   const [wsUrl, setWsUrl] = useState('ws://localhost:8765')
-//   const [useMock, setUseMock] = useState(false)
-//   const [theme, setTheme] = useState('rose')
-//   const [filterSettings, setFilterSettings] = useState({
-//     emgHighPass: 70,
-//     eogLowFreq: 0.5,
-//     eogHighFreq: 50,
-//     eegLowFreq: 0.1,
-//     eegHighFreq: 40
-//   })
-
-//   const themes = [
-//     { value: 'rose', label: 'Rose' },
-//     { value: 'violet', label: 'Violet' },
-//     { value: 'ocean', label: 'Ocean' },
-//     { value: 'forest', label: 'Forest' },
-//   ]
-
-//   const handleSaveSettings = () => {
-//     const settings = {
-//       apiUrl,
-//       wsUrl,
-//       useMock,
-//       theme,
-//       filters: filterSettings
-//     }
-//     localStorage.setItem('bci_settings', JSON.stringify(settings))
-
-//     if (sendMessage) {
-//       sendMessage({
-//         type: 'settings_updated',
-//         settings: settings
-//       })
-//     }
-
-//     const root = document.documentElement
-//     root.className = `root theme-${theme}`
-//     alert('Settings saved!')
-//   }
-
-//   const applyTheme = (themeValue) => {
-//     setTheme(themeValue)
-//     const root = document.documentElement
-//     root.className = `root theme-${themeValue}`
-//   }
-
-//   const handleFilterChange = (key, value) => {
-//     setFilterSettings(prev => ({
-//       ...prev,
-//       [key]: parseFloat(value)
-//     }))
-//   }
-
-//   return (
-//     <div className="settings-container">
-//       <div className="card">
-//         <h2>🔌 Server Configuration</h2>
-
-//         <div className="form-group">
-//           <label>API URL</label>
-//           <input
-//             type="text"
-//             value={apiUrl}
-//             onChange={(e) => setApiUrl(e.target.value)}
-//             className="input"
-//           />
-//           <p className="help-text">Base URL for HTTP API calls</p>
-//         </div>
-
-//         <div className="form-group">
-//           <label>WebSocket URL</label>
-//           <input
-//             type="text"
-//             value={wsUrl}
-//             onChange={(e) => setWsUrl(e.target.value)}
-//             className="input"
-//           />
-//           <p className="help-text">WebSocket endpoint for live data streaming</p>
-//         </div>
-
-//         <div className="form-group">
-//           <label>
-//             <input
-//               type="checkbox"
-//               checked={useMock}
-//               onChange={(e) => setUseMock(e.target.checked)}
-//             />
-//             Use Mock Data (for testing without hardware)
-//           </label>
-//         </div>
-//       </div>
-
-//       <div className="card">
-//         <h2>🎨 Display Settings</h2>
-
-//         <div className="form-group">
-//           <label>Theme</label>
-//           <div className="theme-grid">
-//             {themes.map(t => (
-//               <button
-//                 key={t.value}
-//                 onClick={() => applyTheme(t.value)}
-//                 className={`theme-button ${theme === t.value ? 'active' : ''}`}
-//               >
-//                 {t.label}
-//               </button>
-//             ))}
-//           </div>
-//         </div>
-//       </div>
-
-//       <div className="card">
-//         <h2>🔧 Filter Settings</h2>
-
-//         <h4>EMG Filter</h4>
-//         <div className="form-group">
-//           <label>High-Pass Frequency (Hz)</label>
-//           <input
-//             type="number"
-//             value={filterSettings.emgHighPass}
-//             onChange={(e) => handleFilterChange('emgHighPass', e.target.value)}
-//             className="input"
-//           />
-//         </div>
-
-//         <h4>EOG Filter (Band-Pass)</h4>
-//         <div className="form-row">
-//           <div className="form-group">
-//             <label>Low Frequency (Hz)</label>
-//             <input
-//               type="number"
-//               value={filterSettings.eogLowFreq}
-//               onChange={(e) => handleFilterChange('eogLowFreq', e.target.value)}
-//               className="input"
-//             />
-//           </div>
-//           <div className="form-group">
-//             <label>High Frequency (Hz)</label>
-//             <input
-//               type="number"
-//               value={filterSettings.eogHighFreq}
-//               onChange={(e) => handleFilterChange('eogHighFreq', e.target.value)}
-//               className="input"
-//             />
-//           </div>
-//         </div>
-
-//         <h4>EEG Filter (Band-Pass)</h4>
-//         <div className="form-row">
-//           <div className="form-group">
-//             <label>Low Frequency (Hz)</label>
-//             <input
-//               type="number"
-//               value={filterSettings.eegLowFreq}
-//               onChange={(e) => handleFilterChange('eegLowFreq', e.target.value)}
-//               className="input"
-//             />
-//           </div>
-//           <div className="form-group">
-//             <label>High Frequency (Hz)</label>
-//             <input
-//               type="number"
-//               value={filterSettings.eegHighFreq}
-//               onChange={(e) => handleFilterChange('eegHighFreq', e.target.value)}
-//               className="input"
-//             />
-//           </div>
-//         </div>
-//       </div>
-
-//       <button
-//         onClick={handleSaveSettings}
-//         className="btn btn-primary btn-lg btn-block"
-//       >
-//         ✅ Save All Settings
-//       </button>
-//     </div>
-//   )
-// }

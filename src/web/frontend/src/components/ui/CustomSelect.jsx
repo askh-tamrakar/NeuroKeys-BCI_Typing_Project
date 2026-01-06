@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChevronDown, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { soundHandler } from '../../handlers/SoundHandler';
+import soundHandler from '../../handlers/SoundHandler';
 
 export default function CustomSelect({
     value,

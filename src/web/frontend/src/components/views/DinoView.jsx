@@ -616,17 +616,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                                 <span className={`status-eye ${wsData ? 'connected' : 'disconnected'}`}><ScanEye size={32} /></span>
                                 EOG Dino Game
                             </h2>
-                            <button
-                                onClick={() => {
-                                    const muted = SoundHandler.toggleMute()
-                                    setIsMuted(muted)
-                                }}
-                                className={`tuner-button ${isMuted ? 'inactive' : 'active'}`}
-                                style={{ marginRight: '8px' }}
-                                title="Toggle Sound"
-                            >
-                                {isMuted ? <VolumeX /> : <Volume2 />}
-                            </button>
+
                             <button
                                 onClick={() => setShowSettings(!showSettings)}
                                 className={`tuner-button ${showSettings ? 'active' : 'inactive'}`}
@@ -732,7 +722,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
 
                 {/* Right Sidebar */}
                 <div className="game-sidebar pr-1.5">
-                    <div className="h-[85px] shrink-0" />
+                    <div className="shrink-0" style={{ height: '85px' }} />
                     {/* Camera Panel */}
                     <CameraPanel />
 
@@ -771,11 +761,28 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                                 </span>
                             </div>
                         </div>
+
+                        {/* Sound Control - Moved here */}
+                        <div className="mt-3 pt-3 border-t border-border">
+                            <button
+                                onClick={() => {
+                                    const muted = SoundHandler.toggleMute()
+                                    setIsMuted(muted)
+                                }}
+                                className={`w-full py-2 rounded-lg font-bold text-sm transition-all flex items-center justify-center gap-2 ${isMuted
+                                    ? 'bg-accent/10 text-accent hover:bg-accent/20'
+                                    : 'bg-primary/10 text-primary hover:bg-primary/20'
+                                    }`}
+                            >
+                                {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+                                {isMuted ? 'SOUND OFF' : 'SOUND ON'}
+                            </button>
+                        </div>
                     </div>
 
                     {/* Event Log Panel */}
-                    <div className="card bg-surface border border-border shadow-card rounded-2xl p-4" style={{ flexShrink: 0 }}>
-                        <div className="flex justify-between items-center mb-2">
+                    <div className="card bg-surface border border-border shadow-card rounded-2xl p-4 flex flex-col min-h-[200px]" style={{ flex: '1 0 0' }}>
+                        <div className="flex justify-between items-center mb-2 shrink-0">
                             <h3 className="text-sm font-bold text-text uppercase tracking-wider flex items-center gap-2"><ScrollText size={16} /> Event Log</h3>
                             <button
                                 onClick={() => setEventLogs([])}
@@ -784,7 +791,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                                 <Trash2 size={16} /> Clear
                             </button>
                         </div>
-                        <div className="bg-bg/50 rounded-lg p-2 h-32 overflow-y-auto font-mono text-xs space-y-1 border border-border scrollbar-thin scrollbar-thumb-border hover:scrollbar-thumb-primary/50 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
+                        <div className="bg-bg/50 rounded-lg p-2 flex-1 overflow-y-auto font-mono text-xs space-y-1 border border-border scrollbar-thin scrollbar-thumb-border hover:scrollbar-thumb-primary/50 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
                             {eventLogs.length === 0 ? (
                                 <div className="text-muted italic text-center py-4">No events yet...</div>
                             ) : (

@@ -86,9 +86,11 @@
   left: 0;
   width: 100%;
   z-index: 50;
-  backdrop-filter: blur(12px);
-  background: color-mix(in srgb, var(--bg) 60%, transparent);
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 30%, transparent);
+  backdrop-filter: blur(6px);
+  background: color-mix(in srgb, var(--bg) 30%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 15%, transparent);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+  transition: all 0.3s ease;
 }
 
 .header-inner {
@@ -198,16 +200,18 @@
   z-index: 50;
   color: var(--muted); 
   text-align: center; 
-  height: 30px;
+  height: 32px;
   padding: 0;
-  border-top: 1px solid color-mix(in srgb, var(--border) 30%, transparent);
-  background: color-mix(in srgb, var(--bg) 60%, transparent);
-  backdrop-filter: blur(12px);
+  border-top: 1px solid color-mix(in srgb, var(--border) 15%, transparent);
+  background: color-mix(in srgb, var(--bg) 30%, transparent);
+  backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
+  font-size: 13px;
+  font-weight: 500;
   overflow: hidden;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.05);
 }
 
 .pulse {
