@@ -15,7 +15,6 @@ export default function SessionManagerPanel({
     };
 
     const getLabelName = (sensor, val) => {
-        // If val is already a string and not a number string, return it as is
         if (typeof val === 'string' && isNaN(Number(val))) return val;
 
         const map = SENSOR_LABEL_MAP[sensor] || {};
@@ -88,6 +87,32 @@ export default function SessionManagerPanel({
         }
     };
 
+    // Clear session rows but keep the session itself active (Emptying it)
+    const handleClearSessionData = async (e) => {
+        e.stopPropagation();
+        if (!fullCurrentSessionName) return;
+
+        try {
+            await setLoading(true); // Reuse loading or new state
+            // 1. Delete the session
+            const res = await fetch(`/api/sessions/${activeSensor}/${fullCurrentSessionName}`, {
+                method: 'DELETE'
+            });
+
+            if (res.ok) {
+                setSelectedSessionRows([]);
+
+                if (!sessions.find(s => s === fullCurrentSessionName)) {
+                    setSessions(prev => [fullCurrentSessionName, ...prev]);
+                }
+            }
+        } catch (err) {
+            console.error("Error clearing session:", err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     // Fetch list of sessions
     const fetchSessions = async () => {
         setLoading(true);
@@ -123,8 +148,6 @@ export default function SessionManagerPanel({
                 return;
             }
 
-            // Only show loader if we are switching sessions or have no data
-            // This prevents flickering on auto-refresh (append)
             if (lastSessionRef.current !== fullCurrentSessionName || selectedSessionRows.length === 0) {
                 setRowsLoading(true);
             }
@@ -161,9 +184,6 @@ export default function SessionManagerPanel({
             const prevRows = [...selectedSessionRows];
             setSelectedSessionRows(prev => prev.filter(r => r.id !== rowId));
 
-            // Assuming endpoint structure: /api/sessions/:sensor/:sessionName/rows/:rowId
-            // Adjust based on actual API if needed. If no ID, might need index? 
-            // Using ID is safer if available.
             const res = await fetch(`/api/sessions/${activeSensor}/${fullCurrentSessionName}/rows/${rowId}`, {
                 method: 'DELETE'
             });
@@ -220,7 +240,15 @@ export default function SessionManagerPanel({
                                     ) : (
                                         <th className="px-3 py-1.5 text-xs font-bold text-muted uppercase border-b border-border">Features</th>
                                     )}
-                                    <th className="px-3 py-1.5 text-xs font-bold text-primary uppercase border-b border-text w-10"></th>
+                                    <th className="pr-1 py-1 text-xs text-left font-bold text-primary uppercase border-b border-text w-10">
+                                        <button
+                                            title="Clear Rows"
+                                            onClick={handleClearSessionData}
+                                            className="p-0.5 hover:bg-red-500/20 text-muted hover:text-red-500 rounded transition-colors"
+                                        >
+                                            <Trash2 size={18} />
+                                        </button>
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody className="text-xs font-mono">
@@ -246,13 +274,14 @@ export default function SessionManagerPanel({
                                                     : JSON.stringify(row.features)}
                                             </td>
                                         )}
-                                        <td className=" pb-1 pt-1.5 pr-5 text-right opacity-0 group-hover:opacity-100 transition-opacity">
+
+                                        <td className="pr-1 py-1 text-xs text-left font-bold text-primary uppercase border-b border-border w-10  opacity-0 group-hover:opacity-100 transition-opacity ">
                                             <button
+                                                title="Clear Rows"
                                                 onClick={(e) => handleDeleteRow(row.id, e)}
-                                                className="text-rimary text-base hover:text-red-400  hoverLtransition-colors"
-                                                title="Delete Row"
+                                                className="p-0.5 hover:bg-red-500/20 text-muted hover:text-red-500 rounded transition-colors"
                                             >
-                                                <ClipboardX size={24} />
+                                                <ClipboardX size={20} />
                                             </button>
                                         </td>
                                     </tr>
@@ -267,9 +296,11 @@ export default function SessionManagerPanel({
             {/* RIGHT PANE: Session List */}
             <div className="w-1/3 min-w-[180px] max-w-[250px] flex flex-col bg-surface rounded-lg border border-muted overflow-hidden">
                 <div className="p-3 border-b border-muted bg-bg/30">
-                    <h3 className="font-bold text-xs text-text uppercase tracking-wide flex items-center justify-between mb-2">
+                    <h3 className="font-bold text-base text-text uppercase tracking-wide flex items-center justify-between pr-2 mb-2">
                         <span>Sessions</span>
-                        <button onClick={fetchSessions} className="text-muted hover:text-primary text-xs">↻</button>
+                        <button onClick={fetchSessions} className="text-muted hover:text-primary text-xs">
+                            <RefreshCw size={24} />
+                        </button>
                     </h3>
 
                     {/* Create New */}
@@ -292,7 +323,7 @@ export default function SessionManagerPanel({
 
                 <div className="flex-grow overflow-hidden relative p-0 bg-surface/30">
                     {sessions.length === 0 ? (
-                        <div className="text-center text-muted text-xs italic py-4">No saved sessions</div>
+                        <div className="text-center text-muted text-base italic py-4">No saved sessions</div>
                     ) : (
                         <AnimatedList
                             items={sessions}
@@ -301,7 +332,7 @@ export default function SessionManagerPanel({
                             className="h-full"
                             itemClassName="text-xs font-mono py-1 px-2 mb-0.5"
                             renderItem={(sessionName, index, isSelected) => (
-                                <div className={`flex justify-between items-center px-2 py-1.5 rounded-md cursor-pointer transition-all ${isSelected
+                                <div className={`flex justify-between items-center pr-2 py-0.5 rounded-md cursor-pointer transition-all ${isSelected
                                     ? 'bg-primary/10 border border-primary/20 text-primary'
                                     : 'hover:bg-white/5 border border-transparent text-muted hover:text-text'
                                     }`}>

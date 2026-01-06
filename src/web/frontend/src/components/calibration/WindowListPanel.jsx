@@ -16,6 +16,7 @@ export default function WindowListPanel({
     autoCalibrate = false,
     onAutoCalibrateChange,
     onClearSaved,
+    onDeleteAll,
     windowProgress = {}
 }) {
     const stats = {
@@ -47,19 +48,20 @@ export default function WindowListPanel({
         );
     };
 
-    // Use autoLimit for progress target
+    // Track progress of the CURRENT BATCH (Active/Collected), not total saved history
     const targetCount = autoLimit || 30;
-    const progress = Math.min(100, (stats.saved / targetCount) * 100);
+    const activeCount = windows.filter(w => w.status === 'recording' || w.status === 'pending' || w.status === 'collected').length;
+    const progress = Math.min(100, (activeCount / targetCount) * 100);
 
     return (
         <div className="flex flex-col h-full bg-surface border border-border rounded-xl overflow-hidden shadow-card animate-in fade-in duration-300">
             {/* Header with stats and controls */}
             <div className="px-5 py-4 border-b border-border bg-bg/50 flex flex-col gap-2">
                 <div className="flex justify-between items-center">
-                    <h3 className="font-bold text-text flex items-center gap-2">
+                    <div className="font-bold text-text flex items-center text-lg gap-2">
                         <span className="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
                         Calibration Windows
-                    </h3>
+                    </div>
 
                     {/* Auto-Calibration/Limit Toggle */}
                     <div className="flex items-center gap-2">
@@ -86,9 +88,19 @@ export default function WindowListPanel({
                 <div className="flex justify-between items-end">
                     <div className="flex gap-4 text-xs font-mono text-muted uppercase tracking-widest">
                         <span>Total: <span className="text-text">{stats.total}</span></span>
+                        <span>Processed: <span className="text-blue-400">{activeCount}</span></span>
                         <span>Saved: <span className="text-emerald-400">{stats.saved}</span></span>
                     </div>
-                    <div className="text-xs text-muted font-mono">{progress.toFixed(0)}%</div>
+                    <div className="flex items-center gap-2">
+                        <div className="text-xs text-muted font-mono">{progress.toFixed(0)}%</div>
+                        <button
+                            onClick={onDeleteAll}
+                            className="p-1 hover:bg-red-500/10 text-muted hover:text-red-500 rounded transition all"
+                            title="Clear All"
+                        >
+                            <Trash2 size={14} />
+                        </button>
+                    </div>
                 </div>
 
                 {/* Progress Bar (Only visible in Auto mode) */}
@@ -117,26 +129,62 @@ export default function WindowListPanel({
                         onItemSelect={(win) => onHighlight?.(win)}
                         renderItem={(win, index, isSelected) => (
                             <div
-                                className={`p-2 py-1 rounded-lg border transition-all cursor-pointer group hover:translate-x-1 ${win.status === 'saved' || win.status === 'correct'
-                                    ? 'bg-emerald-500/5 border-emerald-500/20 hover:border-emerald-500/20'
-                                    : win.status === 'pending'
-                                        ? 'bg-yellow-500/5 border-border hover:border-border'
-                                        : 'bg-red-500/5 border-red-500/20 hover:border-red-500/20'
+                                className={`py-1 px-2 flex flex-col gap-0 rounded-lg border transition-all cursor-pointer group hover:translate-x-1 ${(win.status === 'recording' || win.status === 'pending')
+                                    ? 'bg-yellow-500/5 border-yellow-500/50 hover:border-yellow-500' // Yellow (Pending)
+                                    : (win.status === 'collected')
+                                        ? 'bg-blue-500/5 border-blue-500/50 hover:border-blue-500' // Blue (Ready)
+                                        : (win.status === 'saved' || win.status === 'correct')
+                                            ? 'bg-emerald-500/5 border-emerald-500/50 hover:border-emerald-500' // Green (Saved)
+                                            : (win.status === 'error' || win.status === 'incorrect')
+                                                ? 'bg-red-500/5 border-red-500/50 hover:border-red-500' // Red (Error)
+                                                : 'bg-black/5 border-gray-600 hover:border-black' // Black (Unknown)
                                     }`}
                             >
-                                <div className="flex justify-between items-center mb-2">
-                                    <div className="flex flex-col">
+                                <div className="flex justify-between items-center">
+                                    <div className="flex flex-col gap-2">
+                                        {/* Class Indicator */}
                                         <span className="font-bold text-sm text-text uppercase">{win.label}</span>
+
+                                        {/* Status Indicator */}
+                                        <div className="flex items-center gap-1">
+                                            <span className={`w-1.5 h-1.5 rounded-full ${(win.status === 'recording' || win.status === 'pending') ? 'bg-yellow-500' :
+                                                (win.status === 'collected') ? 'bg-blue-500' :
+                                                    (win.status === 'saved' || win.status === 'correct') ? 'bg-emerald-500' :
+                                                        (win.status === 'error' || win.status === 'incorrect') ? 'bg-red-500' :
+                                                            'bg-gray-600'
+                                                }`}></span>
+                                            <span className={`text-xs uppercase ${(win.status === 'recording' || win.status === 'pending') ? 'text-yellow-500' :
+                                                (win.status === 'collected') ? 'text-blue-500' :
+                                                    (win.status === 'saved' || win.status === 'correct') ? 'text-emerald-500' :
+                                                        (win.status === 'error' || win.status === 'incorrect') ? 'text-red-500' :
+                                                            'text-muted'
+                                                }`}>
+                                                {(win.status === 'recording' || win.status === 'pending') ? 'Recording' :
+                                                    (win.status === 'collected') ? 'Ready' :
+                                                        (win.status === 'saved' || win.status === 'correct') ? 'Saved' :
+                                                            'Error'}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex flex-col gap-2 content-center">
+                                        {/* Graph */}
+                                        <div className="w-24 h-8 flex items-center">
+                                            <Sparkline data={win.samples} color={
+                                                (win.status === 'recording' || win.status === 'pending') ? '#eab308' :
+                                                    (win.status === 'collected') ? '#3b82f6' :
+                                                        (win.status === 'saved' || win.status === 'correct') ? '#10b981' :
+                                                            (win.status === 'error' || win.status === 'incorrect') ? '#ef4444' :
+                                                                '#6b7280'
+                                            } />
+                                        </div>
                                         <span className="text-xs text-muted font-mono">
                                             {(win.endTime - win.startTime).toFixed(0)}ms
                                         </span>
                                     </div>
-                                    <div className="flex gap-1 opacity-100">
-                                        {/* Graph */}
-                                        <div className="w-24 h-8 mr-2">
-                                            <Sparkline data={win.samples} color={win.status === 'pending' ? '#eab308' : (win.status === 'saved' ? '#10b981' : '#6b7280')} />
-                                        </div>
 
+                                    <div className="flex gap-1 opacity-100">
+                                        {/* Trash */}
                                         <button
                                             onClick={(e) => { e.stopPropagation(); onDelete?.(win.id); }}
                                             className="p-1 hover:bg-red-500/10 rounded text-red-400 text-xs transition-colors"
@@ -145,17 +193,6 @@ export default function WindowListPanel({
                                             <Trash2 size={16} />
                                         </button>
                                     </div>
-                                </div>
-
-                                {/* Status Indicator (Simplified) */}
-                                <div className="flex items-center gap-1 mt-1">
-                                    <span className={`w-1.5 h-1.5 rounded-full ${win.status === 'saved' ? 'bg-emerald-500' :
-                                        win.status === 'pending' ? 'bg-yellow-500' : 'bg-gray-400'
-                                        }`}></span>
-                                    <span className={`text-xs uppercase ${win.status === 'pending' ? 'text-yellow-500' : 'text-muted'
-                                        }`}>
-                                        {win.status === 'saved' ? 'Saved' : win.status}
-                                    </span>
                                 </div>
                             </div>
                         )}
@@ -176,6 +213,6 @@ export default function WindowListPanel({
                     Append Sample
                 </button>
             </div>
-        </div>
+        </div >
     );
 }
