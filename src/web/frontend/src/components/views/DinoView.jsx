@@ -7,8 +7,9 @@ import {
     ScanEye, SlidersHorizontal, ArrowUp, Pause, Play, Trash2, Wifi, WifiOff, Save, Skull, Trophy, Keyboard, Eye,
     Gamepad2, Globe, Sparkles, Atom, Ruler, Settings, RotateCcw, ScrollText, Timer, Weight, MoveVertical,
     MoveHorizontal, Maximize, ArrowDownToLine, Grid, Sun, Moon, Cloud, Star, TreePine, Leaf, PlayCircle, Hand,
-    Layers, Zap, Clock, ChevronDown, Activity, Hash, Target, Radio, Signal, Circle
+    Layers, Zap, Clock, ChevronDown, Activity, Hash, Target, Radio, Signal, Circle, Volume2, VolumeX
 } from 'lucide-react'
+import SoundHandler from '../../handlers/SoundHandler'
 
 export default function DinoView({ wsData, wsEvent, isPaused }) {
     // Game state
@@ -19,6 +20,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
     )
     const [eyeState, setEyeState] = useState('open') // open, blink, double-blink
     const [showSettings, setShowSettings] = useState(false)
+    const [isMuted, setIsMuted] = useState(false)
 
     // Game settings (easy mode default)
     const DEFAULT_SETTINGS = {
@@ -362,6 +364,8 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                 const { type, score, highScore: newHigh } = e.data
                 if (type === 'GAME_OVER') {
                     setGameState('gameOver')
+                    SoundHandler.playCollision()
+                    SoundHandler.stopMusic()
                     if (score !== undefined) {
                         scoreRef.current = score
                         logEvent(`Game Over! Score: ${Math.floor(score / 10)}`, 'gameover')
@@ -372,8 +376,10 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                     logEvent(`New Highscore: ${Math.floor(newHigh / 10)}!`, 'highscore')
                 } else if (type === 'SCORE_UPDATE') {
                     setScore(score)
+                    if (score > 0 && score % 100 === 0) SoundHandler.playScore()
                 } else if (type === 'STATE_UPDATE') {
                     setGameState(e.data.payload)
+                    if (e.data.payload === 'playing') SoundHandler.startMusic()
                 }
             }
         }
@@ -511,6 +517,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
 
         logEvent(text, source === 'keyboard' ? 'keyboard' : 'blink')
         triggerSingleBlink()
+        SoundHandler.playJump()
 
         if (workerRef.current) {
             console.log("[DinoView] Sending 'jump' to worker. Ref:", workerRef.current)
@@ -522,6 +529,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
         // Optimistic state update for UI status
         if (gameStateRef.current === 'ready' || gameStateRef.current === 'gameOver') {
             setGameState('playing')
+            SoundHandler.startMusic()
         }
     }
 
@@ -608,6 +616,17 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                                 <span className={`status-eye ${wsData ? 'connected' : 'disconnected'}`}><ScanEye size={32} /></span>
                                 EOG Dino Game
                             </h2>
+                            <button
+                                onClick={() => {
+                                    const muted = SoundHandler.toggleMute()
+                                    setIsMuted(muted)
+                                }}
+                                className={`tuner-button ${isMuted ? 'inactive' : 'active'}`}
+                                style={{ marginRight: '8px' }}
+                                title="Toggle Sound"
+                            >
+                                {isMuted ? <VolumeX /> : <Volume2 />}
+                            </button>
                             <button
                                 onClick={() => setShowSettings(!showSettings)}
                                 className={`tuner-button ${showSettings ? 'active' : 'inactive'}`}
