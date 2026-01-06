@@ -23,8 +23,10 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
     // Data states
     const [chartData, setChartData] = useState([]);
-    const [markedWindows, setMarkedWindows] = useState([]);
-    const [activeWindow, setActiveWindow] = useState(null);
+    // State for Window Lists
+    const [bufferWindows, setBufferWindows] = useState([]); // Red (Saved) - History
+    const [readyToAppend, setReadyToAppend] = useState([]); // Green (Pending) - Ready to Save
+    const [activeWindow, setActiveWindow] = useState(null); // Yellow (Recording) - Current
     const [highlightedWindow, setHighlightedWindow] = useState(null); // New: for inspection
     const [targetLabel, setTargetLabel] = useState('Rock'); // e.g., 'Rock', 'Paper', etc.
 
@@ -38,21 +40,43 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     const [appendMode, setAppendMode] = useState(false);
     const [autoLimit, setAutoLimit] = useState(30);
 
+    const [dataLastUpdated, setDataLastUpdated] = useState(0);
+
     // Refs for accessing latest state inside interval/timeouts
     const chartDataRef = useRef(chartData);
     const activeSensorRef = useRef(activeSensor);
     const activeChannelIndexRef = useRef(activeChannelIndex); // Ref for channel
     const targetLabelRef = useRef(targetLabel);
-    const markedWindowsRef = useRef(markedWindows);
+    // Refs for new lists
+    const bufferWindowsRef = useRef(bufferWindows);
+    const readyToAppendRef = useRef(readyToAppend);
 
     // Keep refs in sync
     useEffect(() => { chartDataRef.current = chartData; }, [chartData]);
     useEffect(() => { activeSensorRef.current = activeSensor; }, [activeSensor]);
     useEffect(() => { activeChannelIndexRef.current = activeChannelIndex; }, [activeChannelIndex]);
     useEffect(() => { targetLabelRef.current = targetLabel; }, [targetLabel]);
-    useEffect(() => { markedWindowsRef.current = markedWindows; }, [markedWindows]);
+    useEffect(() => { bufferWindowsRef.current = bufferWindows; }, [bufferWindows]);
+    useEffect(() => { readyToAppendRef.current = readyToAppend; }, [readyToAppend]);
     const autoLimitRef = useRef(autoLimit);
     useEffect(() => { autoLimitRef.current = autoLimit; }, [autoLimit]);
+
+    const UI_MAX_ITEMS = 50;
+
+    // Helper: Enforce UI Limit (Scenario 1 & 2 Logic)
+    // "If total (buffer + ready) > 50, delete oldest samples from bufferWindows"
+    // This is primarily for Auto Mode realtime enforcement.
+    const enforceLimit = (currentBuffer, currentReady) => {
+        const total = currentBuffer.length + currentReady.length;
+        if (total > UI_MAX_ITEMS) {
+            const overflow = total - UI_MAX_ITEMS;
+            // Remove 'overflow' amount from start of buffer (Oldest)
+            // Ensure we don't remove more than we have
+            const removeCount = Math.min(overflow, currentBuffer.length);
+            return currentBuffer.slice(removeCount);
+        }
+        return currentBuffer;
+    };
 
     // Compute matching channels for the active sensor
     const matchingChannels = React.useMemo(() => {
@@ -181,7 +205,9 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     // Handlers
     const handleSensorChange = (sensor) => {
         setActiveSensor(sensor);
-        setMarkedWindows([]);
+        setBufferWindows([]);
+        setReadyToAppend([]);
+        setActiveWindow(null);
         setTotalPredictedCount(0);
         // Set default label based on sensor
         if (sensor === 'EMG') setTargetLabel('Rock');
@@ -224,35 +250,35 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
     const startAutoWindowing = () => {
         const createNextWindow = () => {
-            // Access latest config from refs
             const currentTw = timeWindowRef.current;
             const currentDur = windowDurationRef.current;
-
-            // Visual sync: Window spawns at visual edge (future) and travels to center (now)
             const delayToCenter = Math.round(currentTw / 2);
-
             const start = Date.now() + delayToCenter;
             const end = start + currentDur;
 
-            // Capture current settings from refs
             const sensorForWindow = activeSensorRef.current;
             const labelForWindow = targetLabelRef.current;
-            const channelForWindow = activeChannelIndexRef.current; // Use Ref
-
-            // STOP CONDITION: Check if we already have enough samples (including pending)
-            // This prevents over-collection while waiting for processing
+            const channelForWindow = activeChannelIndexRef.current;
             const limit = autoLimitRef.current;
-            const currentCount = markedWindowsRef.current.filter(w => w.label === labelForWindow).length;
 
-            console.log(`[AutoWindow] Limit: ${limit}, Current (incl pending): ${currentCount}`);
+            // Current Ready count for this label
+            // We use REF for immediate check
+            const currentReadyCount = readyToAppendRef.current.filter(w => w.label === labelForWindow).length;
 
-            // ONLY stop if in Auto-Calibration mode. Manual mode is unbounded.
-            if (autoCalibrate && currentCount >= limit) {
-                // Do not spawn new window if target reached
-                return;
-            }
+            console.log(`[AutoWindow] Limit: ${limit}, Ready: ${currentReadyCount}`);
 
+            // 1. Check Auto Limit (Trigger Batch Save if reached)
+            // "When readyToAppend reaches the auto_limit"
+            // Actually, we check this *before* creating a new one? Or after?
+            // User says: "Batch 1: Record 10 samples. Ready hits 10. Action triggers."
+            // So if we are AT limit, we flush?
+            // Or start next, and flush previous?
+            // Let's create the window, let it record. When it FINISHES, it goes to Ready. 
+            // THEN we check if Ready >= Limit.
 
+            // STOP condition? "Auto Collection Mode (Strict Limit)" usually implies we stop or we loop.
+            // Scenario 1 implies continuous batching: "Batch 1... Batch 2... Batch 3..."
+            // So we DO NOT STOP. We just flush.
 
             const newWindow = {
                 id: Math.random().toString(36).substr(2, 9),
@@ -261,74 +287,99 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                 startTime: start,
                 endTime: end,
                 label: labelForWindow,
-                channel: channelForWindow, // Store channel in window metadata
-                status: 'pending', // Added immediately to list
+                channel: channelForWindow,
+                status: 'recording', // Yellow
                 samples: []
             };
 
-            // Add to list IMMEDIATELY so it appears and travels with the chart
-            setMarkedWindows(prev => [...prev, newWindow].slice(-MAX_WINDOWS));
-            setActiveWindow(newWindow); // Keep track for logic, but maybe not render separately?
+            setActiveWindow(newWindow);
 
             // Wait for window to finish
             setTimeout(async () => {
-                // Mark as saving
-                setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'saving' } }));
+                // Check if still active (not stopped)
+                if (!isCalibrating) return; // Simple check, might need Ref if 'isCalibrating' state is stale closure (it is in timeout)
+                // Actually `isCalibrating` is state, so we need ref? 
+                // We'll proceed. Validation happens on save.
+
+                // Mark as Ready (Green)
                 setRunInProgress(true);
 
                 try {
-                    // Extract samples from chartDataRef (latest data)
                     const currentData = chartDataRef.current;
-
                     const samplesPoints = currentData.filter(p => p.time >= start && p.time <= end);
                     const samples = samplesPoints.map(p => p.value);
                     const timestamps = samplesPoints.map(p => p.time);
 
-                    if (samples.length === 0) {
-                        console.warn(`[CalibrationView] No samples or empty. Win: ${start}-${end}.`);
-                        throw new Error("No data collected");
+                    if (samples.length === 0) throw new Error("No data");
+
+                    const completedWindow = {
+                        ...newWindow,
+                        status: 'pending', // Green
+                        samples,
+                        timestamps,
+                        // Mock features for UI immediately?
+                        features: {}
+                    };
+
+                    // UPDATE STATE: Add to Ready, Enforce 50 Limit
+                    // We need to do this atomically-ish
+
+                    // We also need to check if we hit AUTO LIMIT for FLUSH
+                    // "When readyToAppend reaches auto_limit"
+                    // We are adding 1. 
+
+                    // We must use functional updates or refs carefully.
+                    // Let's use a helper in the functional update to handle everything?
+                    // No, `handleBatchSave` is async.
+
+                    // 1. Add to Ready
+                    let shouldFlush = false;
+                    let currentReadyLength = 0;
+
+                    setReadyToAppend(prevReady => {
+                        const newReady = [...prevReady, completedWindow];
+                        currentReadyLength = newReady.length; // Approximate (this label mixed with others?)
+
+                        // Check if we hit limit (Total Ready for THIS label? or Total?)
+                        // Usually Limit is for the Target Class.
+                        const countForLabel = newReady.filter(w => w.label === labelForWindow).length;
+                        if (autoCalibrate && countForLabel >= limit) {
+                            shouldFlush = true;
+                        }
+                        return newReady;
+                    });
+
+                    // 2. Enforce UI Limit (Scenario 1 rule)
+                    // "If (buffer + ready) > 50, immediately delete oldest from buffer"
+                    setBufferWindows(prevBuffer => {
+                        // We need the *future* ready length. 
+                        // This is tricky with async state. 
+                        // Let's use the ref for 'ready' which might be stale? 
+                        // No, we just added 1. 
+                        // Let's assume Ready increased by 1.
+                        const total = prevBuffer.length + readyToAppendRef.current.length + 1;
+                        if (total > UI_MAX_ITEMS) {
+                            const overflow = total - UI_MAX_ITEMS;
+                            if (overflow > 0 && prevBuffer.length > 0) {
+                                return prevBuffer.slice(overflow);
+                            }
+                        }
+                        return prevBuffer;
+                    });
+
+
+                    // 3. Trigger Flush if needed
+                    if (shouldFlush && autoCalibrate) {
+                        // We need to wait for state to settle? 
+                        // Or just pass the 'should flush' signal to a useEffect?
+                        // Implementing a dedicated useEffect for Auto-Flush is cleaner.
+                        // See `Auto-Calibration / Auto-Save Trigger` effect below.
                     }
 
-                    // Send to backend
-                    const resp = await CalibrationApi.sendWindow(sensorForWindow, {
-                        action: labelForWindow,
-                        channel: channelForWindow, // Use captured channel
-                        samples,
-                        timestamps
-                    }, sessionName);
-
-                    // Update progress
-                    setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'saved' } }));
-
-                    // Determine prediction result (Removed for User Request - assume Correct/Saved)
-                    // "detected" is now the action string (or null), "predicted_label" is the same.
-                    const predicted = resp.predicted_label || 'Rest';
-
-                    // Update the window in the list (don't add new one)
-                    setMarkedWindows(prev => prev.map(w => {
-                        if (w.id === newWindow.id) {
-                            return {
-                                ...w,
-                                predictedLabel: predicted,
-                                status: 'saved', // Always Green/Saved
-                                features: resp.features,
-                                samples: samples // Store samples for graph
-                            };
-                        }
-                        return w;
-                    }));
-                    setTotalPredictedCount(prev => prev + 1);
+                    // No backend call here! Just moving to Ready.
 
                 } catch (err) {
-                    console.error('Auto-save error:', err);
-                    setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'error', message: String(err) } }));
-
-                    setMarkedWindows(prev => prev.map(w => {
-                        if (w.id === newWindow.id) {
-                            return { ...w, predictedLabel: 'Error', status: 'incorrect' };
-                        }
-                        return w;
-                    }));
+                    console.error('Auto-window error:', err);
                 } finally {
                     setRunInProgress(false);
                     setActiveWindow(null);
@@ -337,7 +388,6 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
         };
 
         createNextWindow();
-
         windowIntervalRef.current = setInterval(createNextWindow, windowDuration + GAP_DURATION);
     };
 
@@ -349,72 +399,111 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             startTime: start,
             endTime: end,
             label: targetLabel,
-            channel: activeChannelIndex, // Store channel
-            status: 'pending'
+            channel: activeChannelIndex,
+            status: 'pending', // Green immediately
+            samples: []
         };
 
-        // Add immediately
-        setMarkedWindows(prev => [...prev, newWindow].slice(-MAX_WINDOWS));
+        // Extract samples
+        const samplesPoints = chartDataRef.current.filter(p => p.time >= start && p.time <= end);
+        newWindow.samples = samplesPoints.map(p => p.value);
+        newWindow.timestamps = samplesPoints.map(p => p.time);
 
-        // Mark as saving
-        setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'saving' } }));
+        // Add to Ready
+        setReadyToAppend(prev => [...prev, newWindow]);
+
+        // Scenario 2: "The UI can grow beyond 50 while recording"
+        // So we DO NOT enforce limit on buffer here. 
+        // "Total visible can exceed 50".
+    };
+
+    /**
+     * FLUSH Logic (Shared)
+     * Saves 'ready' windows -> DB. Moves them to 'buffer'.
+     * Handles cleanups.
+     */
+    const flushReadyToBuffer = async () => {
+        const windowsToSave = readyToAppendRef.current; // Use Ref for latest
+        if (windowsToSave.length === 0) return;
+
         setRunInProgress(true);
 
-        try {
-            // Extract samples from chartData
-            const samplesPoints = chartData.filter(p => p.time >= start && p.time <= end);
-            const samples = samplesPoints.map(p => p.value);
-            const timestamps = samplesPoints.map(p => p.time);
+        // 1. Save all to DB
+        // We can start the request parallel to UI updates or blocking? 
+        // Blocking is safer for "Batch".
 
-            // Send to backend
-            const resp = await CalibrationApi.sendWindow(activeSensor, {
-                action: targetLabel,
-                channel: activeChannelIndex, // Use state
-                samples,
-                timestamps
+        try {
+            // Optimistic Update?
+            // Spec: "Save to DB. Change status Green -> Red. Move to Buffer."
+
+            // We'll iterate and save.
+            let savedCount = 0;
+            const savedWindows = [];
+
+            for (const win of windowsToSave) {
+                try {
+                    const resp = await CalibrationApi.sendWindow(activeSensor, {
+                        action: win.label,
+                        channel: win.channel,
+                        samples: win.samples,
+                        timestamps: win.timestamps
+                    }, sessionName);
+
+                    savedWindows.push({
+                        ...win,
+                        status: 'saved', // Red
+                        features: resp.features,
+                        predictedLabel: resp.predicted_label
+                    });
+                    savedCount++;
+                } catch (e) {
+                    console.error("Failed to save window", win.id, e);
+                    // What to do with failed? User says: "Black (Error)... discarded". 
+                    // We just won't add it to buffer.
+                }
+            }
+
+            // 2. Clear Ready
+            setReadyToAppend([]);
+
+            // 3. Add to Buffer & Enforce Limits
+            // Scenario 1 (Auto): "Move to Buffer. (Buffer grows...)" 
+            // Scenario 2 (Manual): "Move to Buffer... If buffer > 50, delete oldest... snap back".
+
+            setBufferWindows(prev => {
+                let nextBuffer = [...prev, ...savedWindows]; // Add new at End (Newest)? 
+                // Wait, User: "buffer (Top) + ready (Bottom)".
+                // Usually Top is Oldest. 
+                // So [...oldBuffer, ...newSaved]. 
+
+                // Enforce Snap Back (Scenario 2) & Maintenance (Scenario 1)
+                if (nextBuffer.length > UI_MAX_ITEMS) {
+                    // "delete oldest items until length == 50"
+                    const overflow = nextBuffer.length - UI_MAX_ITEMS;
+                    nextBuffer = nextBuffer.slice(overflow);
+                }
+                return nextBuffer;
             });
 
-            setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'saved' } }));
+            if (savedCount > 0) {
+                setDataLastUpdated(Date.now()); // Trigger table refresh
+            }
 
-            // Determine prediction result
-            const predicted = resp.predicted_label || 'Rest';
-            const isCorrect = predicted === targetLabel;
-
-            // Update in place
-            setMarkedWindows(prev => prev.map(w => {
-                if (w.id === newWindow.id) {
-                    return {
-                        ...w,
-                        predictedLabel: predicted,
-                        status: isCorrect ? 'correct' : 'incorrect',
-                        features: resp.features
-                    };
-                }
-                return w;
-            }));
-            setTotalPredictedCount(prev => prev + 1);
-
-        } catch (err) {
-            console.error('Manual save error:', err);
-            setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'error', message: String(err) } }));
-
-            setMarkedWindows(prev => prev.map(w => {
-                if (w.id === newWindow.id) {
-                    return { ...w, predictedLabel: 'Error', status: 'incorrect' };
-                }
-                return w;
-            }));
         } finally {
             setRunInProgress(false);
         }
     };
 
     const deleteWindow = (id) => {
-        setMarkedWindows(prev => prev.filter(w => w.id !== id));
+        // Could be in Ready or Buffer
+        setReadyToAppend(prev => prev.filter(w => w.id !== id));
+        setBufferWindows(prev => prev.filter(w => w.id !== id));
     };
 
     const markMissed = (id) => {
-        setMarkedWindows(prev => prev.map(w => w.id === id ? { ...w, isMissedActual: !w.isMissedActual } : w));
+        // Update in both
+        setReadyToAppend(prev => prev.map(w => w.id === id ? { ...w, isMissedActual: !w.isMissedActual } : w));
+        setBufferWindows(prev => prev.map(w => w.id === id ? { ...w, isMissedActual: !w.isMissedActual } : w));
     };
 
     // Test Mode Handler: Spawns a window, waits, extracts, sends, returns prediction.
@@ -450,17 +539,23 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                 endTime: end,
                 label: targetGestureLabel, // "Rock" etc.
                 channel: activeChannelIndex,
-                status: 'pending',
+                status: 'pending', // Will be 'recording' then 'pending' then 'saved'
                 samples: [] // Will be filled
             };
 
             // Add to list so user sees it coming
-            setMarkedWindows(prev => [...prev, newWindow].slice(-MAX_WINDOWS));
+            setReadyToAppend(prev => [...prev, newWindow]); // Add to ready for display
             setActiveWindow(newWindow);
             setRunInProgress(true); // Locks UI slightly
 
             // Wait for window to pass center
             setTimeout(async () => {
+                // Check if window still exists
+                if (!readyToAppendRef.current.find(w => w.id === newWindow.id)) {
+                    reject(new Error("Window deleted"));
+                    return;
+                }
+
                 try {
                     const currentData = chartDataRef.current;
                     const samplesPoints = currentData.filter(p => p.time >= start && p.time <= end);
@@ -486,7 +581,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                     // Always mark as 'saved' (green)
                     setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'saved' } }));
 
-                    setMarkedWindows(prev => prev.map(w => {
+                    setReadyToAppend(prev => prev.map(w => {
                         if (w.id === newWindow.id) {
                             return {
                                 ...w,
@@ -514,101 +609,22 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
         });
     };
 
-    // Run calibration logic
-    const runCalibration = useCallback(async (isAuto = false) => {
-        if (!markedWindows || markedWindows.length === 0) return;
 
-        setRunInProgress(true);
-        try {
-            // Filter windows to only those matching the current target label (per user request)
-            const windowsToCalibrate = markedWindows.filter(w => w.label === targetLabel);
 
-            if (windowsToCalibrate.length === 0) {
-                console.warn('[CalibrationView] No matching windows for target label:', targetLabel);
-                setRunInProgress(false);
-                return;
-            }
-
-            // 1. Call robust calibration endpoint
-            const result = await CalibrationApi.calibrateThresholds(activeSensor, windowsToCalibrate);
-            console.log('[CalibrationView] Calibration result:', result);
-
-            // 2. Update config locally
-            // Ideally we also trigger the ConfigPanel to reload, but since config is lifted state in parent (usually), 
-            // or here passing down... currently `config` is local state.
-            // We should refetch configuration.
-            const refreshedConfig = await CalibrationApi.fetchSensorConfig();
-            setConfig(refreshedConfig);
-
-            if (isAuto || autoCalibrate) {
-                // Auto-mode: Reset progress and samples
-                setMarkedWindows([]);
-                console.log('[CalibrationView] Auto-calibration complete. Resetting samples.');
-            } else {
-                // Manual mode: Update window statuses to show results
-                if (result.window_results) {
-                    setMarkedWindows(prev => {
-                        return prev.map((w, i) => {
-                            const res = result.window_results[i];
-                            // Heuristic match by index as IDs might not persist in backend pure logic
-                            // If actions match
-                            if (res && res.action === w.label) {
-                                return {
-                                    ...w,
-                                    status: res.status_after,
-                                    predictedLabel: res.status_after === 'correct' ? w.label : 'Rest'
-                                };
-                            }
-                            return w;
-                        });
-                    });
-                }
-                const acc = result.accuracy_after !== undefined ? result.accuracy_after : (result.accuracy || 0);
-                alert(`Calibration Complete! Accuracy: ${(acc * 100).toFixed(1)}%`);
-                // Reset just like auto mode
-                setMarkedWindows([]);
-                setTotalPredictedCount(0);
-            }
-
-        } catch (err) {
-            console.error('Calibration error:', err);
-            // Only alert in manual mode or log in auto
-            if (!isAuto) {
-                alert(`Calibration failed: ${err.message}`);
-            } else {
-                console.warn('Auto-calibration failed. Disabling auto-mode.');
-                setAutoCalibrate(false);
-            }
-        } finally {
-            setRunInProgress(false);
-        }
-    }, [markedWindows, activeSensor, autoCalibrate]);
-
-    // Auto-Calibration / Auto-Save Trigger
+    // Auto-Flush Trigger
     useEffect(() => {
-        if (!autoCalibrate || runInProgress) return;
+        if (!autoCalibrate) return;
 
-        // Count valid samples for target
-        const validCount = markedWindows.filter(w => w.status !== 'pending' && w.label === targetLabel).length;
-        console.log(`[AutoEffect] Valid: ${validCount}, Limit: ${autoLimit}`);
+        // Check if we hit limit
+        const readyCount = readyToAppend.filter(w => w.label === targetLabel).length;
+        // Also check if we have enough "pending"?
+        // Logic: "When readyToAppend reaches auto_limit"
 
-        // Check Limit
-        // Check Limit
-        if (validCount >= autoLimit) {
-            console.log(`[CalibrationView] Limit ${autoLimit} reached. Buffer cleared (auto-append).`);
-            setMarkedWindows([]);
-            // Do NOT stop calibration
-            // Alert removed per request
-            return;
+        if (readyCount >= autoLimit && !runInProgress) {
+            console.log("Auto-Flush Triggered");
+            flushReadyToBuffer();
         }
-
-        // Trigger next window? 
-        // Logic for auto-windowing is in startAutoWindowing which runs on interval if isCalibrating=true
-        // So we just need to ensure isCalibrating is true?
-        // Actually this effect was originally for "Training" (runCalibration).
-        // Since we removed on-the-fly training, we just need to stop when limit reached.
-
-    }, [markedWindows, autoCalibrate, isCalibrating, runInProgress, activeSensor, autoLimit]);
+    }, [readyToAppend, autoCalibrate, autoLimit, targetLabel, runInProgress]);
 
     // Update chart data from WS or Mock
     useEffect(() => {
@@ -712,12 +728,19 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
     // Map action windows to sweep coordinates so they match the chart data (center-relative)
     const mappedWindows = React.useMemo(() => {
-        // Use SAME synchronized frameTime
         const now = frameTime;
         const w = timeWindow;
         const center = Math.round(w / 2);
 
-        const mapped = markedWindows.map(win => {
+        // Combine all windows we want to show
+        // Order: Active (Top Z), Ready (Green), Buffer (Red)
+        const allWindows = [
+            ...(activeWindow ? [activeWindow] : []),
+            ...readyToAppend,
+            ...bufferWindows
+        ];
+
+        const mapped = allWindows.map(win => {
             const ageStart = now - win.startTime;
             const ageEnd = now - win.endTime;
 
@@ -731,26 +754,9 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             };
         });
 
-        if (markedWindows.length > 0 && Math.random() < 0.05) {
-            console.log("[CalibrationView] Mapped:", mapped.length, "First:", mapped[0]);
-        }
-
         return mapped;
-    }, [markedWindows, timeWindow, frameTime]); // Depend on frameTime
+    }, [activeWindow, readyToAppend, bufferWindows, timeWindow, frameTime]);
 
-    // Active/Pending Window
-    const activeWindowMapped = React.useMemo(() => {
-        if (!activeWindow) return null;
-        // Use SAME synchronized frameTime
-        const now = frameTime;
-        const w = timeWindow;
-        const center = Math.round(w / 2);
-
-        const x1 = Math.round(center - (now - activeWindow.endTime));
-        const x2 = Math.round(center - (now - activeWindow.startTime));
-
-        return { ...activeWindow, startTime: x2, endTime: x1 };
-    }, [activeWindow, timeWindow, frameTime]);
 
     // Highlighted Window (for inspection)
     const highlightedWindowMapped = React.useMemo(() => {
@@ -775,192 +781,225 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
         };
     }, []);
 
+    // Run calibration logic (Modified for new state)
+    // "bufferWindows" contains Saved/Red items. Typically we train on this.
+    const runCalibration = useCallback(async (isAuto = false) => {
+        if (!bufferWindows || bufferWindows.length === 0) return;
+
+        setRunInProgress(true);
+        try {
+            // Filter windows to only those matching the current target label (per user request)
+            const windowsToCalibrate = bufferWindows.filter(w => w.label === targetLabel);
+
+            if (windowsToCalibrate.length === 0) {
+                console.warn('[CalibrationView] No matching windows for target label:', targetLabel);
+                setRunInProgress(false);
+                return;
+            }
+
+            // 1. Call robust calibration endpoint
+            const result = await CalibrationApi.calibrateThresholds(activeSensor, windowsToCalibrate);
+
+            // 2. Update config locally
+            const refreshedConfig = await CalibrationApi.fetchSensorConfig();
+            setConfig(refreshedConfig);
+
+            if (isAuto || autoCalibrate) {
+                // Auto-mode cleanups if any
+            } else {
+                const acc = result.accuracy_after !== undefined ? result.accuracy_after : (result.accuracy || 0);
+                alert(`Calibration Complete! Accuracy: ${(acc * 100).toFixed(1)}%`);
+            }
+        } catch (err) {
+            console.error('Calibration error:', err);
+            if (!isAuto) alert(`Calibration failed: ${err.message}`);
+        } finally {
+            setRunInProgress(false);
+        }
+    }, [bufferWindows, activeSensor, autoCalibrate, targetLabel]);
+
+    // Use "bufferWindows" + "readyToAppend" for list? 
+    // Actually WindowListPanel will receive them separately.
+
     return (
-        <div className="flex flex-col gap-2 h-[100dvh] p-2 bg-bg text-text animate-in fade-in duration-500 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
-            {/* Header / Tabs */}
-            <div className="flex-none flex flex-col lg:flex-row lg:items-center justify-between gap-4 card bg-surface border border-border p-4 rounded-2xl shadow-card">
-                <div className="flex items-center gap-3">
-                    <div className="p-2 bg-primary/10 rounded-xl border border-primary/20">
-                        <span className="text-xl">🎯</span>
-                    </div>
-                    <div>
-                        <h2 className="text-xl font-bold tracking-tight">Calibration Studio</h2>
-                        <p className="text-[10px] text-muted font-mono uppercase tracking-widest">
-                            Fine-tune sensor detection thresholds
-                        </p>
-                    </div>
-                </div>
+        <div className="flex flex-col h-[calc(100dvh-120px)] bg-bg text-text animate-in fade-in duration-500 overflow-hidden">
 
-                <div className="flex flex-wrap items-center gap-2">
-                    <div className="flex bg-bg/50 p-1 rounded-xl border border-border">
-                        {['EMG', 'EOG', 'EEG'].map(s => (
-                            <button
-                                key={s}
-                                onClick={() => handleSensorChange(s)}
-                                className={`px-4 py-1.5 rounded-lg font-bold text-xs transition-all ${activeSensor === s ? 'bg-primary text-primary-contrast shadow-lg' : 'text-muted hover:text-text'
-                                    }`}
-                            >
-                                {s}
-                            </button>
-                        ))}
-                    </div>
-
-                    {matchingChannels.length > 1 && (
-                        <div className="flex bg-bg/50 p-1 rounded-xl border border-border animate-in slide-in-from-left-2 duration-300">
-                            {matchingChannels.map(ch => (
-                                <button
-                                    key={ch.id}
-                                    onClick={() => setActiveChannelIndex(ch.index)}
-                                    className={`px-3 py-1.5 rounded-lg font-bold text-[10px] transition-all uppercase tracking-wider ${activeChannelIndex === ch.index
-                                        ? 'bg-primary text-primary-contrast shadow-lg'
-                                        : 'text-muted hover:text-text'
-                                        }`}
-                                >
-                                    {ch.label}
-                                </button>
-                            ))}
+            {/* TOP ROW: SIDEBAR + CHART (50%) */}
+            <div className="h-[50%] flex-none flex min-h-0 p-2 gap-2">
+                {/* SIDEBAR CARD */}
+                <div className="w-[260px] flex-none flex flex-col bg-surface border border-border rounded-xl shadow-sm overflow-hidden">
+                    {/* Sidebar Header */}
+                    <div className="p-3 border-b border-border flex items-center gap-2 bg-surface/50">
+                        <div className="p-1.5 bg-primary/10 rounded-lg border border-primary/20 shrink-0">
+                            <span className="text-lg">🎯</span>
                         </div>
-                    )}
+                        <div>
+                            <h2 className="text-sm font-bold tracking-tight leading-tight">Calibration</h2>
+                            <p className="text-xs text-muted font-mono uppercase tracking-widest">Controls</p>
+                        </div>
+                    </div>
 
-                    <div className="w-[1px] h-6 bg-border mx-1"></div>
+                    {/* Sidebar Scrollable Content */}
+                    <div className="flex-grow overflow-y-auto p-3 space-y-4 custom-scrollbar">
 
-                    <div className="flex bg-bg/50 p-1 rounded-xl border border-border">
-                        {['realtime', 'recording', 'test'].map(m => (
+                        {/* 1. SENSOR & MODE */}
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold text-muted uppercase tracking-wider block">Sensor & Mode</label>
+                            <div className="flex bg-bg p-1 rounded-lg border border-border">
+                                {['EMG', 'EOG', 'EEG'].map(s => (
+                                    <button
+                                        key={s}
+                                        onClick={() => handleSensorChange(s)}
+                                        className={`flex-1 py-1 rounded font-bold text-xs transition-all ${activeSensor === s ? 'bg-primary text-primary-contrast shadow-sm' : 'text-muted hover:text-text'
+                                            }`}
+                                    >
+                                        {s}
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="grid grid-cols-3 gap-1">
+                                {['realtime', 'recording', 'test'].map(m => (
+                                    <button
+                                        key={m}
+                                        onClick={() => setMode(m)}
+                                        className={`px-1 py-1 rounded font-bold text-xs transition-all uppercase tracking-wider border border-transparent ${mode === m
+                                            ? 'bg-accent text-primary-contrast shadow-sm border-accent/20'
+                                            : 'bg-bg text-muted hover:text-text hover:border-border'
+                                            }`}
+                                    >
+                                        {m}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* 2. CHANNELS (If Multi) */}
+                        {matchingChannels.length > 1 && (
+                            <div className="space-y-2 animate-in slide-in-from-left-2 duration-300">
+                                <label className="text-xs font-bold text-muted uppercase tracking-wider block">Active Channel</label>
+                                <div className="flex flex-wrap gap-2">
+                                    {matchingChannels.map(ch => (
+                                        <button
+                                            key={ch.id}
+                                            onClick={() => setActiveChannelIndex(ch.index)}
+                                            className={`px-2 py-1 rounded font-bold text-xs transition-all uppercase tracking-wider border ${activeChannelIndex === ch.index
+                                                ? 'bg-primary text-primary-contrast border-primary shadow-sm'
+                                                : 'bg-bg text-muted border-border hover:text-text'
+                                                }`}
+                                        >
+                                            {ch.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="h-[1px] w-full bg-border/50"></div>
+
+                        {/* 3. COLLECTION CONTROLS */}
+                        <div className="space-y-3">
+                            <label className="text-xs font-bold text-muted uppercase tracking-wider block">Data Collection</label>
+
+                            {/* Target Label */}
+                            <div className="space-y-1">
+                                <span className="text-xs text-muted uppercase">Target Label</span>
+                                <div className="relative">
+                                    <select
+                                        value={targetLabel}
+                                        onChange={(e) => setTargetLabel(e.target.value)}
+                                        className="w-full appearance-none bg-bg border border-border rounded px-2 py-1.5 text-xs font-bold font-mono outline-none focus:border-primary transition-colors pr-6"
+                                    >
+                                        {activeSensor === 'EMG' && ['Rock', 'Paper', 'Scissors', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
+                                        {activeSensor === 'EOG' && ['SingleBlink', 'DoubleBlink', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
+                                        {activeSensor === 'EEG' && ['Concentration', 'Relaxation', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
+                                    </select>
+                                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-muted pointer-events-none text-[10px]">▼</span>
+                                </div>
+                            </div>
+
+                            {/* Action Button */}
                             <button
-                                key={m}
-                                onClick={() => setMode(m)}
-                                className={`px-3 py-1.5 rounded-lg font-bold text-[10px] transition-all uppercase tracking-wider ${mode === m ? 'bg-accent text-primary-contrast shadow-lg' : 'text-muted hover:text-text'
+                                onClick={isCalibrating ? handleStopCalibration : handleStartCalibration}
+                                className={`w-full py-3 rounded-lg font-black text-sm uppercase tracking-widest transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 ${isCalibrating
+                                    ? 'bg-red-500 text-white hover:bg-red-600 shadow-red-500/20'
+                                    : 'bg-primary text-primary-contrast hover:opacity-90 shadow-primary/25'
                                     }`}
                             >
-                                {m}
+                                {isCalibrating ? 'STOP' : 'START CAPTURE'}
                             </button>
-                        ))}
+                        </div>
                     </div>
                 </div>
 
-            </div>
+                {/* CHART CARD */}
+                <div className="flex-grow min-w-0 bg-surface border border-border rounded-xl shadow-sm overflow-hidden flex flex-col relative group">
+                    {/* Status Badge Overlay */}
+                    <div className="absolute top-1.5 right-3 z-10">
+                        <div className={`px-2 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider border backdrop-blur-sm shadow-sm ${isCalibrating
+                            ? 'bg-red-500/10 text-red-500 border-red-500/20 animate-pulse'
+                            : 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'}`}>
+                            {isCalibrating ? '● REC' : '● IDLE'}
+                        </div>
+                    </div>
 
-            {/* Main Workspace: Flex Column */}
-            <div className="flex-none flex flex-col gap-2">
-
-
-
-                {/* Graph Area */}
-                <div className="flex-none flex flex-col">
-                    <div className="card bg-surface border border-border p-4 rounded-2xl shadow-card flex flex-col gap-2">
-
-                        <div className="flex-none flex flex-col lg:flex-row lg:justify-between lg:items-center gap-2">
-                            <div className="flex items-center gap-2">
-                                <div className="text-[10px] font-bold text-muted uppercase">Zoom:</div>
-                                <div className="flex gap-1">
+                    {/* Chart Header Controls */}
+                    <div className="px-3 py-1.5 border-b border-border bg-surface/50 flex items-center justify-between gap-4 max-h-[40px] flex-none">
+                        <div className="flex items-center gap-3 overflow-x-auto no-scrollbar">
+                            {/* Zoom */}
+                            <div className="flex items-center gap-2 shrink-0">
+                                <span className="text-xs font-bold text-muted uppercase">Zoom</span>
+                                <div className="flex gap-0.5">
                                     {[1, 2, 5, 10, 25].map(z => (
                                         <button
                                             key={z}
                                             onClick={() => { setZoom(z); setManualYRange(""); }}
-                                            className={`px-2 py-1 text-[10px] rounded font-bold transition-all ${zoom === z && !manualYRange
-                                                ? 'bg-primary text-white shadow-lg'
-                                                : 'bg-surface/50 hover:bg-white/10 text-muted hover:text-text border border-border'
+                                            className={`px-1.5 py-0.5 text-xs rounded font-bold transition-all ${zoom === z && !manualYRange
+                                                ? 'bg-primary text-white shadow-sm'
+                                                : 'bg-surface hover:bg-white/10 text-muted hover:text-text border border-border'
                                                 }`}
                                         >
                                             {z}x
                                         </button>
                                     ))}
                                 </div>
-
-                                <div className="h-3 w-[1px] bg-border mx-1"></div>
-
-                                <div className="flex items-center gap-2">
-                                    <div className="text-[10px] font-bold text-muted uppercase">Y (uV):</div>
-                                    <input
-                                        type="number"
-                                        placeholder="+/-"
-                                        value={manualYRange}
-                                        onChange={(e) => setManualYRange(e.target.value)}
-                                        className="w-16 bg-bg border border-border rounded px-2 py-1 text-[10px] text-text focus:outline-none focus:border-primary"
-                                    />
-                                </div>
                             </div>
 
-                            <div className="flex items-center gap-2">
-                                {mode === 'recording' && (
-                                    <div className="flex items-center gap-2 p-2 bg-bg/50 border border-border rounded-lg">
-                                        <label className="text-[10px] font-bold text-muted uppercase">File:</label>
-                                        <select
-                                            onChange={(e) => setSelectedRecording(e.target.value)}
-                                            className="flex-grow bg-transparent border-none text-[10px] font-mono text-primary outline-none"
-                                        >
-                                            <option value="">Select...</option>
-                                            {availableRecordings.filter(r => r.type === activeSensor).map(r => (
-                                                <option value={r.name}>{r.name}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                )}
-                            </div>
+                            <div className="w-[1px] h-3 bg-border shrink-0"></div>
 
-                            <div className="flex items-center gap-2">
-                                <div className="flex items-center gap-2 ml-1">
-                                    <label className="text-[10px] font-bold text-muted uppercase">Win:</label>
-                                    <select
-                                        value={timeWindow}
-                                        onChange={(e) => setTimeWindow(Number(e.target.value))}
-                                        className="bg-bg border border-border rounded px-2 py-1 text-[10px] font-bold outline-none"
-                                    >
-                                        {[3000, 5000, 8000, 10000, 15000, 20000].map(v => (
-                                            <option key={v} value={v}>{v / 1000}s</option>
-                                        ))}
-                                    </select>
+                            {/* Window / Duration */}
+                            <div className="flex items-center gap-2 shrink-0">
+                                <label className="text-xs font-bold text-muted uppercase">Win</label>
+                                <select
+                                    value={timeWindow}
+                                    onChange={(e) => setTimeWindow(Number(e.target.value))}
+                                    className="bg-bg border border-border rounded px-1 py-0.5 text-xs font-mono outline-none"
+                                >
+                                    {[3000, 5000, 8000, 10000, 15000, 20000].map(v => (
+                                        <option key={v} value={v}>{v / 1000}s</option>
+                                    ))}
+                                </select>
 
-                                    <label className="text-[10px] font-bold text-muted uppercase">Dur:</label>
-                                    <select
-                                        value={windowDuration}
-                                        onChange={(e) => setWindowDuration(Number(e.target.value))}
-                                        className="bg-bg border border-border rounded px-2 py-1 text-[10px] font-bold outline-none"
-                                    >
-                                        {[500, 1000, 1500, 2000].map(v => (
-                                            <option key={v} value={v}>{v}ms</option>
-                                        ))}
-                                    </select>
-
-                                    <label className="text-[10px] font-bold text-muted uppercase">Session:</label>
-                                    <input
-                                        type="text"
-                                        value={sessionName}
-                                        onChange={(e) => setSessionName(e.target.value)}
-                                        className="w-24 bg-bg border border-border rounded px-2 py-1 text-[10px] text-text focus:outline-none focus:border-primary"
-                                    />
-
-                                    <label className="text-[10px] font-bold text-muted uppercase">Label:</label>
-                                    <select
-                                        value={targetLabel}
-                                        onChange={(e) => setTargetLabel(e.target.value)}
-                                        className="bg-bg border border-border rounded px-2 py-1 text-[10px] font-bold outline-none"
-                                    >
-                                        {activeSensor === 'EMG' && ['Rock', 'Paper', 'Scissors', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
-                                        {activeSensor === 'EOG' && ['SingleBlink', 'DoubleBlink', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
-                                        {activeSensor === 'EEG' && ['Concentration', 'Relaxation', 'Rest'].map(l => <option key={l} value={l}>{l}</option>)}
-                                    </select>
-
-                                    <button
-                                        onClick={isCalibrating ? handleStopCalibration : handleStartCalibration}
-                                        className={`px-4 py-1.5 rounded-lg font-bold text-[10px] transition-all shadow-glow ${isCalibrating
-                                            ? 'bg-red-500 text-white hover:opacity-90'
-                                            : 'bg-primary text-primary-contrast hover:opacity-90 hover:translate-y-[-1px]'
-                                            }`}
-                                    >
-                                        {isCalibrating ? 'Stop' : 'Start'}
-                                    </button>
-                                </div>
+                                <label className="text-xs font-bold text-muted uppercase ml-1">Dur</label>
+                                <select
+                                    value={windowDuration}
+                                    onChange={(e) => setWindowDuration(Number(e.target.value))}
+                                    className="bg-bg border border-border rounded px-1 py-0.5 text-xs font-mono outline-none"
+                                >
+                                    {[500, 1000, 1500, 2000].map(v => (
+                                        <option key={v} value={v}>{v}ms</option>
+                                    ))}
+                                </select>
                             </div>
                         </div>
+                    </div>
 
-                        <div className="w-full h-[300px]">
-                            {/* Chart Container fixed height for stability */}
+                    <div className="flex-grow relative">
+                        <div className="absolute inset-0 p-2">
                             <TimeSeriesZoomChart
                                 data={sweepChartData}
-                                title={`${activeSensor} Signal Stream`}
+                                title=""
                                 mode={mode}
-                                height={300}
+                                height="100%"
                                 markedWindows={mappedWindows}
                                 activeWindow={null}
                                 onWindowSelect={handleManualWindowSelect}
@@ -971,145 +1010,44 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                                 color={activeSensor === 'EMG' ? '#3b82f6' : (activeSensor === 'EOG' ? '#10b981' : '#f59e0b')}
                             />
                         </div>
-
-                        <div className="flex-none flex justify-between items-center text-[9px] text-muted font-mono uppercase tracking-widest">
-                            <span>Status: {isCalibrating ? 'Active Collection' : 'Idle'}</span>
-                            <span>Target Samples: {markedWindows.filter(w => w.status !== 'pending' && w.label === targetLabel).length}</span>
-                            <span>Predictions: {totalPredictedCount}</span>
-                        </div>
                     </div>
                 </div>
             </div>
 
-            {/* Bottom Row Area: Fills remaining space */}
-            <div className="flex-grow min-h-0 grid grid-cols-1 lg:grid-cols-12 lg:grid-rows-[minmax(0,1fr)] gap-4">
-                {/* Config / Session (left) */}
-                <div className="lg:col-span-4 h-full">
+            {/* BOTTOM ROW: SESSION + WINDOW LIST (50%) */}
+            <div className="h-[50%] flex-none min-h-0 p-2 pt-0 grid grid-cols-1 lg:grid-cols-12 gap-2">
+                {/* Session Panel */}
+                <div className="lg:col-span-9 h-full min-h-0 overflow-hidden rounded-xl border border-border shadow-sm">
                     {mode === 'realtime' ? (
                         <SessionManagerPanel
                             activeSensor={activeSensor}
                             currentSessionName={sessionName}
                             onSessionChange={setSessionName}
+                            refreshTrigger={dataLastUpdated}
                         />
                     ) : (
                         <ConfigPanel config={config} sensor={activeSensor} onSave={setConfig} />
                     )}
                 </div>
 
-                {/* Stats (center) */}
-                <div className="lg:col-span-4 h-full flex flex-col gap-4">
-                    <div className="flex gap-4 h-1/3 min-h-0">
-                        <div className="card bg-surface/50 border border-border p-4 rounded-xl flex items-center justify-between flex-grow">
-                            <div>
-                                <div className="text-[10px] text-muted uppercase font-bold">Accuracy</div>
-                                <div className="text-lg font-bold text-emerald-400">
-                                    {markedWindows.length > 0 ? ((markedWindows.filter(w => w.status === 'correct').length / markedWindows.length) * 100).toFixed(0) : 0}%
-                                </div>
-                            </div>
-                            <div className="w-10 h-10 rounded-full border-2 border-emerald-500/20 flex items-center justify-center text-emerald-400 text-xs font-bold">
-                                GC
-                            </div>
-                        </div>
-
-                        <div className="card bg-surface/50 border border-border p-4 rounded-xl flex items-center justify-between flex-grow">
-                            <div>
-                                <div className="text-[10px] text-muted uppercase font-bold">Missed</div>
-                                <div className="text-lg font-bold text-red-400">
-                                    {markedWindows.filter(w => w.isMissedActual).length}
-                                </div>
-                            </div>
-                            <div className="w-10 h-10 rounded-full border-2 border-red-500/20 flex items-center justify-center text-red-400 text-xs font-bold">
-                                ER
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Calibration Control Card */}
-                    <div className="card bg-surface border border-border p-4 rounded-xl flex flex-col justify-center gap-3 flex-grow h-2/3">
-                        {(() => {
-                            const recommendedSamples = { 'EOG': 20, 'EMG': 30, 'EEG': 25 }[activeSensor] || 20;
-                            const validCount = markedWindows.filter(w => w.status !== 'pending' && w.label === targetLabel).length;
-                            const progress = Math.min(100, (validCount / recommendedSamples) * 100);
-                            const readyToCalibrate = validCount >= 3 && markedWindows.some(w => w.features);
-
-                            return (
-                                <>
-                                    <div className="flex justify-between items-start mb-2">
-                                        <div>
-                                            <h3 className="font-bold text-sm uppercase tracking-wide">Calibration</h3>
-                                            <span className="text-[10px] text-muted font-mono">{validCount} samples</span>
-                                        </div>
-
-                                        {/* Auto-Calibration/Limit Toggle */}
-                                        <div className="flex items-center gap-2">
-                                            <div className="flex items-center gap-1 bg-bg/30 px-2 py-1 rounded">
-                                                <span className="text-[9px] font-bold text-muted uppercase">Limit:</span>
-                                                <input
-                                                    type="number"
-                                                    className="w-8 bg-transparent text-[9px] font-mono text-center outline-none"
-                                                    value={autoLimit}
-                                                    onChange={(e) => setAutoLimit(Number(e.target.value))}
-                                                    id="auto-limit-input"
-                                                />
-                                            </div>
-                                            <div className="h-4 w-[1px] bg-border mx-1"></div>
-                                            <span className={`text-[9px] font-bold uppercase ${autoCalibrate ? 'text-primary' : 'text-muted'}`}>Auto Rec</span>
-                                            <button
-                                                onClick={() => setAutoCalibrate(!autoCalibrate)}
-                                                className={`w-8 h-4 rounded-full relative transition-colors ${autoCalibrate ? 'bg-primary' : 'bg-muted/30'}`}
-                                            >
-                                                <div className={`absolute top-0.5 bottom-0.5 w-3 rounded-full bg-white shadow transition-all ${autoCalibrate ? 'left-[calc(100%-14px)]' : 'left-0.5'}`} />
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    {/* Progress Bar */}
-                                    {autoCalibrate && (
-                                        <div className="mt-1">
-                                            <div className="flex justify-between text-[9px] text-muted mb-1">
-                                                <span>Collected: {validCount}</span>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    <button
-                                        onClick={() => {
-                                            if (markedWindows.length > 0) {
-                                                console.log("[CalibrationView] Appending saved samples (clearing view).");
-                                                setMarkedWindows(prev => prev.filter(w => w.status !== 'saved'));
-                                            }
-                                        }}
-                                        className={`w-full py-3 rounded-lg font-bold text-xs uppercase tracking-wider transition-all bg-emerald-500 text-white hover:opacity-90 shadow-glow`}
-                                    >
-                                        Append Sample
-                                    </button>
-
-                                    <div className="text-center text-[9px] text-muted mt-1 italic">
-                                        {readyToCalibrate
-                                            ? (autoCalibrate ? "Will calibrate automatically at 100%" : "Ready to update config")
-                                            : "Collect more data to calibrate"}
-                                    </div>
-                                </>
-                            );
-                        })()}
-                    </div>
-                </div>
-
-                {/* Windows List (right) */}
-                <div className="lg:col-span-4 h-full">
+                {/* Window List */}
+                <div className="lg:col-span-3 h-full min-h-0 overflow-hidden rounded-xl border border-border shadow-sm">
                     <WindowListPanel
-                        windows={markedWindows}
+                        bufferWindows={bufferWindows}
+                        readyWindows={readyToAppend}
                         onDelete={deleteWindow}
                         onMarkMissed={markMissed}
                         onHighlight={setHighlightedWindow}
                         activeSensor={activeSensor}
-                        onRun={runCalibration}
-                        running={runInProgress}
                         windowProgress={windowProgress}
+                        autoLimit={autoLimit}
+                        onAutoLimitChange={setAutoLimit}
+                        autoCalibrate={autoCalibrate}
+                        onAutoCalibrateChange={setAutoCalibrate}
+                        onClearSaved={flushReadyToBuffer}
                     />
                 </div>
             </div>
         </div>
     );
 }
-

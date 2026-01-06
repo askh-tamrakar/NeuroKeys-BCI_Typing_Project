@@ -6,11 +6,9 @@
 }
 
 .scroll-list {
-  height: 100%; /* Fill container */
+  height: 100%; 
   max-height: none;
   overflow-y: auto;
-  padding: 16px;
-  /* Ensure padding doesn't affect width if box-sizing is border-box */
   box-sizing: border-box;
 }
 

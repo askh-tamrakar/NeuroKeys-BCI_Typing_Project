@@ -21,7 +21,50 @@ def api_list_sessions(sensor_type):
     # Previously it returned just list of objects or strings, but frontend checked data.tables
     
     # We return the full table names as strings, as frontend parser handles `_session_` split.
+    # We return the full table names as strings, as frontend parser handles `_session_` split.
     return jsonify({"tables": tables})
+
+
+@session_bp.route('/api/sessions/<sensor_type>/<session_name>', methods=['GET'])
+def api_get_session_data(sensor_type, session_name):
+    """Get data rows for a specific session."""
+    try:
+        data = db_manager.get_session_data(sensor_type, session_name)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@session_bp.route('/api/sessions/<sensor_type>/<session_name>', methods=['DELETE'])
+def api_delete_session(sensor_type, session_name):
+    """Delete a session table."""
+    try:
+        if db_manager.delete_session_table(sensor_type, session_name):
+            # If active session was this one, reset it?
+            # The UI should handle clearing local state, server state reset is tricky if it's currently recording.
+            # We assume user won't delete ACTIVE recording session without stopping it first.
+            return jsonify({"status": "deleted", "session": session_name})
+        else:
+            return jsonify({"error": "Failed to delete"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@session_bp.route('/api/sessions/<sensor_type>/<session_name>/rows/<row_id>', methods=['DELETE'])
+def api_delete_session_row(sensor_type, session_name, row_id):
+    """Delete a specific row from a session."""
+    try:
+        # Convert row_id to int
+        try:
+            r_id = int(row_id)
+        except ValueError:
+            return jsonify({"error": "Invalid row ID"}), 400
+
+        if db_manager.delete_session_row(sensor_type, session_name, r_id):
+            return jsonify({"status": "deleted", "row_id": r_id})
+        else:
+            return jsonify({"error": "Failed to delete row (not found or DB error)"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # --- EMG ENDPOINTS ---
 

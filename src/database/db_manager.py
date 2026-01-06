@@ -117,6 +117,133 @@ class DatabaseManager:
         conn.close()
         return [r[0] for r in rows]
 
+    # --- Session Management ---
+    def delete_session_table(self, sensor_type: str, session_name: str) -> bool:
+        """Drop a session table."""
+        try:
+            # Reconstruct table name logic
+            safe_suffix = self.sanitize_table_name(session_name)
+            
+            sensor = sensor_type.upper()
+            prefix = f"{sensor.lower()}_session_"
+            
+            if session_name.startswith(prefix):
+                 table_name = session_name
+            else:
+                 if not safe_suffix: safe_suffix = "default"
+                 table_name = f"{prefix}{safe_suffix}"
+            
+            conn = self.connect(sensor)
+            cursor = conn.cursor()
+            cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+            conn.commit()
+            conn.close()
+            print(f"[DB] Dropped table: {table_name}")
+            return True
+        except Exception as e:
+            print(f"[DB] Error dropping table {session_name}: {e}")
+            return False
+
+    def get_session_data(self, sensor_type: str, session_name: str) -> List[Dict]:
+        """Fetch all rows from a specific session table."""
+        try:
+            sensor = sensor_type.upper()
+            
+            # Validate table name strictly to prevent injection
+            # Although sanitize_table_name does some, ensure it matches expected pattern
+            prefix = f"{sensor.lower()}_session_"
+            if not session_name.startswith(prefix):
+                 # Try to see if it's the short name?
+                 # Assume it's the full table name passed from frontend
+                 return []
+            
+            # Additional safety verify it exists in list?
+            if session_name not in self.get_session_tables(sensor):
+                return []
+
+            conn = self.connect(sensor)
+            conn.row_factory = sqlite3.Row # Access columns by name
+            cursor = conn.cursor()
+            cursor.execute(f"SELECT * FROM {session_name}")
+            rows = cursor.fetchall()
+            
+            results = []
+            for row in rows:
+                r_dict = dict(row)
+                # Pack features into list/dict if needed for consistency with frontend expectations
+                # Frontend expects: { label: ..., features: [...] }
+                # But here we have raw columns.
+                # Let's verify what columns we have.
+                # EMG: rms, mav, zcr...
+                # EOG: amplitude, duration...
+                
+                # We can group features dynamically
+                item = {
+                    "id": r_dict.get('id'),
+                    "label": r_dict.get('label'),
+                    "timestamp": r_dict.get('timestamp')
+                }
+                
+                # Collect remaining columns as features for display
+                # Exclude metadata
+                excluded = {'id', 'label', 'session_id', 'timestamp', 'created_at'}
+                features = {k: v for k, v in r_dict.items() if k not in excluded}
+                
+                # Flatten features to array or keep object? 
+                # Frontend does: row.features.map... implying array OR object handling in table?
+                # Frontend code: `Array.isArray(row.features) ? ... : JSON.stringify(...)`
+                # Let's return features as object values for simplified display or just the object
+                # But for a cleaner table, detailed structure is better.
+                # Let's just put the feature dict in 'features' key.
+                item['features'] = features # Return dict with keys
+                
+                # Or better, list of objects or formatted string?
+                # Frontend truncates. List of floats is fine.
+                
+                results.append(item)
+                
+            conn.close()
+            conn.close()
+            return results
+        except Exception as e:
+            print(f"[DB] Error fetching session data {session_name}: {e}")
+            return []
+
+    def delete_session_row(self, sensor_type: str, session_name: str, row_id: int) -> bool:
+        """Delete a specific row from a session table."""
+        try:
+            sensor = sensor_type.upper()
+            
+            # Validate table name similar to get_session_data
+            prefix = f"{sensor.lower()}_session_"
+            if not session_name.startswith(prefix):
+                 # Try sanitize/lookup if needed, but stick to strict matching for safety like get_session_data
+                 # Or allow if it's in the known table list (expensive?)
+                 # For now, strict prefix check as frontend sends full name
+                 if session_name not in self.get_session_tables(sensor):
+                     return False
+
+            conn = self.connect(sensor)
+            cursor = conn.cursor()
+            
+            # Use parameterized query for ID, but table name must be injected (safe due to check above)
+            cursor.execute(f"DELETE FROM {session_name} WHERE id = ?", (row_id,))
+            
+            rows_affected = cursor.rowcount
+            conn.commit()
+            conn.close()
+            
+            if rows_affected > 0:
+                print(f"[DB] Deleted row {row_id} from {session_name}")
+                return True
+            else:
+                print(f"[DB] Row {row_id} not found in {session_name}")
+                return False
+                
+        except Exception as e:
+            print(f"[DB] Error deleting row {row_id} from {session_name}: {e}")
+            return False
+
     # --- EMG Methods ---
     def insert_window(self, features: Dict[str, float], label: int, session_id: str = None, table_name: str = "emg_windows") -> bool:
         try:
