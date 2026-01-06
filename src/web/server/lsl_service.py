@@ -204,10 +204,10 @@ def broadcast_events(socketio):
             
             if sample:
                 raw_event = sample[0]
-                print(f"[LSLService] ⚡ Event Received: {raw_event}")
-                
                 try:
                     event_data = json.loads(raw_event)
+                    event_name = event_data.get("event", "UNKNOWN")
+                    print(f"[Web Server] [LSLService] ⚡ Event Received: {event_name}")
                     socketio.emit('bio_event', event_data)
                 except json.JSONDecodeError:
                     print(f"[LSLService] ⚠️  Failed to parse event JSON: {raw_event}")

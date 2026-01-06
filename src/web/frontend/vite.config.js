@@ -63,7 +63,7 @@ export default defineConfig({
     saveDetailsPlugin() // Add our custom plugin here
   ],
   server: {
-    port: 7219,
+    port: 1972,
     open: true,
     proxy: {
       '/api': {

@@ -18,11 +18,12 @@
     "EMG": {
       "bandpass_enabled": true,
       "bandpass_high": 250,
-      "bandpass_low": 20,
+      "bandpass_low": 70,
       "cutoff": 20.1,
       "notch_enabled": true,
       "order": 4,
-      "type": "high_pass"
+      "type": "high_pass",
+      "notch_freq": 0
     },
     "EOG": {
       "bandpass_enabled": true,

@@ -29,7 +29,8 @@ export default function TimeSeriesZoomChart({
     mode = 'realtime',
     scannerX = null,
     scannerValue = null,
-    yDomain = null // optional external Y domain: [min, max]
+    yDomain = null, // optional external Y domain: [min, max]
+    curveType = "monotone" // default to monotone, but allow override (e.g. 'linear')
 }) {
     // Zoom and Pan state
     const [left, setLeft] = useState('dataMin');
@@ -217,16 +218,16 @@ export default function TimeSeriesZoomChart({
                         {data && data.some(d => d.future !== undefined) ? (
                             <>
                                 <Line
-                                    type="monotone"
+                                    type={curveType}
                                     dataKey="value"
                                     stroke={color}
                                     dot={false}
-                                    strokeWidth={2}
+                                    strokeWidth={1.5}
                                     isAnimationActive={false}
                                     connectNulls
                                 />
                                 <Line
-                                    type="monotone"
+                                    type={curveType}
                                     dataKey="future"
                                     stroke={hexToRgba(color, 0.35)}
                                     dot={false}
@@ -237,11 +238,11 @@ export default function TimeSeriesZoomChart({
                             </>
                         ) : (
                             <Line
-                                type="monotone"
+                                type={curveType}
                                 dataKey="value"
                                 stroke={color}
                                 dot={false}
-                                strokeWidth={2}
+                                strokeWidth={1.5}
                                 isAnimationActive={false}
                                 connectNulls
                             />

@@ -64,7 +64,7 @@ def load_config() -> dict:
             "ch1": {"sensor": "EOG", "enabled": True}
         },
         "filters": {
-            "EMG": {"cutoff": 20.0, "order": 4, "notch_enabled": True, "notch_freq": 50, "bandpass_enabled": True, "bandpass_low": 20, "bandpass_high": 250},
+            "EMG": {"cutoff": 70.0, "order": 4, "notch_enabled": False, "notch_freq": 50, "bandpass_enabled": False, "bandpass_low": 20, "bandpass_high": 250, "envelope_enabled": True, "envelope_cutoff": 10.0, "envelope_order": 4},
             "EOG": {"cutoff": 10.0, "order": 4},
             "EEG": {
                 "filters": [

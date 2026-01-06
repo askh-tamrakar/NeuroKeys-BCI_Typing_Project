@@ -176,7 +176,7 @@ class FeatureRouter:
                                         "features": features
                                     }
                                     formatted_event = json.dumps(event_data)
-                                    print(f"[FeatureRouter] [EVENT] {formatted_event}")
+                                    print(f"[Feature Router] [EVENT] {event_name} created")
                                     self.outlet.push_sample([formatted_event])
 
             except Exception as e:

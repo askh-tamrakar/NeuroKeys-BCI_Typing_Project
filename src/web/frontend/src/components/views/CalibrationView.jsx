@@ -479,8 +479,13 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             // So Future window should be at Right of Center.
             // If data moves Left, Window should move Left with it.
             // So we spawn it at Center?
-            const delayToCenter = 0;
-            const start = Date.now() + delayToCenter;
+            // Start (spawn) the window such that it reaches the center exactly when we want to record?
+            // "Scrolling" visualization: Future is Right, Past is Left. Center is Now.
+            // If we want the user to see it APPROACH, we must spawn it in the Future (Right).
+            // Then it travels left.
+            // When it hits Center (Now), we record.
+            const delayToCenter = currentTw / 2;
+            const start = Date.now() + delayToCenter; // Future timestamp
             const end = start + currentDur;
 
             console.log(`[Test] Window Spawn: Start=${start} End=${end} (Now=${Date.now()})`);
@@ -660,45 +665,63 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
         if ((mode === 'realtime' || mode === 'test') && wsData) {
             const payload = wsData.raw || wsData;
 
-            // Handle Single Sample (Old format or Fallback)
-            if (payload?.channels && !payload.samples) {
-                const channelIndex = activeChannelIndex;
-                const val = payload.channels[channelIndex] !== undefined ? payload.channels[channelIndex] : 0;
-                const point = { time: Date.now(), value: typeof val === 'number' ? val : (val.value || 0) };
+            // Unify batch vs single handling (match LiveView logic)
+            // Some backends send { _batch: [...] }, others { type: 'batch', samples: [...] }
+            // or just a single { channels: ... } object.
 
+            let samples = [];
+            if (payload._batch) {
+                samples = payload._batch;
+            } else if (payload.type === 'batch' && Array.isArray(payload.samples)) {
+                samples = payload.samples;
+            } else if (payload.channels) {
+                samples = [payload];
+            }
+
+            if (samples.length === 0) return;
+
+            // Use sampling rate from config, default to 250Hz
+            const samplingRate = config?.sampling_rate || 250;
+            const sampleIntervalMs = Math.round(1000 / samplingRate);
+
+            const newPoints = [];
+            const channelIndex = activeChannelIndex;
+
+            samples.forEach((s) => {
+                let incomingTs = Number(s.timestamp);
+                if (!incomingTs || incomingTs < 1e9) incomingTs = Date.now();
+
+                // Monotonic timestamp logic
+                if (!window.__calibLastTs) window.__calibLastTs = incomingTs;
+
+                // Enforce monotonicity if it's a batch sequence or just subsequent packets
+                if (incomingTs <= window.__calibLastTs) {
+                    incomingTs = window.__calibLastTs + sampleIntervalMs;
+                }
+                window.__calibLastTs = incomingTs;
+
+                // Robust channel extraction (Array or Object)
+                if (s.channels) {
+                    let rawVal = undefined;
+                    // Try direct index
+                    if (s.channels[channelIndex] !== undefined) rawVal = s.channels[channelIndex];
+                    // Try string key "ch0" if needed
+                    else if (s.channels[`ch${channelIndex}`] !== undefined) rawVal = s.channels[`ch${channelIndex}`];
+
+                    if (rawVal !== undefined) {
+                        const val = typeof rawVal === 'number' ? rawVal : (rawVal.value || 0);
+                        newPoints.push({ time: incomingTs, value: val });
+                    }
+                }
+            });
+
+            if (newPoints.length > 0) {
                 setChartData(prev => {
-                    const next = [...prev, point];
+                    const next = [...prev, ...newPoints];
+                    // Limit buffer size
                     if (next.length > 10000) return next.slice(-10000);
                     return next;
                 });
-            }
-            // Handle Batched Data (New format)
-            else if (payload?.type === 'batch' && Array.isArray(payload.samples)) {
-                // Determine batch arrival time
-                const now = Date.now();
-                const newPoints = [];
-                const channelIndex = activeChannelIndex;
-                const sampleCount = payload.samples.length;
-                const timeStep = 30 / sampleCount;
-
-                payload.samples.forEach((s, i) => {
-                    const t = now - (sampleCount - 1 - i) * timeStep;
-
-                    if (s.channels && s.channels[channelIndex]) {
-                        const rawVal = s.channels[channelIndex];
-                        const val = typeof rawVal === 'number' ? rawVal : (rawVal.value || 0);
-                        newPoints.push({ time: t, value: val });
-                    }
-                });
-
-                if (newPoints.length > 0) {
-                    setChartData(prev => {
-                        const next = [...prev, ...newPoints];
-                        // Limit buffer size
-                        if (next.length > 10000) return next.slice(-10000);
-                        return next;
-                    });
-                }
             }
         }
     }, [wsData, mode, activeSensor, activeChannelIndex]);
@@ -726,9 +749,15 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
         // plotted points: newest at center, older to the left
         // Optimization: iterate from end
+        // plotted points: newest at center, older to the left
+        // Optimization: iterate from end
         const plotted = [];
         for (let i = chartData.length - 1; i >= 0; i--) {
             const d = chartData[i];
+
+            // STRICT CLIP: Do not plot points from the future (right of center)
+            if (d.time > now) continue;
+
             const age = now - d.time;
             if (age > center) break; // Optimization: Stop if older than window left edge
             const x = Math.round(center - age);
@@ -736,14 +765,32 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             if (x >= -100) plotted.unshift({ time: x, value: d.value });
         }
 
-        // baseline (unplotted) to right of center — keep static at 0 to avoid vertical movement
-        const step = 50; // ms resolution
-        const baseline = [];
-        for (let t = center; t <= w; t += step) {
-            baseline.push({ time: Math.round(t), future: 0 });
+        const merged = [...plotted];
+
+        // BRIDGE THE GAP:
+        // Add a point exactly at 'center' with the newest value to connect the line visually
+        // to the baseline (if we want baseline) or just to terminate cleanly at the cursor.
+        // If we want the line to look like it continues flat, we add (center, lastVal).
+        // Also start the 'future' line here so they connect? 
+        // We set future: 0 at center to start the flat line.
+        if (plotted.length > 0) {
+            const lastVal = plotted[plotted.length - 1].value;
+            // Push a point right at the cursor line. 
+            // We give it 'value' (for history line to reach center) AND 'future' (for future line to start at 0? No, usually separate)
+            // If we want the future line to start at y=0, we should put a point at (center, future=0).
+            // But if we want it to look connected, maybe not.
+            // User requested "horizontal line on the point y = 0".
+            // So independent of where signal ends, it should be at 0.
+            merged.push({ time: Math.round(center), value: lastVal });
         }
 
-        const merged = [...plotted, ...baseline];
+        // Future baseline (flat line at 0)
+        const step = 50; // ms resolution
+        // Start exactly at center to ensure it touches the cursor line
+        for (let t = center; t <= w; t += step) {
+            merged.push({ time: Math.round(t), future: 0 });
+        }
+
         merged.sort((a, b) => a.time - b.time);
 
         return merged;
@@ -1001,6 +1048,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                                 scannerValue={scannerValue}
                                 timeWindowMs={timeWindow}
                                 color={activeSensor === 'EMG' ? '#3b82f6' : (activeSensor === 'EOG' ? '#10b981' : '#f59e0b')}
+                                curveType="natural"
                             />
                         </div>
                     </div>
