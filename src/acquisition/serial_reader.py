@@ -35,7 +35,8 @@ class SerialPacketReader:
         self.ser: Optional[serial.Serial] = None
         self.is_running = False
         self.data_queue: queue.Queue = queue.Queue(maxsize=max_queue)
-        
+        self.message_queue: queue.Queue = queue.Queue(maxsize=100) # Queue for text messages
+
         # Stats
         self.packets_received = 0
         self.packets_dropped = 0
@@ -43,6 +44,7 @@ class SerialPacketReader:
         self.bytes_received = 0
         self.duplicates = 0
         self.last_packet_time = None
+        self.last_trigger_time = 0  # For soft debounce
         
         # Internal
         self._read_thread: Optional[threading.Thread] = None
@@ -134,7 +136,61 @@ class SerialPacketReader:
                 time.sleep(0.05)
 
     def _process_buffer(self, buffer: bytearray):
-        """Process incoming buffer for valid packets (Optimized)"""
+        """Process incoming buffer for valid packets (Mixed Text/Binary)"""
+        
+        # 0. Clean up (remove >)
+        # Use find/del loop to safely remove bytes in-place
+        while True:
+            idx = buffer.find(b'>')
+            if idx == -1:
+                break
+            del buffer[idx:idx+1]
+
+        # 1. First, check for text messages (terminated by \n)
+        # We only look for text if we are NOT mid-packet synced or if the buffer start looks like text
+        
+        # Simple heuristic: scan for newline. 
+        # If found, check if the preceding bytes are printable ASCII.
+        # This handles "MSG:..." sent by Arduino.
+        
+        newline_idx = buffer.find(b'\n')
+        while newline_idx != -1:
+            # Check if this segment looks like a text message
+            # Limit message length check to avoid misinterpreting binary data as massive text
+            if newline_idx < 128: 
+                line = buffer[:newline_idx].strip()
+                try:
+                    # Attempt to decode as text
+                    text_msg = line.decode('utf-8')
+                    if text_msg.startswith("MSG:") or text_msg.startswith("ACQUISITION_") or "CHANNEL" in text_msg or text_msg.startswith("UNO-"):
+                        print(f"[Arduino] {text_msg}")
+                        # Put in queue
+                        try:
+                            self.message_queue.put_nowait(text_msg)
+                        except queue.Full:
+                            pass
+                            
+                        # Remove this line from buffer
+                        del buffer[:newline_idx + 1]
+                        # Search again from start
+                        newline_idx = buffer.find(b'\n')
+                        continue
+                    else:
+                        # GARBAGE PURGE: Text found, but not a valid message (e.g. "ESSED" tail)
+                        # We must delete it to unblock the buffer!
+                        del buffer[:newline_idx + 1]
+                        newline_idx = buffer.find(b'\n')
+                        continue
+
+                except Exception:
+                    # Not valid text, ignore
+                    pass
+            
+            # If we are here, it wasn't a valid text message, or was too long/binary.
+            # Stop text scanning to let binary parser handle it
+            break
+
+        # 2. Binary Parsing
         i = 0
         while i <= len(buffer) - self.packet_len:
             if buffer[i] == self.sync1 and buffer[i+1] == self.sync2:
@@ -157,7 +213,7 @@ class SerialPacketReader:
                 i += 1
                 self.sync_errors += 1
         
-        # Remove processed bytes in one go
+        # Remove processed binary bytes
         if i > 0:
             del buffer[:i]
 
@@ -165,6 +221,13 @@ class SerialPacketReader:
         """Get next packet from queue"""
         try:
             return self.data_queue.get(timeout=timeout)
+        except queue.Empty:
+            return None
+            
+    def get_message(self) -> Optional[str]:
+        """Get next text message from queue"""
+        try:
+            return self.message_queue.get_nowait()
         except queue.Empty:
             return None
 

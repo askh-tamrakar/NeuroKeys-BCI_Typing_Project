@@ -63,16 +63,16 @@ export default defineConfig({
     saveDetailsPlugin() // Add our custom plugin here
   ],
   server: {
-    port: 1972,
+    port: 7219,
     open: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:1972',
+        target: 'http://localhost:5000',
         changeOrigin: true,
         secure: false,
       },
       '/socket.io': {
-        target: 'http://localhost:1972',
+        target: 'http://localhost:5000',
         changeOrigin: true,
         ws: true,
       }

@@ -114,8 +114,8 @@ export default function TimeSeriesZoomChart({
     };
 
     return (
-        <div className="flex flex-col h-full bg-surface border border-border mt-1 rounded-xl overflow-hidden shadow-sm">
-            <div className="px-4 py-2 border-b border-border bg-bg/30 flex justify-between items-center">
+        <div className="flex flex-col h-full bg-surface border border-muted rounded-xl overflow-hidden shadow-sm">
+            <div className="px-4 py-2 border-b border-muted bg-bg/30 flex justify-between items-center">
                 <h4 className="text-sm font-bold text-text flex items-center gap-2">
                     <span className="w-1.5 h-4 rounded-full" style={{ backgroundColor: color }}></span>
                     {title}
