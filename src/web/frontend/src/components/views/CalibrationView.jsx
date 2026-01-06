@@ -23,10 +23,8 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
     // Data states
     const [chartData, setChartData] = useState([]);
-    // State for Window Lists
-    const [bufferWindows, setBufferWindows] = useState([]); // Red (Saved) - History
-    const [readyToAppend, setReadyToAppend] = useState([]); // Green (Pending) - Ready to Save
-    const [activeWindow, setActiveWindow] = useState(null); // Yellow (Recording) - Current
+    const [markedWindows, setMarkedWindows] = useState([]);
+    const [activeWindow, setActiveWindow] = useState(null);
     const [highlightedWindow, setHighlightedWindow] = useState(null); // New: for inspection
     const [targetLabel, setTargetLabel] = useState('Rock'); // e.g., 'Rock', 'Paper', etc.
 
@@ -47,36 +45,16 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     const activeSensorRef = useRef(activeSensor);
     const activeChannelIndexRef = useRef(activeChannelIndex); // Ref for channel
     const targetLabelRef = useRef(targetLabel);
-    // Refs for new lists
-    const bufferWindowsRef = useRef(bufferWindows);
-    const readyToAppendRef = useRef(readyToAppend);
+    const markedWindowsRef = useRef(markedWindows);
 
     // Keep refs in sync
     useEffect(() => { chartDataRef.current = chartData; }, [chartData]);
     useEffect(() => { activeSensorRef.current = activeSensor; }, [activeSensor]);
     useEffect(() => { activeChannelIndexRef.current = activeChannelIndex; }, [activeChannelIndex]);
     useEffect(() => { targetLabelRef.current = targetLabel; }, [targetLabel]);
-    useEffect(() => { bufferWindowsRef.current = bufferWindows; }, [bufferWindows]);
-    useEffect(() => { readyToAppendRef.current = readyToAppend; }, [readyToAppend]);
+    useEffect(() => { markedWindowsRef.current = markedWindows; }, [markedWindows]);
     const autoLimitRef = useRef(autoLimit);
     useEffect(() => { autoLimitRef.current = autoLimit; }, [autoLimit]);
-
-    const UI_MAX_ITEMS = 50;
-
-    // Helper: Enforce UI Limit (Scenario 1 & 2 Logic)
-    // "If total (buffer + ready) > 50, delete oldest samples from bufferWindows"
-    // This is primarily for Auto Mode realtime enforcement.
-    const enforceLimit = (currentBuffer, currentReady) => {
-        const total = currentBuffer.length + currentReady.length;
-        if (total > UI_MAX_ITEMS) {
-            const overflow = total - UI_MAX_ITEMS;
-            // Remove 'overflow' amount from start of buffer (Oldest)
-            // Ensure we don't remove more than we have
-            const removeCount = Math.min(overflow, currentBuffer.length);
-            return currentBuffer.slice(removeCount);
-        }
-        return currentBuffer;
-    };
 
     // Compute matching channels for the active sensor
     const matchingChannels = React.useMemo(() => {
@@ -205,9 +183,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     // Handlers
     const handleSensorChange = (sensor) => {
         setActiveSensor(sensor);
-        setBufferWindows([]);
-        setReadyToAppend([]);
-        setActiveWindow(null);
+        setMarkedWindows([]);
         setTotalPredictedCount(0);
         // Set default label based on sensor
         if (sensor === 'EMG') setTargetLabel('Rock');
@@ -250,35 +226,35 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
     const startAutoWindowing = () => {
         const createNextWindow = () => {
+            // Access latest config from refs
             const currentTw = timeWindowRef.current;
             const currentDur = windowDurationRef.current;
+
+            // Visual sync: Window spawns at visual edge (future) and travels to center (now)
             const delayToCenter = Math.round(currentTw / 2);
+
             const start = Date.now() + delayToCenter;
             const end = start + currentDur;
 
+            // Capture current settings from refs
             const sensorForWindow = activeSensorRef.current;
             const labelForWindow = targetLabelRef.current;
-            const channelForWindow = activeChannelIndexRef.current;
+            const channelForWindow = activeChannelIndexRef.current; // Use Ref
+
+            // STOP CONDITION: Check if we already have enough samples (including pending)
+            // This prevents over-collection while waiting for processing
             const limit = autoLimitRef.current;
+            const currentCount = markedWindowsRef.current.filter(w => w.label === labelForWindow).length;
 
-            // Current Ready count for this label
-            // We use REF for immediate check
-            const currentReadyCount = readyToAppendRef.current.filter(w => w.label === labelForWindow).length;
+            console.log(`[AutoWindow] Limit: ${limit}, Current (incl pending): ${currentCount}`);
 
-            console.log(`[AutoWindow] Limit: ${limit}, Ready: ${currentReadyCount}`);
+            // ONLY stop if in Auto-Calibration mode. Manual mode is unbounded.
+            if (autoCalibrate && currentCount >= limit) {
+                // Do not spawn new window if target reached
+                return;
+            }
 
-            // 1. Check Auto Limit (Trigger Batch Save if reached)
-            // "When readyToAppend reaches the auto_limit"
-            // Actually, we check this *before* creating a new one? Or after?
-            // User says: "Batch 1: Record 10 samples. Ready hits 10. Action triggers."
-            // So if we are AT limit, we flush?
-            // Or start next, and flush previous?
-            // Let's create the window, let it record. When it FINISHES, it goes to Ready. 
-            // THEN we check if Ready >= Limit.
 
-            // STOP condition? "Auto Collection Mode (Strict Limit)" usually implies we stop or we loop.
-            // Scenario 1 implies continuous batching: "Batch 1... Batch 2... Batch 3..."
-            // So we DO NOT STOP. We just flush.
 
             const newWindow = {
                 id: Math.random().toString(36).substr(2, 9),
@@ -287,99 +263,80 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                 startTime: start,
                 endTime: end,
                 label: labelForWindow,
-                channel: channelForWindow,
-                status: 'recording', // Yellow
+                channel: channelForWindow, // Store channel in window metadata
+                status: 'pending', // Added immediately to list
                 samples: []
             };
 
-            setActiveWindow(newWindow);
+            // Add to list IMMEDIATELY so it appears and travels with the chart
+            setMarkedWindows(prev => [...prev, newWindow].slice(-MAX_WINDOWS));
+            setActiveWindow(newWindow); // Keep track for logic, but maybe not render separately?
 
             // Wait for window to finish
             setTimeout(async () => {
-                // Check if still active (not stopped)
-                if (!isCalibrating) return; // Simple check, might need Ref if 'isCalibrating' state is stale closure (it is in timeout)
-                // Actually `isCalibrating` is state, so we need ref? 
-                // We'll proceed. Validation happens on save.
+                // Check if window still exists (was not deleted)
+                if (!markedWindowsRef.current.find(w => w.id === newWindow.id)) {
+                    return;
+                }
 
-                // Mark as Ready (Green)
+                // Mark as saving
+                setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'saving' } }));
                 setRunInProgress(true);
 
                 try {
+                    // Extract samples from chartDataRef (latest data)
                     const currentData = chartDataRef.current;
+
                     const samplesPoints = currentData.filter(p => p.time >= start && p.time <= end);
                     const samples = samplesPoints.map(p => p.value);
                     const timestamps = samplesPoints.map(p => p.time);
 
-                    if (samples.length === 0) throw new Error("No data");
-
-                    const completedWindow = {
-                        ...newWindow,
-                        status: 'pending', // Green
-                        samples,
-                        timestamps,
-                        // Mock features for UI immediately?
-                        features: {}
-                    };
-
-                    // UPDATE STATE: Add to Ready, Enforce 50 Limit
-                    // We need to do this atomically-ish
-
-                    // We also need to check if we hit AUTO LIMIT for FLUSH
-                    // "When readyToAppend reaches auto_limit"
-                    // We are adding 1. 
-
-                    // We must use functional updates or refs carefully.
-                    // Let's use a helper in the functional update to handle everything?
-                    // No, `handleBatchSave` is async.
-
-                    // 1. Add to Ready
-                    let shouldFlush = false;
-                    let currentReadyLength = 0;
-
-                    setReadyToAppend(prevReady => {
-                        const newReady = [...prevReady, completedWindow];
-                        currentReadyLength = newReady.length; // Approximate (this label mixed with others?)
-
-                        // Check if we hit limit (Total Ready for THIS label? or Total?)
-                        // Usually Limit is for the Target Class.
-                        const countForLabel = newReady.filter(w => w.label === labelForWindow).length;
-                        if (autoCalibrate && countForLabel >= limit) {
-                            shouldFlush = true;
-                        }
-                        return newReady;
-                    });
-
-                    // 2. Enforce UI Limit (Scenario 1 rule)
-                    // "If (buffer + ready) > 50, immediately delete oldest from buffer"
-                    setBufferWindows(prevBuffer => {
-                        // We need the *future* ready length. 
-                        // This is tricky with async state. 
-                        // Let's use the ref for 'ready' which might be stale? 
-                        // No, we just added 1. 
-                        // Let's assume Ready increased by 1.
-                        const total = prevBuffer.length + readyToAppendRef.current.length + 1;
-                        if (total > UI_MAX_ITEMS) {
-                            const overflow = total - UI_MAX_ITEMS;
-                            if (overflow > 0 && prevBuffer.length > 0) {
-                                return prevBuffer.slice(overflow);
-                            }
-                        }
-                        return prevBuffer;
-                    });
-
-
-                    // 3. Trigger Flush if needed
-                    if (shouldFlush && autoCalibrate) {
-                        // We need to wait for state to settle? 
-                        // Or just pass the 'should flush' signal to a useEffect?
-                        // Implementing a dedicated useEffect for Auto-Flush is cleaner.
-                        // See `Auto-Calibration / Auto-Save Trigger` effect below.
+                    if (samples.length === 0) {
+                        console.warn(`[CalibrationView] No samples or empty. Win: ${start}-${end}.`);
+                        throw new Error("No data collected");
                     }
 
-                    // No backend call here! Just moving to Ready.
+                    // Send to backend
+                    const resp = await CalibrationApi.sendWindow(sensorForWindow, {
+                        action: labelForWindow,
+                        channel: channelForWindow, // Use captured channel
+                        samples,
+                        timestamps
+                    }, sessionName);
+
+                    // Update progress
+                    setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'saved' } }));
+
+                    // Determine prediction result (Removed for User Request - assume Correct/Saved)
+                    // "detected" is now the action string (or null), "predicted_label" is the same.
+                    const predicted = resp.predicted_label || 'Rest';
+
+                    // Update the window in the list (don't add new one)
+                    setMarkedWindows(prev => prev.map(w => {
+                        if (w.id === newWindow.id) {
+                            return {
+                                ...w,
+                                predictedLabel: predicted,
+                                status: 'saved', // Always Green/Saved
+                                features: resp.features,
+                                samples: samples // Store samples for graph
+                            };
+                        }
+                        return w;
+                    }));
+                    setTotalPredictedCount(prev => prev + 1);
+                    setDataLastUpdated(Date.now()); // Trigger refresh
 
                 } catch (err) {
-                    console.error('Auto-window error:', err);
+                    console.error('Auto-save error:', err);
+                    setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'error', message: String(err) } }));
+
+                    setMarkedWindows(prev => prev.map(w => {
+                        if (w.id === newWindow.id) {
+                            return { ...w, predictedLabel: 'Error', status: 'incorrect' };
+                        }
+                        return w;
+                    }));
                 } finally {
                     setRunInProgress(false);
                     setActiveWindow(null);
@@ -388,6 +345,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
         };
 
         createNextWindow();
+
         windowIntervalRef.current = setInterval(createNextWindow, windowDuration + GAP_DURATION);
     };
 
@@ -399,48 +357,51 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             startTime: start,
             endTime: end,
             label: targetLabel,
-            channel: activeChannelIndex,
-            status: 'pending', // Green immediately
-            samples: []
+            channel: activeChannelIndex, // Store channel
+            status: 'pending',
+            samples: [] // Fill samples now so we have them for saving later
         };
 
-        // Extract samples
+        // Extract samples immediately
         const samplesPoints = chartDataRef.current.filter(p => p.time >= start && p.time <= end);
-        newWindow.samples = samplesPoints.map(p => p.value);
-        newWindow.timestamps = samplesPoints.map(p => p.time);
+        const samples = samplesPoints.map(p => p.value);
+        // We probably don't need exact timestamps for the DB save if we just save samples, 
+        // but existing API takes timestamps.
+        const timestamps = samplesPoints.map(p => p.time);
 
-        // Add to Ready
-        setReadyToAppend(prev => [...prev, newWindow]);
+        newWindow.samples = samples;
+        newWindow.timestamps = timestamps;
 
-        // Scenario 2: "The UI can grow beyond 50 while recording"
-        // So we DO NOT enforce limit on buffer here. 
-        // "Total visible can exceed 50".
+        // Add to list as PENDING
+        setMarkedWindows(prev => [...prev, newWindow].slice(-MAX_WINDOWS));
+
+        // Do NOT save to DB yet.
     };
 
     /**
-     * FLUSH Logic (Shared)
-     * Saves 'ready' windows -> DB. Moves them to 'buffer'.
-     * Handles cleanups.
+     * Saves all 'pending' windows to the database.
      */
-    const flushReadyToBuffer = async () => {
-        const windowsToSave = readyToAppendRef.current; // Use Ref for latest
-        if (windowsToSave.length === 0) return;
+    const handleAppendSamples = async () => {
+        const pendingWindows = markedWindows.filter(w => w.status === 'pending');
+        if (pendingWindows.length === 0) return;
 
         setRunInProgress(true);
+        const processingIds = pendingWindows.map(w => w.id);
 
-        // 1. Save all to DB
-        // We can start the request parallel to UI updates or blocking? 
-        // Blocking is safer for "Batch".
+        // Mark them as saving UI state
+        setWindowProgress(prev => {
+            const next = { ...prev };
+            processingIds.forEach(id => { next[id] = { status: 'saving' }; });
+            return next;
+        });
 
         try {
-            // Optimistic Update?
-            // Spec: "Save to DB. Change status Green -> Red. Move to Buffer."
-
-            // We'll iterate and save.
             let savedCount = 0;
-            const savedWindows = [];
 
-            for (const win of windowsToSave) {
+            // Process sequentially or parallel? 
+            // Parallel is faster but might race strict IO? SQLite handle is usually serialized or locked.
+            // Let's do sequential for safety and distinct updates.
+            for (const win of pendingWindows) {
                 try {
                     const resp = await CalibrationApi.sendWindow(activeSensor, {
                         action: win.label,
@@ -449,41 +410,29 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                         timestamps: win.timestamps
                     }, sessionName);
 
-                    savedWindows.push({
-                        ...win,
-                        status: 'saved', // Red
-                        features: resp.features,
-                        predictedLabel: resp.predicted_label
-                    });
+                    // Success for this window
+                    setWindowProgress(prev => ({ ...prev, [win.id]: { status: 'saved' } }));
+
+                    // Update window object
+                    setMarkedWindows(prev => prev.map(w => {
+                        if (w.id === win.id) {
+                            return {
+                                ...w,
+                                status: 'saved',
+                                features: resp.features,
+                                predictedLabel: resp.predicted_label
+                            };
+                        }
+                        return w;
+                    }));
                     savedCount++;
-                } catch (e) {
-                    console.error("Failed to save window", win.id, e);
-                    // What to do with failed? User says: "Black (Error)... discarded". 
-                    // We just won't add it to buffer.
+
+                } catch (err) {
+                    console.error("Error saving window:", win.id, err);
+                    setWindowProgress(prev => ({ ...prev, [win.id]: { status: 'error', message: String(err) } }));
+                    setMarkedWindows(prev => prev.map(w => w.id === win.id ? { ...w, status: 'error' } : w));
                 }
             }
-
-            // 2. Clear Ready
-            setReadyToAppend([]);
-
-            // 3. Add to Buffer & Enforce Limits
-            // Scenario 1 (Auto): "Move to Buffer. (Buffer grows...)" 
-            // Scenario 2 (Manual): "Move to Buffer... If buffer > 50, delete oldest... snap back".
-
-            setBufferWindows(prev => {
-                let nextBuffer = [...prev, ...savedWindows]; // Add new at End (Newest)? 
-                // Wait, User: "buffer (Top) + ready (Bottom)".
-                // Usually Top is Oldest. 
-                // So [...oldBuffer, ...newSaved]. 
-
-                // Enforce Snap Back (Scenario 2) & Maintenance (Scenario 1)
-                if (nextBuffer.length > UI_MAX_ITEMS) {
-                    // "delete oldest items until length == 50"
-                    const overflow = nextBuffer.length - UI_MAX_ITEMS;
-                    nextBuffer = nextBuffer.slice(overflow);
-                }
-                return nextBuffer;
-            });
 
             if (savedCount > 0) {
                 setDataLastUpdated(Date.now()); // Trigger table refresh
@@ -495,15 +444,11 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     };
 
     const deleteWindow = (id) => {
-        // Could be in Ready or Buffer
-        setReadyToAppend(prev => prev.filter(w => w.id !== id));
-        setBufferWindows(prev => prev.filter(w => w.id !== id));
+        setMarkedWindows(prev => prev.filter(w => w.id !== id));
     };
 
     const markMissed = (id) => {
-        // Update in both
-        setReadyToAppend(prev => prev.map(w => w.id === id ? { ...w, isMissedActual: !w.isMissedActual } : w));
-        setBufferWindows(prev => prev.map(w => w.id === id ? { ...w, isMissedActual: !w.isMissedActual } : w));
+        setMarkedWindows(prev => prev.map(w => w.id === id ? { ...w, isMissedActual: !w.isMissedActual } : w));
     };
 
     // Test Mode Handler: Spawns a window, waits, extracts, sends, returns prediction.
@@ -539,19 +484,19 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                 endTime: end,
                 label: targetGestureLabel, // "Rock" etc.
                 channel: activeChannelIndex,
-                status: 'pending', // Will be 'recording' then 'pending' then 'saved'
+                status: 'pending',
                 samples: [] // Will be filled
             };
 
             // Add to list so user sees it coming
-            setReadyToAppend(prev => [...prev, newWindow]); // Add to ready for display
+            setMarkedWindows(prev => [...prev, newWindow].slice(-MAX_WINDOWS));
             setActiveWindow(newWindow);
             setRunInProgress(true); // Locks UI slightly
 
             // Wait for window to pass center
             setTimeout(async () => {
                 // Check if window still exists
-                if (!readyToAppendRef.current.find(w => w.id === newWindow.id)) {
+                if (!markedWindowsRef.current.find(w => w.id === newWindow.id)) {
                     reject(new Error("Window deleted"));
                     return;
                 }
@@ -581,7 +526,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                     // Always mark as 'saved' (green)
                     setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'saved' } }));
 
-                    setReadyToAppend(prev => prev.map(w => {
+                    setMarkedWindows(prev => prev.map(w => {
                         if (w.id === newWindow.id) {
                             return {
                                 ...w,
@@ -609,22 +554,93 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
         });
     };
 
+    // Run calibration logic
+    const runCalibration = useCallback(async (isAuto = false) => {
+        if (!markedWindows || markedWindows.length === 0) return;
 
+        setRunInProgress(true);
+        try {
+            // Filter windows to only those matching the current target label (per user request)
+            const windowsToCalibrate = markedWindows.filter(w => w.label === targetLabel);
 
-    // Auto-Flush Trigger
-    useEffect(() => {
-        if (!autoCalibrate) return;
+            if (windowsToCalibrate.length === 0) {
+                console.warn('[CalibrationView] No matching windows for target label:', targetLabel);
+                setRunInProgress(false);
+                return;
+            }
 
-        // Check if we hit limit
-        const readyCount = readyToAppend.filter(w => w.label === targetLabel).length;
-        // Also check if we have enough "pending"?
-        // Logic: "When readyToAppend reaches auto_limit"
+            // 1. Call robust calibration endpoint
+            const result = await CalibrationApi.calibrateThresholds(activeSensor, windowsToCalibrate);
+            console.log('[CalibrationView] Calibration result:', result);
 
-        if (readyCount >= autoLimit && !runInProgress) {
-            console.log("Auto-Flush Triggered");
-            flushReadyToBuffer();
+            // 2. Update config locally
+            // Ideally we also trigger the ConfigPanel to reload, but since config is lifted state in parent (usually), 
+            // or here passing down... currently `config` is local state.
+            // We should refetch configuration.
+            const refreshedConfig = await CalibrationApi.fetchSensorConfig();
+            setConfig(refreshedConfig);
+
+            if (isAuto || autoCalibrate) {
+                // Auto-mode: Reset progress and samples
+                setMarkedWindows([]);
+                console.log('[CalibrationView] Auto-calibration complete. Resetting samples.');
+            } else {
+                // Manual mode: Update window statuses to show results
+                if (result.window_results) {
+                    setMarkedWindows(prev => {
+                        return prev.map((w, i) => {
+                            const res = result.window_results[i];
+                            // Heuristic match by index as IDs might not persist in backend pure logic
+                            // If actions match
+                            if (res && res.action === w.label) {
+                                return {
+                                    ...w,
+                                    status: res.status_after,
+                                    predictedLabel: res.status_after === 'correct' ? w.label : 'Rest'
+                                };
+                            }
+                            return w;
+                        });
+                    });
+                }
+                const acc = result.accuracy_after !== undefined ? result.accuracy_after : (result.accuracy || 0);
+                alert(`Calibration Complete! Accuracy: ${(acc * 100).toFixed(1)}%`);
+                // Reset just like auto mode
+                setMarkedWindows([]);
+                setTotalPredictedCount(0);
+            }
+
+        } catch (err) {
+            console.error('Calibration error:', err);
+            // Only alert in manual mode or log in auto
+            if (!isAuto) {
+                alert(`Calibration failed: ${err.message}`);
+            } else {
+                console.warn('Auto-calibration failed. Disabling auto-mode.');
+                setAutoCalibrate(false);
+            }
+        } finally {
+            setRunInProgress(false);
         }
-    }, [readyToAppend, autoCalibrate, autoLimit, targetLabel, runInProgress]);
+    }, [markedWindows, activeSensor, autoCalibrate]);
+
+    // Auto-Calibration / Auto-Save Trigger
+    useEffect(() => {
+        if (!autoCalibrate || runInProgress) return;
+
+        // Count valid samples for target
+        const validCount = markedWindows.filter(w => w.status !== 'pending' && w.label === targetLabel).length;
+        console.log(`[AutoEffect] Valid: ${validCount}, Limit: ${autoLimit}`);
+
+        // Check Limit
+        // Check Limit
+        if (validCount >= autoLimit) {
+            console.log(`[CalibrationView] Limit ${autoLimit} reached. Buffer cleared (auto-append).`);
+            setMarkedWindows([]);
+            return;
+        }
+
+    }, [markedWindows, autoCalibrate, isCalibrating, runInProgress, activeSensor, autoLimit]);
 
     // Update chart data from WS or Mock
     useEffect(() => {
@@ -728,19 +744,12 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
     // Map action windows to sweep coordinates so they match the chart data (center-relative)
     const mappedWindows = React.useMemo(() => {
+        // Use SAME synchronized frameTime
         const now = frameTime;
         const w = timeWindow;
         const center = Math.round(w / 2);
 
-        // Combine all windows we want to show
-        // Order: Active (Top Z), Ready (Green), Buffer (Red)
-        const allWindows = [
-            ...(activeWindow ? [activeWindow] : []),
-            ...readyToAppend,
-            ...bufferWindows
-        ];
-
-        const mapped = allWindows.map(win => {
+        const mapped = markedWindows.map(win => {
             const ageStart = now - win.startTime;
             const ageEnd = now - win.endTime;
 
@@ -754,9 +763,26 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             };
         });
 
-        return mapped;
-    }, [activeWindow, readyToAppend, bufferWindows, timeWindow, frameTime]);
+        if (markedWindows.length > 0 && Math.random() < 0.05) {
+            console.log("[CalibrationView] Mapped:", mapped.length, "First:", mapped[0]);
+        }
 
+        return mapped;
+    }, [markedWindows, timeWindow, frameTime]); // Depend on frameTime
+
+    // Active/Pending Window
+    const activeWindowMapped = React.useMemo(() => {
+        if (!activeWindow) return null;
+        // Use SAME synchronized frameTime
+        const now = frameTime;
+        const w = timeWindow;
+        const center = Math.round(w / 2);
+
+        const x1 = Math.round(center - (now - activeWindow.endTime));
+        const x2 = Math.round(center - (now - activeWindow.startTime));
+
+        return { ...activeWindow, startTime: x2, endTime: x1 };
+    }, [activeWindow, timeWindow, frameTime]);
 
     // Highlighted Window (for inspection)
     const highlightedWindowMapped = React.useMemo(() => {
@@ -780,46 +806,6 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             if (windowIntervalRef.current) clearInterval(windowIntervalRef.current);
         };
     }, []);
-
-    // Run calibration logic (Modified for new state)
-    // "bufferWindows" contains Saved/Red items. Typically we train on this.
-    const runCalibration = useCallback(async (isAuto = false) => {
-        if (!bufferWindows || bufferWindows.length === 0) return;
-
-        setRunInProgress(true);
-        try {
-            // Filter windows to only those matching the current target label (per user request)
-            const windowsToCalibrate = bufferWindows.filter(w => w.label === targetLabel);
-
-            if (windowsToCalibrate.length === 0) {
-                console.warn('[CalibrationView] No matching windows for target label:', targetLabel);
-                setRunInProgress(false);
-                return;
-            }
-
-            // 1. Call robust calibration endpoint
-            const result = await CalibrationApi.calibrateThresholds(activeSensor, windowsToCalibrate);
-
-            // 2. Update config locally
-            const refreshedConfig = await CalibrationApi.fetchSensorConfig();
-            setConfig(refreshedConfig);
-
-            if (isAuto || autoCalibrate) {
-                // Auto-mode cleanups if any
-            } else {
-                const acc = result.accuracy_after !== undefined ? result.accuracy_after : (result.accuracy || 0);
-                alert(`Calibration Complete! Accuracy: ${(acc * 100).toFixed(1)}%`);
-            }
-        } catch (err) {
-            console.error('Calibration error:', err);
-            if (!isAuto) alert(`Calibration failed: ${err.message}`);
-        } finally {
-            setRunInProgress(false);
-        }
-    }, [bufferWindows, activeSensor, autoCalibrate, targetLabel]);
-
-    // Use "bufferWindows" + "readyToAppend" for list? 
-    // Actually WindowListPanel will receive them separately.
 
     return (
         <div className="flex flex-col h-[calc(100dvh-120px)] bg-bg text-text animate-in fade-in duration-500 overflow-hidden">
@@ -1033,8 +1019,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                 {/* Window List */}
                 <div className="lg:col-span-3 h-full min-h-0 overflow-hidden rounded-xl border border-border shadow-sm">
                     <WindowListPanel
-                        bufferWindows={bufferWindows}
-                        readyWindows={readyToAppend}
+                        windows={markedWindows}
                         onDelete={deleteWindow}
                         onMarkMissed={markMissed}
                         onHighlight={setHighlightedWindow}
@@ -1044,7 +1029,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                         onAutoLimitChange={setAutoLimit}
                         autoCalibrate={autoCalibrate}
                         onAutoCalibrateChange={setAutoCalibrate}
-                        onClearSaved={flushReadyToBuffer}
+                        onClearSaved={handleAppendSamples}
                     />
                 </div>
             </div>
