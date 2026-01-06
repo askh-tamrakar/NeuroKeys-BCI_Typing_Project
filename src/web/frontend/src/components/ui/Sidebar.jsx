@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import ElectricBorder from './ElectricBorder';
 import CustomSelect from './CustomSelect';
-import { soundHandler } from '../../handlers/SoundHandler';
+import soundHandler from '../../handlers/SoundHandler';
 export default function Sidebar({
     config,
     setConfig,

@@ -616,17 +616,7 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                                 <span className={`status-eye ${wsData ? 'connected' : 'disconnected'}`}><ScanEye size={32} /></span>
                                 EOG Dino Game
                             </h2>
-                            <button
-                                onClick={() => {
-                                    const muted = SoundHandler.toggleMute()
-                                    setIsMuted(muted)
-                                }}
-                                className={`tuner-button ${isMuted ? 'inactive' : 'active'}`}
-                                style={{ marginRight: '8px' }}
-                                title="Toggle Sound"
-                            >
-                                {isMuted ? <VolumeX /> : <Volume2 />}
-                            </button>
+
                             <button
                                 onClick={() => setShowSettings(!showSettings)}
                                 className={`tuner-button ${showSettings ? 'active' : 'inactive'}`}
@@ -770,6 +760,23 @@ export default function DinoView({ wsData, wsEvent, isPaused }) {
                                     {wsData ? 'ACTIVE' : 'OFFLINE'}
                                 </span>
                             </div>
+                        </div>
+
+                        {/* Sound Control - Moved here */}
+                        <div className="mt-3 pt-3 border-t border-border">
+                            <button
+                                onClick={() => {
+                                    const muted = SoundHandler.toggleMute()
+                                    setIsMuted(muted)
+                                }}
+                                className={`w-full py-2 rounded-lg font-bold text-sm transition-all flex items-center justify-center gap-2 ${isMuted
+                                    ? 'bg-accent/10 text-accent hover:bg-accent/20'
+                                    : 'bg-primary/10 text-primary hover:bg-primary/20'
+                                    }`}
+                            >
+                                {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+                                {isMuted ? 'SOUND OFF' : 'SOUND ON'}
+                            </button>
                         </div>
                     </div>
 

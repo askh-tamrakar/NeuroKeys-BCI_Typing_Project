@@ -3,7 +3,7 @@ import { AuthProvider } from './contexts/AuthContext'
 import { useAuth } from './contexts/AuthContext'
 import LoginPage from './components/auth/LoginPage'
 import Dashboard from './components/dashboard/Dashboard'
-import { soundHandler } from './handlers/SoundHandler';
+import soundHandler from './handlers/SoundHandler';
 
 function AppContent() {
   const { user, loading } = useAuth()

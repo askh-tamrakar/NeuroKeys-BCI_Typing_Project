@@ -1,7 +1,7 @@
 import { animate, motion, useMotionValue, useMotionValueEvent, useTransform } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 import { Volume1, Volume2 } from 'lucide-react';
-import { soundHandler } from '../../handlers/SoundHandler';
+import soundHandler from '../../handlers/SoundHandler';
 
 import '../../styles/ui/ElasticSlider.css';
 
