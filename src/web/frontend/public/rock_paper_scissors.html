@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neural RPS | EMG Bio-Gaming</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Rajdhani:wght@500;700&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --primary: #00f3ff;
+            --secondary: #bc13fe;
+            --accent: #ffe600;
+            --bg-dark: #0a0a12;
+            --panel-bg: rgba(20, 20, 30, 0.85);
+            --glass: rgba(255, 255, 255, 0.05);
+            --text-glow: 0 0 10px rgba(0, 243, 255, 0.5);
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Rajdhani', sans-serif;
+            background-color: var(--bg-dark);
+            background-image:
+                radial-gradient(circle at 15% 50%, rgba(188, 19, 254, 0.15) 0%, transparent 25%),
+                radial-gradient(circle at 85% 30%, rgba(0, 243, 255, 0.15) 0%, transparent 25%);
+            color: #fff;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Scanlines */
+        body::after {
+            content: "";
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            background-size: 100% 2px, 3px 100%;
+            pointer-events: none;
+            z-index: 1000;
+        }
+
+        /* --- Layout --- */
+        .main-layout {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            /* Fixed Left Sidebar, Flexible Main */
+            height: 100%;
+            width: 100%;
+            position: relative;
+            z-index: 1;
+        }
+
+        .panel {
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid rgba(255, 255, 255, 0.05);
+            background: rgba(0, 0, 0, 0.2);
+            overflow-y: auto;
+        }
+
+        .panel-center {
+            align-items: center;
+            overflow-y: auto;
+            position: relative;
+            background: transparent;
+            border-right: none;
+        }
+
+        .panel-section {
+            margin-bottom: 30px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 20px;
+        }
+
+        .panel-section:last-child {
+            border-bottom: none;
+        }
+
+        .panel-title {
+            font-family: 'Orbitron';
+            color: var(--primary);
+            font-size: 1.2rem;
+            margin-bottom: 15px;
+            text-align: left;
+            padding-left: 10px;
+            border-left: 3px solid var(--primary);
+            text-shadow: 0 0 10px rgba(0, 243, 255, 0.3);
+        }
+
+        /* --- Sidebar Modules --- */
+        .emg-panel-content {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .signal-box {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid #333;
+            border-radius: 10px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .signal-visualizer {
+            width: 100%;
+            height: 80px;
+            background: #000;
+            border: 1px solid #222;
+            border-radius: 5px;
+            margin-top: 10px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .signal-bar {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background: var(--primary);
+            transition: height 0.1s;
+            box-shadow: 0 0 15px var(--primary);
+        }
+
+        .connection-status {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            align-items: center;
+            font-size: 0.9rem;
+            color: #aaa;
+            margin-bottom: 5px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #333;
+        }
+
+        .status-dot.connected {
+            background: #00ff00;
+            box-shadow: 0 0 10px #00ff00;
+        }
+
+        /* Settings Grid in Sidebar */
+        .settings-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .setting-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid #444;
+            color: #ccc;
+            padding: 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .setting-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: #fff;
+        }
+
+        .setting-btn span {
+            font-size: 1.2rem;
+        }
+
+        .setting-btn label {
+            font-size: 0.7rem;
+            cursor: pointer;
+        }
+
+        /* Full History in Sidebar */
+        .full-history-list {
+            max-height: 400px;
+            overflow-y: auto;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            padding: 5px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            margin-top: 10px;
+        }
+
+        .history-row {
+            display: flex;
+            justify-content: space-between;
+            background: rgba(255, 255, 255, 0.03);
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            border-left: 2px solid transparent;
+        }
+
+        .history-row.win {
+            border-left-color: #00ff00;
+            background: rgba(0, 255, 0, 0.05);
+        }
+
+        .history-row.lose {
+            border-left-color: #ff0000;
+            background: rgba(255, 0, 0, 0.05);
+        }
+
+        .history-row.draw {
+            border-left-color: var(--accent);
+        }
+
+        /* --- Center Panel: Game --- */
+        h1 {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 3.5rem;
+            margin: 20px 0;
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            background: linear-gradient(to right, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 20px rgba(0, 243, 255, 0.3);
+            text-align: center;
+        }
+
+        .scoreboard {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            max-width: 800px;
+            margin: 20px 0;
+            padding: 15px 40px;
+            background: var(--panel-bg);
+            border: 1px solid var(--glass);
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .score-box {
+            text-align: center;
+        }
+
+        .score-box .label {
+            display: block;
+            color: #aaa;
+            font-size: 1rem;
+            letter-spacing: 1px;
+        }
+
+        .score-box .value {
+            font-family: 'Orbitron';
+            font-size: 3.5rem;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .arena {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 100px;
+            margin: 40px 0;
+            min-height: 350px;
+        }
+
+        .fighter {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .fighter-img {
+            width: 320px;
+            height: 320px;
+            object-fit: contain;
+            filter: drop-shadow(0 0 30px rgba(0, 243, 255, 0.15));
+            transition: transform 0.3s;
+        }
+
+        .fighter.computer .fighter-img {
+            transform: scaleX(-1);
+        }
+
+        .status-display {
+            text-align: center;
+            font-size: 3rem;
+            font-weight: 700;
+            height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+
+        .status-text {
+            background: linear-gradient(180deg, #fff, #aaa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .status-text.win {
+            background: linear-gradient(to right, #00ff00, #aaff00);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 20px rgba(0, 255, 0, 0.5);
+        }
+
+        .status-text.lose {
+            background: linear-gradient(to right, #ff0000, #ff4444);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 20px rgba(255, 0, 0, 0.5);
+        }
+
+        /* Controls */
+        .controls-layer {
+            background: rgba(0, 0, 0, 0.6);
+            padding: 30px;
+            border-radius: 20px;
+            border: 1px solid #333;
+            width: 100%;
+            max-width: 700px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .mode-toggles {
+            display: flex;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 30px;
+            padding: 6px;
+            gap: 6px;
+            margin-bottom: 10px;
+        }
+
+        .mode-btn {
+            background: transparent;
+            border: none;
+            color: #aaa;
+            padding: 12px 30px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-family: 'Rajdhani';
+            font-weight: 600;
+            font-size: 1.1rem;
+            transition: all 0.3s;
+        }
+
+        .mode-btn.active {
+            background: var(--primary);
+            color: #000;
+            box-shadow: 0 0 15px rgba(0, 243, 255, 0.3);
+        }
+
+        .options-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 25px;
+        }
+
+        .choice-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 30px 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .choice-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateY(-5px);
+            border-color: var(--primary);
+            box-shadow: 0 5px 20px rgba(0, 243, 255, 0.2);
+        }
+
+        .choice-icon {
+            font-size: 4rem;
+            margin-bottom: 10px;
+        }
+
+        .choice-name {
+            font-family: 'Orbitron';
+            font-size: 1.2rem;
+            color: #fff;
+        }
+
+        /* Animations */
+        @keyframes shakeLeft {
+
+            0%,
+            100% {
+                transform: rotate(0deg) translateX(0);
+            }
+
+            25% {
+                transform: rotate(-20deg) translateX(-20px);
+            }
+
+            50% {
+                transform: rotate(0deg) translateX(0);
+            }
+
+            75% {
+                transform: rotate(20deg) translateX(-20px);
+            }
+        }
+
+        @keyframes shakeRight {
+
+            0%,
+            100% {
+                transform: scaleX(-1) rotate(0deg) translateX(0);
+            }
+
+            25% {
+                transform: scaleX(-1) rotate(-20deg) translateX(-20px);
+            }
+
+            50% {
+                transform: scaleX(-1) rotate(0deg) translateX(0);
+            }
+
+            75% {
+                transform: scaleX(-1) rotate(20deg) translateX(-20px);
+            }
+        }
+
+        .shaking-left {
+            animation: shakeLeft 0.5s infinite;
+        }
+
+        .shaking-right {
+            animation: shakeRight 0.5s infinite;
+        }
+
+        .pop-in {
+            animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        @keyframes popIn {
+            from {
+                transform: scale(0);
+                opacity: 0;
+            }
+
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        /* Responsive */
+        @media(max-width: 1200px) {
+            .main-layout {
+                grid-template-columns: 280px 1fr;
+            }
+
+            .fighter-img {
+                width: 250px;
+                height: 250px;
+            }
+        }
+
+        @media(max-width: 900px) {
+            .main-layout {
+                display: flex;
+                flex-direction: column;
+                overflow-y: auto;
+            }
+
+            .panel {
+                border: none;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+                width: 100%;
+                height: auto;
+            }
+
+            h1 {
+                font-size: 2.5rem;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="main-layout">
+
+        <!-- === LEFT SIDEBAR: CONTROLS & INFO === -->
+        <div class="panel">
+
+            <!-- 1. EMG -->
+            <div class="panel-section">
+                <div class="panel-title">BIO-SIGNAL</div>
+                <div class="emg-panel-content">
+                    <div class="signal-box">
+                        <div class="connection-status">
+                            <span id="emgStatusText">Disconnected</span>
+                            <div class="status-dot" id="emgDot"></div>
+                        </div>
+
+                        <div style="font-size: 0.8rem; color: #666; width: 100%; text-align: left;">AMPLITUDE</div>
+                        <div class="signal-visualizer">
+                            <div class="signal-bar" id="emgBar" style="height: 0%"></div>
+                        </div>
+                        <div id="emgValueDisplay"
+                            style="margin-top: 5px; font-family: monospace; color: var(--primary);">0%</div>
+                    </div>
+
+                    <div class="signal-box">
+                        <div style="font-size: 0.8rem; color: #aaa; margin-bottom: 5px;">DETECTED</div>
+                        <div id="emgLog" style="font-family: 'Orbitron'; font-size: 1.5rem; color: #fff;">--</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. Settings -->
+            <div class="panel-section">
+                <div class="panel-title">SYSTEM</div>
+                <div class="settings-grid">
+                    <div class="setting-btn" onclick="toggleMute()" id="muteBtnBox">
+                        <span id="muteIcon">🔊</span>
+                        <label>SOUND</label>
+                    </div>
+                    <div class="setting-btn" onclick="resetGame()">
+                        <span>🔄</span>
+                        <label>RESTART</label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. History -->
+            <div class="panel-section" style="flex: 1; display: flex; flex-direction: column;">
+                <div class="panel-title">LOGS</div>
+                <div class="full-history-list" id="fullHistory">
+                    <div style="text-align: center; color: #666; margin-top: 10px; font-size: 0.8rem;">No matches yet
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- === CENTER/MAIN: GAME === -->
+        <div class="panel panel-center">
+            <h1>NEURAL RPS</h1>
+
+            <div class="scoreboard">
+                <div class="score-box">
+                    <span class="label">PLAYER</span>
+                    <div class="value" id="scorePlayer">0</div>
+                </div>
+
+                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                    <span style="font-size: 1rem; letter-spacing: 2px; color: var(--accent);">VS</span>
+                </div>
+
+                <div class="score-box">
+                    <span class="label">CPU</span>
+                    <div class="value" id="scoreCpu">0</div>
+                </div>
+            </div>
+
+            <div class="status-display">
+                <div class="status-text" id="statusText">READY</div>
+            </div>
+
+            <div class="arena">
+                <div class="fighter player">
+                    <img src="images/rock.png" class="fighter-img" id="avatarPlayer" alt="Player">
+                    <span style="color: var(--primary); margin-top: 15px; letter-spacing: 2px;">YOU</span>
+                </div>
+
+                <div class="fighter computer">
+                    <img src="images/rock.png" class="fighter-img" id="avatarCpu" alt="CPU">
+                    <span style="color: var(--secondary); margin-top: 15px; letter-spacing: 2px;">CPU</span>
+                </div>
+            </div>
+
+            <div class="controls-layer">
+                <!-- Mode Selection -->
+                <div class="mode-toggles">
+                    <button class="mode-btn active" onclick="setMode('free', this)">FREE PLAY</button>
+                    <button class="mode-btn" onclick="setMode('bo3', this)">BEST OF 3</button>
+                    <button class="mode-btn" onclick="setMode('bo5', this)">BEST OF 5</button>
+                </div>
+
+                <!-- Moves -->
+                <div class="options-grid">
+                    <button class="choice-btn" onmouseenter="playHover()" onclick="playRound('Rock')">
+                        <span class="choice-icon">🪨</span>
+                        <span class="choice-name">ROCK</span>
+                    </button>
+                    <button class="choice-btn" onmouseenter="playHover()" onclick="playRound('Paper')">
+                        <span class="choice-icon">📄</span>
+                        <span class="choice-name">PAPER</span>
+                    </button>
+                    <button class="choice-btn" onmouseenter="playHover()" onclick="playRound('Scissors')">
+                        <span class="choice-icon">✂️</span>
+                        <span class="choice-name">SCISSORS</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- AUDIO & LOGIC -->
+    <script>
+        // --- 1. Audio ---
+        const sounds = {
+            click: new Howl({ src: ['https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3'], volume: 0.4 }),
+            hover: new Howl({ src: ['https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3'], volume: 0.1 }),
+            win: new Howl({ src: ['https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3'], volume: 0.6 }),
+            lose: new Howl({ src: ['https://assets.mixkit.co/active_storage/sfx/2052/2052-preview.mp3'], volume: 0.5 }),
+            draw: new Howl({ src: ['https://assets.mixkit.co/active_storage/sfx/2570/2570-preview.mp3'], volume: 0.4 }),
+            countdown: new Howl({ src: ['https://assets.mixkit.co/active_storage/sfx/2569/2569-preview.mp3'], volume: 0.3 }),
+            detect: new Howl({ src: ['https://assets.mixkit.co/active_storage/sfx/2572/2572-preview.mp3'], volume: 0.5 })
+        };
+
+        function playHover() { sounds.hover.play(); }
+
+        let isMuted = false;
+        function toggleMute() {
+            isMuted = !isMuted;
+            Howler.mute(isMuted);
+            document.getElementById('muteIcon').textContent = isMuted ? '🔇' : '🔊';
+            document.getElementById('muteBtnBox').style.borderColor = isMuted ? '#f00' : '#444';
+        }
+
+        // --- 2. Game Logic ---
+        const IMAGES = {
+            'Rock': 'images/rock.png',
+            'Paper': 'images/paper.png',
+            'Scissors': 'images/scissors.png'
+        };
+        const CHOICES = ['Rock', 'Paper', 'Scissors'];
+
+        let gameState = {
+            playerScore: 0,
+            cpuScore: 0,
+            history: [],
+            isProcessing: false,
+            mode: 'free'
+        };
+
+        // UI Refs
+        const avatarPlayer = document.getElementById('avatarPlayer');
+        const avatarCpu = document.getElementById('avatarCpu');
+        const statusText = document.getElementById('statusText');
+        const scorePlayerEl = document.getElementById('scorePlayer');
+        const scoreCpuEl = document.getElementById('scoreCpu');
+        const fullHistoryEl = document.getElementById('fullHistory');
+
+        function getCpuChoice() {
+            return CHOICES[Math.floor(Math.random() * CHOICES.length)];
+        }
+
+        function determineWinner(p, c) {
+            if (p === c) return 'draw';
+            if ((p === 'Rock' && c === 'Scissors') || (p === 'Paper' && c === 'Rock') || (p === 'Scissors' && c === 'Paper')) return 'win';
+            return 'lose';
+        }
+
+        async function playRound(playerChoice) {
+            if (gameState.isProcessing) return;
+            gameState.isProcessing = true;
+            sounds.click.play();
+
+            // 1. Ready Phase
+            statusText.textContent = "READY...";
+            statusText.className = "status-text";
+            avatarPlayer.src = IMAGES['Rock'];
+            avatarCpu.src = IMAGES['Rock'];
+            avatarPlayer.classList.add('shaking-left');
+            avatarCpu.classList.add('shaking-right');
+            sounds.countdown.play();
+
+            await new Promise(r => setTimeout(r, 1500));
+
+            // 2. Reveal Phase
+            avatarPlayer.classList.remove('shaking-left');
+            avatarCpu.classList.remove('shaking-right');
+
+            const cpuChoice = getCpuChoice();
+            avatarPlayer.src = IMAGES[playerChoice];
+            avatarCpu.src = IMAGES[cpuChoice];
+
+            // Pop anim
+            avatarPlayer.classList.remove('pop-in'); avatarCpu.classList.remove('pop-in');
+            void avatarPlayer.offsetWidth;
+            avatarPlayer.classList.add('pop-in'); avatarCpu.classList.add('pop-in');
+
+            // 3. Result Phase
+            const result = determineWinner(playerChoice, cpuChoice);
+
+            if (result === 'win') {
+                statusText.textContent = "YOU WIN!";
+                statusText.className = "status-text win";
+                gameState.playerScore++;
+                sounds.win.play();
+                confetti({ particleCount: 150, spread: 80, origin: { y: 0.6 } });
+            } else if (result === 'lose') {
+                statusText.textContent = "CPU WINS!";
+                statusText.className = "status-text lose";
+                gameState.cpuScore++;
+                sounds.lose.play();
+            } else {
+                statusText.textContent = "DRAW!";
+                statusText.className = "status-text draw";
+                sounds.draw.play();
+            }
+
+            scorePlayerEl.textContent = gameState.playerScore;
+            scoreCpuEl.textContent = gameState.cpuScore;
+
+            addHistoryItem(playerChoice, cpuChoice, result);
+            checkGameOver();
+            gameState.isProcessing = false;
+        }
+
+        function addHistoryItem(p, c, res) {
+            const row = document.createElement('div');
+            row.className = `history-row ${res}`;
+
+            const pIcon = p === 'Rock' ? '🪨' : (p === 'Paper' ? '📄' : '✂️');
+            const cIcon = c === 'Rock' ? '🪨' : (c === 'Paper' ? '📄' : '✂️');
+            const resText = res === 'win' ? 'WIN' : (res === 'lose' ? 'LOSE' : 'DRAW');
+
+            row.innerHTML = `
+                <span>${pIcon} vs ${cIcon}</span>
+                <span style="font-weight:bold">${resText}</span>
+            `;
+
+            if (fullHistoryEl.children[0] && fullHistoryEl.children[0].innerText === "No matches yet") {
+                fullHistoryEl.innerHTML = '';
+            }
+            fullHistoryEl.insertBefore(row, fullHistoryEl.firstChild);
+        }
+
+        function resetGame() {
+            gameState.playerScore = 0;
+            gameState.cpuScore = 0;
+            scorePlayerEl.textContent = "0";
+            scoreCpuEl.textContent = "0";
+            statusText.textContent = "READY";
+            statusText.className = "status-text";
+            fullHistoryEl.innerHTML = '<div style="text-align: center; color: #666; margin-top: 10px; font-size: 0.8rem;">No matches yet</div>';
+            sounds.click.play();
+        }
+
+        function setMode(mode, btn) {
+            gameState.mode = mode;
+            document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+            if (btn) btn.classList.add('active');
+            sounds.click.play();
+            resetGame();
+        }
+
+        function checkGameOver() {
+            if (gameState.mode === 'free') return;
+            const target = gameState.mode === 'bo3' ? 2 : 3;
+            if (gameState.playerScore >= target || gameState.cpuScore >= target) {
+                setTimeout(() => {
+                    if (gameState.playerScore > gameState.cpuScore) {
+                        alert("🏆 MATCH PLAYER WINS!");
+                        confetti({ particleCount: 500 });
+                    } else {
+                        alert("💀 MATCH CPU WINS!");
+                    }
+                    resetGame();
+                }, 500);
+            }
+        }
+
+        // --- 3. EMG Socket ---
+        const socket = io('http://localhost:8765');
+        const emgDot = document.getElementById('emgDot');
+        const emgStatus = document.getElementById('emgStatusText');
+        const emgBar = document.getElementById('emgBar');
+        const emgValDisplay = document.getElementById('emgValueDisplay');
+        const emgLog = document.getElementById('emgLog');
+
+        socket.on('connect', () => {
+            emgDot.classList.add('connected');
+            emgStatus.textContent = "Connected";
+            emgStatus.style.color = "#fff";
+        });
+
+        socket.on('disconnect', () => {
+            emgDot.classList.remove('connected');
+            emgStatus.textContent = "Disconnected";
+            emgStatus.style.color = "#aaa";
+        });
+
+        socket.on('emg_prediction', (data) => {
+            if (!data) return;
+            const conf = data.confidence || 0;
+            const label = data.label;
+
+            // Visuals
+            const pct = Math.round(conf * 100);
+            emgBar.style.height = `${pct}%`;
+            emgValDisplay.textContent = `${pct}% CONFIDENCE`;
+
+            if (label) emgLog.textContent = label.toUpperCase();
+
+            // Trigger
+            if (conf > 0.6 && !gameState.isProcessing && CHOICES.includes(label)) {
+                sounds.detect.play();
+                playRound(label);
+            }
+        });
+
+        // Keyboard
+        document.addEventListener('keydown', (e) => {
+            if (e.key === '1') playRound('Rock');
+            if (e.key === '2') playRound('Paper');
+            if (e.key === '3') playRound('Scissors');
+        });
+
+    </script>
+</body>
+
+</html>
