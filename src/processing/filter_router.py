@@ -12,6 +12,9 @@ import threading
 import hashlib
 import sys
 import os
+import socket
+import struct
+
 from typing import List, Tuple, Dict, Optional
 
 # UTF-8 encoding for standard output to avoid UnicodeEncodeError in some terminals
@@ -161,7 +164,11 @@ class FilterRouter:
         self.config = load_config()
         self.sr = int(self.config.get("sampling_rate", DEFAULT_SR))
         self.inlet = None
-        self.outlet = None
+        self.inlet = None
+        # self.outlet = None  # Replaced by stream_socket
+        self.stream_socket = None
+        self.stream_connected = False
+
         self.raw_index_map: List[Tuple[int, str, str]] = []
         self.channel_processors: Dict[int, object] = {}
         self.channel_mapping: Dict[int, Dict] = {}
@@ -266,10 +273,23 @@ class FilterRouter:
         self.channel_mapping = {}
         
         # ========== IMPROVED: Explicitly close old outlet ==========
-        if self.outlet is not None:
-            print("[Router] 🔄 Closing old LSL outlet...")
-            del self.outlet
-            self.outlet = None
+        # Connect to Stream Manager (Processed)
+        if self.stream_socket:
+            try:
+                self.stream_socket.close()
+            except:
+                pass
+        self.stream_socket = None
+        self.stream_connected = False
+        
+        try:
+            self.stream_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.stream_socket.connect(('localhost', 6001))
+            self.stream_connected = True
+            print(f"[Router] ✅ Connected to Stream Manager (Processed)")
+        except Exception as e:
+            print(f"[Router] ⚠️ Could not connect to Stream Manager: {e}")
+
             time.sleep(0.2)  # Small delay to let LSL unregister from network
         
         mapping_cfg = self.config.get("channel_mapping", {})
@@ -367,19 +387,24 @@ class FilterRouter:
                     ch.append_child_value("type", ch_info.get("sensor", "UNKNOWN"))
                     ch.append_child_value("enabled", "true" if ch_info.get("enabled", True) else "false")
                 
-                self.outlet = pylsl.StreamOutlet(info)
-                print(f"[Router] [OUTLET] Publishing unified stream: {PROCESSED_STREAM_NAME}")
-                print(f"[Router]    Channels: {num_channels} @ {self.sr} Hz")
-                print(f"[Router] [OK] Pipeline configured successfully")
+                # self.outlet = pylsl.StreamOutlet(info)
+                # print(f"[Router] [OUTLET] Publishing unified stream: {PROCESSED_STREAM_NAME}")
+                # print(f"[Router]    Channels: {num_channels} @ {self.sr} Hz")
+                print(f"[Router] [OK] Pipeline configured successfully (Routing to Stream Manager)")
                 
             except Exception as e:
-                print(f"[Router] [ERROR] Error creating outlet: {e}")
+                print(f"[Router] [ERROR] Error configuring pipeline: {e}")
+
     
     def run(self):
         """Main processing loop."""
-        if not self.inlet or not self.outlet:
-            print("[Router] [ERROR] Error: Inlet or outlet not ready!")
+        if not self.inlet:
+            print("[Router] [ERROR] Error: Inlet not ready!")
             return
+            
+        if not self.stream_connected:
+             print("[Router] [WARNING] Not connected to Stream Manager - data will not be published")
+
         
         self.running = True
         print("[Router] [START] Starting processing loop...")
@@ -413,8 +438,18 @@ class FilterRouter:
                                 
                                 processed_sample.append(filtered_val)
                             
-                            # ✅ Push ALL channels in single sample with same timestamp
-                            self.outlet.push_sample(processed_sample, ts)
+                            # ✅ Push ALL channels to Stream Manager
+                            if self.stream_connected and self.stream_socket:
+                                try:
+                                    # Protocol: [0xAA] [Count] [Floats...]
+                                    count = len(processed_sample)
+                                    header = struct.pack('<BB', 0xAA, count)
+                                    payload = struct.pack(f'<{count}f', *processed_sample)
+                                    self.stream_socket.sendall(header + payload)
+                                except Exception as e:
+                                    print(f"[Router] Stream push error: {e}")
+                                    self.stream_connected = False
+
                             sample_count += 1
                             
                             # Log progress every 512 samples (1 second at 512 Hz)
@@ -441,13 +476,13 @@ class FilterRouter:
                 except:
                     pass
             
-            if self.outlet:
+            if self.stream_socket:
                 try:
-                    # StreamOutlet is closed on destruction in pylsl
-                    del self.outlet
-                    self.outlet = None
+                    self.stream_socket.close()
+                    self.stream_socket = None
                 except:
                     pass
+
             
             print("[Router] [OK] Cleanup complete")
     

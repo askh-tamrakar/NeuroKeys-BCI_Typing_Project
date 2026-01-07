@@ -9,11 +9,18 @@ from pathlib import Path
 # Configuration
 COMPONENTS = [
     {
+        "name": "Stream Manager",
+        "module": "src.acquisition.stream_manager",
+        "color": "\033[95m",  # Purple
+        "ready_pattern": "[StreamManager] Created stream 'BioSignals-Events'"
+    },
+    {
         "name": "Filter Router",
         "module": "src.processing.filter_router",
         "color": "\033[94m",  # Blue
         "ready_pattern": "[Router] [OK] Connected to raw stream"
     },
+
     {
         "name": "Feature Router",
         "module": "src.feature.router",

@@ -4,6 +4,8 @@ import sys
 import os
 import time
 import numpy as np
+import struct
+
 
 # Ensure we can import from src/acquisition
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -12,7 +14,8 @@ if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 
 from acquisition.packet_parser import PacketParser
-from acquisition.lsl_streams import LSLStreamer, LSL_AVAILABLE
+from acquisition.packet_parser import PacketParser
+
 
 class DesktopReceiver:
     def __init__(self, port=5000):
@@ -23,18 +26,21 @@ class DesktopReceiver:
         self.client_sock = None
         self.stats = {"packets": 0, "bytes": 0}
         
-        # Setup LSL
-        if LSL_AVAILABLE:
-            print("[Receiver] Creating LSL Stream 'BioSignals-Raw-uV'...")
-            self.lsl_stream = LSLStreamer(
-                "BioSignals-Raw-uV",
-                channel_types=["EMG", "EOG"],
-                channel_labels=["EMG_0", "EOG_1"],
-                channel_count=2,
-                nominal_srate=512
-            )
-        else:
-            print("[Receiver] ⚠️ LSL not available. Data will only be printed.")
+        self.stats = {"packets": 0, "bytes": 0}
+        
+        # Connect to Stream Manager
+        self.stream_socket = None
+        self._connect_stream()
+        
+    def _connect_stream(self):
+        try:
+            self.stream_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.stream_socket.connect(('localhost', 6000))
+            print("[Receiver] ✅ Connected to Stream Manager (Raw)")
+        except Exception as e:
+            print(f"[Receiver] ⚠️ Could not connect to Stream Manager: {e}")
+            self.stream_socket = None
+
 
     def start(self):
         self.running = True
@@ -94,23 +100,21 @@ class DesktopReceiver:
                         try:
                             pkt = self.packet_parser.parse(pkt_bytes)
                             
-                            # Push to LSL
-                            if self.lsl_stream:
-                                # Start with raw int16 (or uint16 depending on parsing)
-                                # LSL expects float usually, but we can send as is or convert.
-                                # PacketParser returns int. 
-                                # Since this is "Raw-uV", we SHOULD ideally convert to uV if the main app expects it.
-                                # But `acquisition_app.py` created LSL with name "BioSignals-Raw-uV" but seemingly pushed raw ADC?
-                                # Let's check `acquisition_app.py` lines 660-666: it pushes seemingly raw values or processed?
-                                # Wait, `serial_reader` just pushes bytes to queue. `PacketParser` parses them.
-                                # `acquisition_app.py` does NOT push to LSL in the main loop shown in snippet.
-                                # Ah, I missed where acquisition_app pushes to LSL.
-                                # Let's assume we push [ch0_raw, ch1_raw] and let the consumer handle conversion.
-                                # Or better: convert to uV here if we want "telepathy" system to work out of box.
-                                # Let's stick to RAW values to match the name "Raw".
-                                
-                                sample = [float(pkt.ch0_raw), float(pkt.ch1_raw)]
-                                self.lsl_stream.push_sample(sample)
+                            # Push to Stream Manager
+                            if self.stream_socket:
+                                try:
+                                    # Samples are Ch0, Ch1 (Raw ADC but treated as uV or raw)
+                                    # Assuming PacketParser returns raw ADC. The mobile app sends raw.
+                                    # Acquisition App converts to uV. Receiver implies input is Raw-uV?
+                                    # Line 30 was "BioSignals-Raw-uV".
+                                    # Line 112: sample = [float(pkt.ch0_raw), float(pkt.ch1_raw)]
+                                    # Let's send what we have.
+                                    v0 = float(pkt.ch0_raw)
+                                    v1 = float(pkt.ch1_raw)
+                                    self.stream_socket.sendall(struct.pack('<ff', v0, v1))
+                                except Exception:
+                                    self.stream_socket = None # Stop trying if broken
+
                                 
                             self.stats["packets"] += 1
                             i += packet_len

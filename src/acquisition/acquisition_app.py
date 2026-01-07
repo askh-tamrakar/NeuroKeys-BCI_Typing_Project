@@ -10,6 +10,8 @@ import sys
 import os
 import queue
 import subprocess # Added explicit import
+import struct
+
 
 
 # Ensure we can import sibling packages
@@ -88,8 +90,15 @@ class AcquisitionApp:
         self.is_recording = False
         self.session_start_time = None
         self.packet_count = 0
+        self.retry_counter = 0
         self.last_packet_counter = None
+
         self.pipeline_process = None # Process handle for filter_router
+        
+        # Stream Manager Connection
+        self.stream_socket = None
+        self.stream_connected = False
+
 
         # Processed Data Stream State
         self.processed_inlet = None
@@ -654,16 +663,24 @@ class AcquisitionApp:
         self.ch1_type = self.ch1_var.get()
         
         # Create LSL outlets if available
-        if LSL_AVAILABLE:
-            ch_types = [self.ch0_type, self.ch1_type]
-            ch_labels = [f"{self.ch0_type}_0", f"{self.ch1_type}_1"]
-            self.lsl_raw_uV = LSLStreamer(
-                "BioSignals-Raw-uV",
-                channel_types=ch_types,
-                channel_labels=ch_labels,
-                channel_count=2,
-                nominal_srate=float(self.config.get("sampling_rate", 512))
-            )
+        
+        # Connect to Stream Manager
+        self._connect_to_stream_manager()
+        
+    def _connect_to_stream_manager(self):
+        """Connect to local Stream Manager for raw data streaming"""
+        try:
+            import socket
+            self.stream_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            # Port 6000 is for RAW data as defined in stream_manager.py
+            self.stream_socket.connect(('localhost', 6000))
+            self.stream_connected = True
+            print("[App] ✅ Connected to Stream Manager (Raw)")
+        except Exception as e:
+            print(f"[App] ⚠️ Could not connect to Stream Manager: {e}")
+            self.stream_connected = False
+            self.stream_socket = None
+
         
     def disconnect_device(self):
         """Disconnect from Arduino"""
@@ -673,6 +690,16 @@ class AcquisitionApp:
         self.is_connected = False
         if self.serial_reader:
             self.serial_reader.disconnect()
+            
+        if self.stream_socket:
+            try:
+                self.stream_socket.close()
+            except:
+                pass
+            self.stream_socket = None
+            self.stream_connected = False
+            print("[App] Disconnected from Stream Manager")
+
         
         self.status_label.config(text="❌ Disconnected", foreground="red")
         self.connect_btn.config(state="normal")
@@ -863,10 +890,19 @@ class AcquisitionApp:
                         u0 = adc_to_uv(r0)
                         u1 = adc_to_uv(r1)
                         
-                        # 4. Push to LSL in chunk
-                        if LSL_AVAILABLE and self.lsl_raw_uV:
-                            chunk = np.column_stack((u0, u1)).tolist()
-                            self.lsl_raw_uV.push_chunk(chunk)
+                        # 4. Push to Stream Manager (Chunks)
+                        if self.stream_connected and self.stream_socket:
+                            try:
+                                # Pack all samples efficiently
+                                # u0 and u1 are numpy arrays
+                                byte_data = bytearray()
+                                for v0, v1 in zip(u0, u1):
+                                    byte_data.extend(struct.pack('<ff', float(v0), float(v1)))
+                                self.stream_socket.sendall(byte_data)
+                            except Exception as e:
+                                print(f"[App] Stream send error: {e}")
+                                self.stream_connected = False
+
                         
                         # 5. Update buffers efficiently
                         n = len(u0)
@@ -926,6 +962,12 @@ class AcquisitionApp:
         # Schedule next update
         if self.root.winfo_exists():
             self.root.after(30, self.main_loop)
+            
+        # Retry connection if needed (approx every 2 seconds)
+        self.retry_counter = (self.retry_counter + 1) % 60
+        if self.retry_counter == 0 and not self.stream_connected:
+             self._connect_to_stream_manager()
+
 
     def update_plots(self):
         """Update the plot lines (Optimized)"""
