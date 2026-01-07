@@ -46,13 +46,44 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
   const [isSaving, setIsSaving] = useState(false)
 
   // Optimized batch adder
+  // Assumes newPoints are sorted by time (guaranteed by backend/websocket logic)
   const addDataPoints = (dataArray, newPoints, maxAge) => {
-    if (newPoints.length === 0) return dataArray
+    if (!newPoints || newPoints.length === 0) return dataArray
+
+    // 1. Append new points (cheap)
+    const combined = dataArray.concat(newPoints)
+
+    // 2. Prune old points from the FRONT (cheap-ish)
+    // Since data is monotonic, we just need to find the first index that is valid
+    // Binary search would be O(log N), but linear scan from start is also fine if we assume we remove small chunks.
+    // However, binary search is safer for potentially large buffers.
+
     const latestTime = newPoints[newPoints.length - 1].time
     const cutoff = latestTime - maxAge
-    // Filter out old points from existing data
-    const filtered = dataArray.filter(p => p.time > cutoff)
-    return [...filtered, ...newPoints]
+
+    // Optimization: If the oldest point is already newer than cutoff, do nothing
+    if (combined.length > 0 && combined[0].time > cutoff) {
+      return combined
+    }
+
+    // Binary search to find cut index
+    let low = 0
+    let high = combined.length - 1
+    let cutIndex = 0
+
+    while (low <= high) {
+      const mid = (low + high) >>> 1
+      if (combined[mid].time < cutoff) {
+        cutIndex = mid + 1 // This point is too old, potential cut is after it
+        low = mid + 1
+      } else {
+        high = mid - 1
+      }
+    }
+
+    // Slice is O(K) copy, but unavoidable for immutable update. 
+    // It is much faster than filter() which allocates closures and checks every element.
+    return cutIndex > 0 ? combined.slice(cutIndex) : combined
   }
 
   // Update recording timer

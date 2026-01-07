@@ -103,37 +103,33 @@ export function useWebSocket(url = 'http://localhost:1972') {
     // === DATA EVENTS ===
 
     // Batch Listener
-    let lastBatchUpdate = 0
+    // No throttling for batch data to prevent data loss. The backend controls the rate (approx 30Hz).
     socketRef.current.on('bio_data_batch', (batchData) => {
-      try {
-        const now = Date.now()
-        // Throttle to ~30Hz (33ms) to prevent "Maximum update depth exceeded"
-        if (now - lastBatchUpdate < 33) return
-        lastBatchUpdate = now
+      if (!batchData || !batchData.samples || batchData.samples.length === 0) return
 
-        if (!batchData || !batchData.samples || batchData.samples.length === 0) return
+      // Optimized parsing: Avoid try-catch block for clean data to reduce V8 deopt
+      // Only wrap critical parts or assume backend data shape is mostly correct.
 
-        // compatibility: use last sample for simple views
-        const lastSample = batchData.samples[batchData.samples.length - 1]
+      const lastSample = batchData.samples[batchData.samples.length - 1]
 
-        const rawPayload = {
-          stream_name: batchData.stream_name,
-          channels: lastSample.channels,
-          sample_rate: batchData.sample_rate,
-          sample_count: lastSample.sample_count,
-          timestamp: lastSample.timestamp,
-          // Attach FULL BATCH for LiveView
-          _batch: batchData.samples
-        }
-
-        setLastMessage({
-          data: JSON.stringify(rawPayload),
-          timestamp: Date.now(),
-          raw: rawPayload
-        })
-      } catch (e) {
-        console.warn('⚠️ Failed to parse bio_data_batch:', e)
+      // Fast path reconstruction
+      const rawPayload = {
+        stream_name: batchData.stream_name,
+        // We only strictly need channels/timestamp for 'lastMessage' consumers (non-LiveView)
+        // LiveView uses _batch directly.
+        channels: lastSample.channels,
+        sample_rate: batchData.sample_rate,
+        sample_count: lastSample.sample_count,
+        timestamp: lastSample.timestamp,
+        _batch: batchData.samples
       }
+
+      setLastMessage({
+        // Avoid JSON.stringify if not strictly needed by consumers, but useWebSocket contract implies string 'data'
+        data: JSON.stringify(rawPayload),
+        timestamp: Date.now(),
+        raw: rawPayload
+      })
     })
 
     let lastUpdate = 0

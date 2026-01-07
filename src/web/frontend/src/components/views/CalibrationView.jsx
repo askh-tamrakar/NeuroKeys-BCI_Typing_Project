@@ -243,8 +243,6 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                 return;
             }
 
-
-
             const newWindow = {
                 id: Math.random().toString(36).substr(2, 9),
                 sensor: sensorForWindow,
@@ -261,32 +259,50 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             setMarkedWindows(prev => [...prev, newWindow].slice(-MAX_WINDOWS));
             setActiveWindow(newWindow); // Keep track for logic, but maybe not render separately?
 
-            // Wait for window to finish + Buffer for data arrival/react-render
-            setTimeout(async () => {
+            // Function to wait for data to arrive
+            const checkAndCollect = async () => {
                 // Check if window still exists (was not deleted)
                 if (!markedWindowsRef.current.find(w => w.id === newWindow.id)) {
                     return;
                 }
 
+                const currentData = chartDataRef.current;
+
+                // DATA SYNC CHECK:
+                // Ensure the LATEST data point in buffer is at least as new as 'end'
+                // If not, wait a bit longer (up to a timeout).
+                const latestDataTs = currentData.length > 0 ? currentData[currentData.length - 1].time : 0;
+
+                if (latestDataTs < end - 50) { // Tolerance of 50ms
+                    // Data hasn't arrived yet!
+                    const now = Date.now();
+                    // Sanity check: If we are WAY past 'end' (e.g. 5 seconds) and still no data, abort.
+                    if (now > end + 5000) {
+                        console.warn("[AutoWindow] Timed out waiting for data.");
+                    } else {
+                        // Check again in 100ms
+                        setTimeout(checkAndCollect, 100);
+                        return;
+                    }
+                }
+
                 try {
                     // Extract samples from chartDataRef (latest data)
-                    const currentData = chartDataRef.current;
-
-                    // Filter with safety check
                     const samplesPoints = currentData.filter(p => p.time >= start && p.time <= end);
-                    const samples = samplesPoints.map(p => p.value);
-                    const timestamps = samplesPoints.map(p => p.time);
 
-                    if (samples.length === 0) {
+                    // If zero samples found, but we waited... try one last re-filter with slightly wider tolerance?
+                    // Or just fail.
+
+                    if (samplesPoints.length === 0) {
+                        // Debug info
                         const dataStart = currentData.length > 0 ? currentData[0].time : 'N/A';
                         const dataEnd = currentData.length > 0 ? currentData[currentData.length - 1].time : 'N/A';
-                        console.warn(`[AutoWindow] Empty Win: ${start}-${end}. Data Range: ${dataStart}-${dataEnd}. Count: ${currentData.length}`);
+                        console.warn(`[AutoWindow] Empty Win: ${start}-${end}. Data Range: ${dataStart}-${dataEnd}. WaitTs: ${latestDataTs}`);
                         throw new Error("No data collected");
                     }
 
-                    // Verify sample count (optional, e.g. must have > 50% of expected)
-                    // const expected = (windowDurationRef.current / 1000) * 20; // e.g. 20Hz
-                    // if (samples.length < expected * 0.5) throw new Error("Partial data");
+                    const samples = samplesPoints.map(p => p.value);
+                    const timestamps = samplesPoints.map(p => p.time);
 
                     const collectedWindow = {
                         ...newWindow,
@@ -309,17 +325,17 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                     setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'error', message: String(err) } }));
 
                     // Error -> BLACK -> Buffer (History)
-                    // Note: This bypasses 'Ready' because it's not ready to append.
                     const errorWindow = { ...newWindow, status: 'error', error: String(err) };
                     setBufferWindows(prev => [...prev, errorWindow]);
-
-                    // VISUAL UPDATE: Update the 'pending' phantom in markedWindows to 'error'
                     setMarkedWindows(prev => prev.map(w => w.id === newWindow.id ? { ...w, status: 'error' } : w));
 
                 } finally {
                     setActiveWindow(null);
                 }
-            }, delayToCenter + currentDur + 500); // Added 500ms safety buffer
+            };
+
+            // Initial wait: wait until visual end, plus a small buffer
+            setTimeout(checkAndCollect, delayToCenter + currentDur + 100);
         };
 
         createNextWindow();
