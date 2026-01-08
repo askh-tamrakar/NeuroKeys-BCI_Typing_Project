@@ -644,13 +644,13 @@
     <script>
         // --- 1. Audio ---
         const sounds = {
-            click: new Howl({ src: ['https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3'], volume: 0.4 }),
-            hover: new Howl({ src: ['https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3'], volume: 0.1 }),
-            win: new Howl({ src: ['https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3'], volume: 0.6 }),
-            lose: new Howl({ src: ['https://assets.mixkit.co/active_storage/sfx/2052/2052-preview.mp3'], volume: 0.5 }),
-            draw: new Howl({ src: ['https://assets.mixkit.co/active_storage/sfx/2570/2570-preview.mp3'], volume: 0.4 }),
-            countdown: new Howl({ src: ['https://assets.mixkit.co/active_storage/sfx/2569/2569-preview.mp3'], volume: 0.3 }),
-            detect: new Howl({ src: ['https://assets.mixkit.co/active_storage/sfx/2572/2572-preview.mp3'], volume: 0.5 })
+            click: new Howl({ src: ['sounds/click.wav', 'sounds/click.mp3'], volume: 0.5 }),
+            hover: new Howl({ src: ['sounds/hover.wav', 'sounds/hover.mp3'], volume: 0.1 }),
+            win: new Howl({ src: ['sounds/win.mp3'], volume: 0.7 }),
+            lose: new Howl({ src: ['sounds/lose.mp3'], volume: 0.7 }),
+            draw: new Howl({ src: ['sounds/draw.mp3'], volume: 0.5 }),
+            countdown: new Howl({ src: ['sounds/click.wav'], volume: 0.3 }),
+            detect: new Howl({ src: ['sounds/hover.wav'], volume: 0.5 })
         };
 
         function playHover() { sounds.hover.play(); }

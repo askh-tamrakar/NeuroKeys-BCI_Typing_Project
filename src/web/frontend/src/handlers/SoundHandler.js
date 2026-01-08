@@ -15,7 +15,7 @@ class SoundHandler {
         });
 
         // Rock Paper Scissors
-        this.clickSound = new Howl({ src: ['/sounds/click.mp3'], volume: 0.5 });
+        this.clickSound = new Howl({ src: ['/sounds/click.wav', '/sounds/click.mp3'], volume: 0.5 });
         this.winSound = new Howl({ src: ['/sounds/win.mp3'], volume: 0.7 });
         this.loseSound = new Howl({ src: ['/sounds/lose.mp3'], volume: 0.7 });
         this.drawSound = new Howl({ src: ['/sounds/draw.mp3'], volume: 0.5 });
