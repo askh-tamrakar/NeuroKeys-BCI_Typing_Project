@@ -30,8 +30,18 @@ const renderCustomNodeElement = ({ nodeDatum, toggleNode }) => (
 const AccuracyCard = ({ accuracy, n_samples }) => (
     <div className="card h-full flex flex-col justify-center items-center p-6 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-sm hover:shadow-md transition-shadow">
         <h3 className="text-xl font-bold text-[var(--muted)] uppercase tracking-widest mb-2">Model Accuracy</h3>
-        <div className="text-5xl font-black text-[var(--primary)] mb-2">{(accuracy * 100).toFixed(1)}%</div>
-        <p className="text-base text-[var(--text)] opacity-70">on {n_samples} test samples</p>
+        {accuracy !== null && accuracy !== undefined ? (
+            <>
+                <div className="text-5xl font-black text-[var(--primary)] mb-2">{(accuracy * 100).toFixed(1)}%</div>
+                <p className="text-base text-[var(--text)] opacity-70">on {n_samples} test samples</p>
+            </>
+        ) : (
+            <div className="text-center">
+                <div className="text-3xl text-[var(--muted)] mb-1">N/A</div>
+                <p className="text-sm text-[var(--muted)] opacity-60">No data to evaluate</p>
+                <p className="text-xs text-[var(--muted)] opacity-40 mt-1">Select a valid session</p>
+            </div>
+        )}
     </div>
 );
 
@@ -52,70 +62,11 @@ const FeatureImportanceCard = ({ importances }) => (
     </div>
 );
 
-const ConfusionMatrixCard = ({ matrix, labels }) => (
-    <div className="card h-full flex flex-col p-4 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-sm">
-        <div className="flex justify-between items-center mb-4 border-b border-[var(--border)] pb-2">
-            <h3 className="text-sm font-bold text-[var(--muted)] uppercase tracking-widest">Confusion Matrix</h3>
-            <span className="text-[10px] text-[var(--muted)] bg-[var(--bg)] px-2 py-0.5 rounded border border-[var(--border)]">Row: Actual | Col: Pred</span>
-        </div>
-        <div className="flex-grow overflow-hidden flex flex-col justify-center">
-            <table className="w-full text-xs text-center text-[var(--text)] border-collapse table-fixed">
-                <thead>
-                    <tr>
-                        <th className="p-2 w-24 text-left text-[var(--muted)] font-normal italic border-b border-[var(--border)] bg-[var(--bg)]/30">Class</th>
-                        {labels.map((l, i) => (
-                            <th key={i} className="p-2 font-bold text-[var(--primary)] border-b border-[var(--border)] bg-[var(--bg)]/10 truncate" title={l}>
-                                {l}
-                            </th>
-                        ))}
-                    </tr>
-                </thead>
-                <tbody>
-                    {matrix.map((row, i) => (
-                        <tr key={i} className="hover:bg-[var(--surface)]/50 transition-colors group">
-                            <td className="p-2 font-bold text-[var(--text)] text-left border-r border-[var(--border)] bg-[var(--bg)]/20 truncate" title={labels[i]}>
-                                {labels[i]}
-                            </td>
-                            {row.map((cell, j) => (
-                                <td key={j} className={`p-2 border border-[var(--border)] transition-all ${i === j
-                                    ? 'bg-[var(--primary)]/20 font-black text-[var(--primary)]'
-                                    : cell > 0 ? 'bg-red-500/10 text-red-400 font-medium' : 'text-[var(--muted)] opacity-20'
-                                    }`}>
-                                    {cell}
-                                </td>
-                            ))}
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-        </div>
-    </div>
-);
-
-const DecisionTreeCard = ({ structure }) => (
-    <div className="card h-full flex flex-col p-0 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-sm overflow-hidden relative group">
-        <div className="absolute top-4 left-4 z-10 bg-[var(--bg)]/80 backdrop-blur px-3 py-1 rounded border border-[var(--border)]">
-            <h3 className="text-sm font-bold text-[var(--text)]">Decision Tree Visualization</h3>
-        </div>
-        <div className="w-full h-full bg-[var(--bg)]" style={{ minHeight: '400px' }}>
-            <Tree
-                data={structure}
-                orientation="vertical"
-                translate={{ x: 400, y: 50 }}
-                pathFunc="step"
-                separation={{ siblings: 1.5, nonSiblings: 2 }}
-                zoomable={true}
-                renderCustomNodeElement={renderCustomNodeElement}
-            />
-        </div>
-    </div>
-);
-
 // New Component for Hyperparameters
 const HyperparametersCard = ({ params, onChange }) => (
     <div className="card h-full flex flex-col p-4 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-sm">
-        <label className="text-xs font-bold text-[var(--muted)] uppercase tracking-wide mb-3 block">Hyperparameters</label>
-        <div className="space-y-4 flex-grow flex flex-col justify-center">
+        <h3 className="text-base font-bold text-[var(--muted)] uppercase tracking-widest border-b border-[var(--border)] pb-2">Hyperparameters</h3>
+        <div className="py-4 space-y-4 flex-grow flex flex-col justify-between">
             <div>
                 <div className="flex justify-between mb-1">
                     <span className="text-xs text-[var(--text)]">Trees</span>
@@ -141,6 +92,82 @@ const HyperparametersCard = ({ params, onChange }) => (
     </div>
 );
 
+const ConfusionMatrixCard = ({ matrix, labels }) => (
+    <div className="card h-full flex flex-col p-4 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-sm">
+        <div className="flex justify-between items-center border-b border-[var(--border)] pb-2">
+            <h3 className="text-sm font-bold text-[var(--muted)] uppercase tracking-widest">Confusion Matrix</h3>
+            <span className="text-[10px] text-[var(--muted)] bg-[var(--bg)] px-2 py-0.5 rounded border border-[var(--border)]">Row: Actual | Col: Pred</span>
+        </div>
+        <div className="flex-grow overflow-hidden flex flex-col h-full py-4 relative">
+            {matrix ? (
+                <table className="w-full h-full text-[16px] text-center text-[var(--text)] border-collapse table-fixed">
+                    <thead>
+                        <tr>
+                            <th className="p-2 w-24 text-left text-[var(--muted)] font-normal italic border-b border-[var(--border)] bg-[var(--bg)]/30">Class</th>
+                            {labels.map((l, i) => (
+                                <th key={i} className="p-2 font-bold text-[var(--primary)] border-b border-[var(--border)] bg-[var(--bg)]/10 truncate" title={l}>
+                                    {l}
+                                </th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {matrix.map((row, i) => (
+                            <tr key={i} className="hover:bg-[var(--surface)]/50 transition-colors group">
+                                <td className="p-2 font-bold text-[var(--text)] text-left border-r border-[var(--border)] bg-[var(--bg)]/20 truncate" title={labels[i]}>
+                                    {labels[i]}
+                                </td>
+                                {row.map((cell, j) => (
+                                    <td key={j} className={`p-2 border border-[var(--border)] transition-all ${i === j
+                                        ? 'bg-[var(--primary)]/20 font-black text-[var(--primary)]'
+                                        : cell > 0 ? 'bg-red-500/10 text-red-400 font-medium' : 'text-[var(--muted)] opacity-20'
+                                        }`}>
+                                        {cell}
+                                    </td>
+                                ))}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            ) : (
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <div className="text-3xl text-[var(--muted)] mb-1">N/A</div>
+                    <p className="text-sm text-[var(--muted)] opacity-60">No confusion data</p>
+                </div>
+            )}
+        </div>
+    </div>
+);
+
+const getDepth = (node) => {
+    if (!node) return 0;
+    if (!node.children || node.children.length === 0) return 1;
+    return 1 + Math.max(...node.children.map(getDepth));
+};
+
+const DecisionTreeCard = ({ structure }) => {
+    const depth = getDepth(structure);
+    return (
+        <div className="card h-full flex flex-col p-0 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-sm overflow-hidden relative group">
+            <div className="absolute top-4 left-4 z-10 bg-[var(--bg)]/80 backdrop-blur px-3 py-1 rounded border border-[var(--border)]">
+                <h3 className="text-sm font-bold text-[var(--text)]">Decision Tree Visualization</h3>
+            </div>
+            <div className="w-full h-full bg-[var(--bg)]" style={{ minHeight: '400px' }}>
+                <Tree
+                    data={structure}
+                    orientation="vertical"
+                    translate={{ x: 400, y: 50 }}
+                    pathFunc="step"
+                    depthFactor={depth < 10 ? 100 : undefined}
+                    separation={{ siblings: 1.5, nonSiblings: 2 }}
+                    zoomable={true}
+                    renderCustomNodeElement={renderCustomNodeElement}
+                />
+            </div>
+        </div>
+    );
+};
+
 // Updated ControlPanel (Removed Hyperparameters)
 const ControlPanel = ({
     onTrain,
@@ -152,7 +179,7 @@ const ControlPanel = ({
     onSessionSelect,
     onRefreshSessions,
     activeTab,
-    setActiveTab // Received as prop
+    setActiveTab
 }) => (
     <div className="space-y-4">
         {/* Session Select */}
@@ -162,13 +189,13 @@ const ControlPanel = ({
                 {/* TABS */}
                 <span className="flex bg-[var(--surface)] rounded-lg p-1 border border-[var(--border)]">
                     <button
-                        onClick={() => setActiveTab('EMG')}
+                        onClick={() => { setActiveTab('EMG'); onSessionSelect(null); }}
                         className={`px-2 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'EMG' ? 'bg-[var(--primary)] text-white shadow' : 'text-[var(--text)] hover:text-[var(--primary)]'} `}
                     >
                         EMG (Gestures)
                     </button>
                     <button
-                        onClick={() => setActiveTab('EOG')}
+                        onClick={() => { setActiveTab('EOG'); onSessionSelect(null); }}
                         className={`px-2 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'EOG' ? 'bg-[var(--primary)] text-white shadow' : 'text-[var(--text)] hover:text-[var(--primary)]'} `}
                     >
                         EOG (Blinks)
@@ -243,7 +270,10 @@ export default function MLTrainingView() {
 
     useEffect(() => {
         fetchSessions();
-    }, [activeTab]);
+        // Auto-load model when tab or session changes
+        if (activeTab === 'EMG') evalEmg();
+        else evalEog();
+    }, [activeTab, selectedSession]);
 
 
     // --- SHARED STATE ---
@@ -305,7 +335,13 @@ export default function MLTrainingView() {
     const evalEmg = async () => {
         setEvalLoading(true); setError(null); setEmgEvalResult(null);
         try {
-            const res = await fetch('/api/model/evaluate', { method: 'POST' });
+            const res = await fetch('/api/model/evaluate', {
+                method: 'POST',
+                body: JSON.stringify({
+                    table_name: selectedSession || undefined
+                }),
+                headers: { 'Content-Type': 'application/json' }
+            });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Eval failed');
             setEmgEvalResult(data);
@@ -317,7 +353,10 @@ export default function MLTrainingView() {
         setLoading(true); setError(null); setEogResult(null);
         try {
             const res = await fetch('/api/train-eog-rf', {
-                method: 'POST', body: JSON.stringify(eogParams), headers: { 'Content-Type': 'application/json' }
+                method: 'POST', body: JSON.stringify({
+                    ...eogParams,
+                    table_name: selectedSession || undefined
+                }), headers: { 'Content-Type': 'application/json' }
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Training failed');
@@ -329,7 +368,11 @@ export default function MLTrainingView() {
     const evalEog = async () => {
         setEvalLoading(true); setError(null); setEogEvalResult(null);
         try {
-            const res = await fetch('/api/model/evaluate/eog', { method: 'POST' });
+            const res = await fetch('/api/model/evaluate/eog', {
+                method: 'POST',
+                body: JSON.stringify({ table_name: selectedSession || undefined }),
+                headers: { 'Content-Type': 'application/json' }
+            });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Eval failed');
             setEogEvalResult(data);

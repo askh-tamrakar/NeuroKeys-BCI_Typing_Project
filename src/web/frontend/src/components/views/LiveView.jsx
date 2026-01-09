@@ -297,31 +297,84 @@ export default function LiveView({ wsData, wsEvent, config, isPaused }) {
   }
 
   // --- SWEEP TRANSFORM LOGIC (Dual Segment) ---
+  // --- SWEEP TRANSFORM LOGIC (Optimized) ---
   const processSweep = (data, windowMs) => {
     if (!data || data.length === 0) return { active: [], history: [], scanner: null, latestTs: 0 }
-    const latestTs = data[data.length - 1].time
+
+    // 1. Identify valid data range
+    const len = data.length
+    const latestTs = data[len - 1].time
     const scannerPos = latestTs % windowMs
+    const rangeStart = latestTs - windowMs
+    const cycleStartTs = latestTs - scannerPos // Alignment point: time where X=0
 
-    const active = []  // Newest data (0 -> Scanner)
-    const history = [] // Oldest data (Scanner -> Window)
+    // 2. Optimized Slice - Avoid full iteration
+    // Data is sorted by time. We need data > rangeStart.
+    // Use binary search (or just scan from end if usually close)
 
-    const cycleStartTs = latestTs - scannerPos // The time corresponding to X=0 in the current sweep
+    // Find index of first point >= rangeStart
+    // We can use a simple scan from end because we expect to use mostly recent data
+    let startIndex = 0
+    if (data[0].time < rangeStart) {
+      // Only search if we actually need to cut
+      // Simple binary search for rangeStart
+      let low = 0, high = len - 1
+      while (low <= high) {
+        const mid = (low + high) >>> 1
+        if (data[mid].time < rangeStart) low = mid + 1
+        else high = mid - 1
+      }
+      startIndex = low
+    }
 
-    data.forEach(d => {
-      const mappedTime = d.time % windowMs
-      // We only care about data within [latestTs - windowMs, latestTs]
-      if (d.time > (latestTs - windowMs)) {
-        if (d.time >= cycleStartTs) {
-          active.push({ ...d, time: mappedTime })
+    // Now we have the subset to visualize
+    // Points >= cycleStartTs are "active" (mappedTime = time % windowMs)
+    // Points < cycleStartTs are "history"
+
+    // We can also find the split point using binary search on `cycleStartTs` 
+    // but within [startIndex, len-1]
+
+    let splitIndex = startIndex
+    if (startIndex < len) {
+      let low = startIndex, high = len - 1
+      while (low <= high) {
+        const mid = (low + high) >>> 1
+        if (data[mid].time < cycleStartTs) {
+          splitIndex = mid + 1
+          low = mid + 1
         } else {
-          history.push({ ...d, time: mappedTime })
+          high = mid - 1
         }
       }
-    })
+    }
 
-    // Sort each segment by X (mappedTime) for correct line drawing
-    active.sort((a, b) => a.time - b.time)
-    history.sort((a, b) => a.time - b.time)
+    // history: [startIndex ... splitIndex-1]
+    // active: [splitIndex ... len-1]
+
+    // Construct arrays with modulo time
+    // Note: Since input is sorted time, `history` will have time increasing.
+    // mappedTime = time % window. 
+    // For `history`, time is in [cycleStartTs - delta, cycleStartTs), so mappedTime is high value? 
+    // Wait. 
+    // Ex: window=100. latest=250. scanner=50. range=[150, 250]. cycleStart=200.
+    // Active: [200, 250]. time%100 -> [0, 50]. Sorted? Yes.
+    // History: [150, 199]. time%100 -> [50, 99]. Sorted? Yes.
+
+    // So we can map without sorting!
+
+    const history = []
+    const active = []
+
+    // Manual loops are faster than slice+map
+    for (let i = startIndex; i < splitIndex; i++) {
+      const d = data[i]
+      history.push({ ...d, time: d.time % windowMs })
+    }
+
+    for (let i = splitIndex; i < len; i++) {
+      const d = data[i]
+      active.push({ ...d, time: d.time % windowMs })
+    }
 
     return { active, history, scanner: scannerPos, latestTs }
   }

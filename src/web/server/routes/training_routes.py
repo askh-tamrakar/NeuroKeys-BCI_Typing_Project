@@ -72,10 +72,12 @@ def api_train_eog():
         params = request.get_json() or {}
         n_est = int(params.get('n_estimators', 100))
         max_d = params.get('max_depth')
+        table_name = params.get('table_name') # Extract session table name
+
         if max_d == 'None' or max_d is None: max_d = None
         else: max_d = int(max_d)
         
-        result = train_eog_model(n_estimators=n_est, max_depth=max_d)
+        result = train_eog_model(n_estimators=n_est, max_depth=max_d, table_name=table_name)
         if "error" in result:
              return jsonify(result), 400
         return jsonify(result)
@@ -84,14 +86,19 @@ def api_train_eog():
 
 @training_bp.route('/api/model/evaluate', methods=['POST'])
 def api_eval_emg():
-    res = evaluate_saved_model()
+    params = request.get_json() or {}
+    table_name = params.get('table_name') 
+    print(f"[DEBUG] /api/model/evaluate - Received table_name: '{table_name}'")
+    res = evaluate_saved_model(table_name=table_name)
     if "error" in res:
         return jsonify(res), 400
     return jsonify(res)
 
 @training_bp.route('/api/model/evaluate/eog', methods=['POST'])
 def api_eval_eog():
-    res = evaluate_saved_eog_model()
+    params = request.get_json() or {}
+    table_name = params.get('table_name')
+    res = evaluate_saved_eog_model(table_name=table_name)
     if "error" in res:
         return jsonify(res), 400
     return jsonify(res)

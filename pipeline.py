@@ -80,7 +80,8 @@ def shutdown_handler(signum, frame):
 
 def main():
     parser = argparse.ArgumentParser(description="Brain-To-Brain System Orchestrator")
-    parser.add_argument("-s", "--skip-build", action="store_true", help="Skip frontend build")
+    parser.add_argument("-b", "--build", action="store_true", help="Build frontend before starting")
+    parser.add_argument("-d", "--dev", action="store_true", help="Run in development mode (starts Vite dev server)")
     args = parser.parse_args()
 
     print("  Brain-To-Brain System Orchestrator (Pipeline)")
@@ -88,35 +89,64 @@ def main():
     print("=" * 60)
     print()
 
-    if not args.skip_build:
-        # --- FRONTEND CHECK ---
-        frontend_dir = Path("src/web/frontend").resolve()
-        
+    frontend_dir = Path("src/web/frontend").resolve()
+    python_exe = sys.executable
+
+    # --- 1. BUILD PHASE (Optional) ---
+    if args.build:
         print("[System] 🔨 Building frontend...")
         try:
-            # Install dependencies if node_modules missing (still good to check this to avoid errors)
+            # Install dependencies if node_modules missing
             if not (frontend_dir / "node_modules").exists():
                     print("[System] Installing npm dependencies...")
                     subprocess.run(["npm", "install"], cwd=frontend_dir, shell=True, check=True)
             
-            # Always Build
+            # Run Build
             print("[System] Running npm run build...")
             subprocess.run(["npm", "run", "build"], cwd=frontend_dir, shell=True, check=True)
             print("\033[92m[System] Frontend built successfully!\033[0m")
         except Exception as e:
             print(f"\033[91m[System] Frontend build FAILED: {e}\033[0m")
-            print("[System] Continuing anyway (Web Server might fail to serve UI)...")
+            print("[System] Continuing anyway...")
     else:
-        print("[System] ⏩ Skipping frontend build...")
-
-
+        if args.dev:
+             print("[System] ⏩ Skipping build (Dev Mode active)...")
+        else:
+             print("[System] ⏩ Skipping build (Using existing 'dist')...")
 
     # Register signal handler
     signal.signal(signal.SIGINT, shutdown_handler)
     signal.signal(signal.SIGTERM, shutdown_handler)
 
-    python_exe = sys.executable
+    # --- 2. START DEV SERVER (Optional) ---
+    if args.dev:
+        print("[System] 🚀 Starting Frontend Development Server (Vite)...")
+        try:
+             # npm run dev usually invokes vite
+             # We use shell=True logic for windows compat, and start it alongside others
+             dev_proc = subprocess.Popen(
+                ["npm", "run", "dev"], 
+                cwd=frontend_dir,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT
+             )
+             dev_proc.name = "Frontend Dev Server"
+             processes.append(dev_proc)
 
+             # Log vite output in background
+             t_dev = threading.Thread(
+                target=log_process, 
+                args=(dev_proc, "Frontend", "\033[96m", None, None), # Cyan for frontend
+                daemon=True
+             )
+             t_dev.start()
+
+        except Exception as e:
+            print(f"\033[91m[System] Failed to start Dev Server: {e}\033[0m")
+
+
+    # --- 3. START BACKEND COMPONENTS ---
     # Start processes sequentially
     for component in COMPONENTS:
         name = component["name"]
@@ -152,7 +182,7 @@ def main():
                 shutdown_handler(None, None)
             time.sleep(1) # Small pause after connection before next launch
 
-    print("\n[System] All components running in sequence. Press Ctrl+C to stop.\n")
+    print("\n[System] All components running. Press Ctrl+C to stop.\n")
 
     # Monitor processes
     while True:

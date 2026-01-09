@@ -30,22 +30,26 @@ EOG_FEATURES = [
     'asymmetry', 'peak_count', 'kurtosis', 'skewness'
 ]
 
-def train_eog_model(n_estimators=100, max_depth=None, test_size=0.2):
+def train_eog_model(n_estimators=100, max_depth=None, test_size=0.2, table_name="eog_windows"):
     """
     Trains a Random Forest classifier on EOG data from the database.
     """
-    conn = db_manager.connect()
+    conn = db_manager.connect('EOG') # Fixed: Explicit sensor type
     
     # Load data from DB
+    # Load data from DB
     try:
-        # Check if table exists first prevents crash if called before any EOG data collection
+        if not table_name: table_name = "eog_windows"
+        if table_name == "undefined" or table_name == "null": table_name = "eog_windows"
+
+        # Check if table exists first
         cursor = conn.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='eog_windows'")
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
         if not cursor.fetchone():
              conn.close()
-             return {"error": "EOG table does not exist. Collect data first."}
+             return {"error": f"Table {table_name} does not exist. Collect data first."}
 
-        df = pd.read_sql_query("SELECT * FROM eog_windows", conn)
+        df = pd.read_sql_query(f"SELECT * FROM {table_name}", conn)
     except Exception as e:
         conn.close()
         return {"error": f"Database read error: {str(e)}"}
@@ -105,9 +109,9 @@ def train_eog_model(n_estimators=100, max_depth=None, test_size=0.2):
         "model_path": str(MODEL_PATH)
     }
 
-def evaluate_saved_eog_model():
+def evaluate_saved_eog_model(table_name="eog_windows"):
     """
-    Evaluates the currently saved EOG model against the FULL database.
+    Evaluates the currently saved EOG model against the specified database table.
     """
     if not MODEL_PATH.exists() or not SCALER_PATH.exists():
         return {"error": "EOG Model not found. Train one first."}
@@ -118,16 +122,51 @@ def evaluate_saved_eog_model():
     except Exception as e:
         return {"error": f"Failed to load EOG model: {str(e)}"}
 
+    # Prepare base response
+    base_response = {
+        "status": "success",
+        "model_path": str(MODEL_PATH),
+        "feature_importances": dict(zip(EOG_FEATURES, model.feature_importances_.tolist())),
+        "tree_structure": tree_to_json(model.estimators_[0], EOG_FEATURES)
+    }
+
+    if not table_name:
+        table_name = "eog_windows"
+
     conn = db_manager.connect()
     try:
-        df = pd.read_sql_query("SELECT * FROM eog_windows", conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
+        if not cursor.fetchone():
+             conn.close()
+             return {
+                 **base_response,
+                 "accuracy": None,
+                 "confusion_matrix": None,
+                 "n_samples": 0,
+                 "warning": f"Table {table_name} not found."
+             }
+
+        df = pd.read_sql_query(f"SELECT * FROM {table_name}", conn)
     except Exception as e:
         conn.close()
-        return {"error": f"Database read error: {str(e)}"}
+        return {
+             **base_response,
+             "accuracy": None,
+             "confusion_matrix": None,
+             "n_samples": 0,
+             "warning": f"Database read error: {str(e)}"
+        }
     conn.close()
 
     if df.empty:
-        return {"error": "EOG Database is empty."}
+         return {
+             **base_response,
+             "accuracy": None,
+             "confusion_matrix": None,
+             "n_samples": 0,
+             "warning": f"Table {table_name} is empty."
+         }
 
     X = df[EOG_FEATURES]
     y = df['label']
@@ -141,13 +180,10 @@ def evaluate_saved_eog_model():
         cm = confusion_matrix(y, y_pred).tolist()
         
         return {
-            "status": "success",
+            **base_response,
             "accuracy": acc,
             "confusion_matrix": cm,
-            "n_samples": len(df),
-            "model_path": str(MODEL_PATH),
-            "feature_importances": dict(zip(EOG_FEATURES, model.feature_importances_.tolist())),
-            "tree_structure": tree_to_json(model.estimators_[0], EOG_FEATURES)
+            "n_samples": len(df)
         }
     except Exception as e:
         return {"error": f"Inference error: {str(e)}"}

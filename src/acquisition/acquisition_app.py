@@ -893,11 +893,10 @@ class AcquisitionApp:
                         # 4. Push to Stream Manager (Chunks)
                         if self.stream_connected and self.stream_socket:
                             try:
-                                # Pack all samples efficiently
-                                # u0 and u1 are numpy arrays
-                                byte_data = bytearray()
-                                for v0, v1 in zip(u0, u1):
-                                    byte_data.extend(struct.pack('<ff', float(v0), float(v1)))
+                                # Fix: Send RAW bytes (with sync headers) not floats.
+                                # Stream Manager expects [Sync1][Sync2][Counter][...][End]
+                                # batch_raw contains exactly these raw packets.
+                                byte_data = b"".join(batch_raw)
                                 self.stream_socket.sendall(byte_data)
                             except Exception as e:
                                 print(f"[App] Stream send error: {e}")

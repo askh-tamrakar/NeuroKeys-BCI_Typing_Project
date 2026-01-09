@@ -742,20 +742,17 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
         }
     }, [wsData, mode, activeSensor, activeChannelIndex]);
 
-    // Unified Time Reference for this Render Frame
-    // We update 'now' whenever chartData updates (frame tick) or periodically.
-    // Since chartData updates frequently (WebSocket), we can use that as the clock tick.
     const [frameTime, setFrameTime] = useState(Date.now());
 
     useEffect(() => {
-        // Ensure we have a tick every frame or at least when data comes in
-        setFrameTime(Date.now());
-        // Optional: If data is slow, you might want a requestAnimationFrame loop here
-        // to keep the sweep moving smoothly even if data buffers.
-        const loop = setInterval(() => setFrameTime(Date.now()), 30); // ~30fps smooth sweep
-        return () => clearInterval(loop);
-    }, [chartData /* or just run independently */]);
-
+        if (chartData.length > 0) {
+            const latestTs = chartData[chartData.length - 1].time;
+            setFrameTime(latestTs);
+        } else {
+            // Fallback to wall clock if no data
+            setFrameTime(Date.now());
+        }
+    }, [chartData]);
     // Compute sweep-style data for calibration: plotted portion left of center, unplotted baseline to right
     const sweepChartData = React.useMemo(() => {
         const w = timeWindow;

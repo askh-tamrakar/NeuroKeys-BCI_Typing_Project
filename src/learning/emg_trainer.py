@@ -107,9 +107,9 @@ def train_emg_model(n_estimators=100, max_depth=None, test_size=0.2, table_name=
         "model_path": str(MODEL_PATH)
     }
 
-def evaluate_saved_model():
+def evaluate_saved_model(table_name="emg_windows"):
     """
-    Evaluates the currently saved model against the FULL database.
+    Evaluates the currently saved model against the specified database table.
     Used to verify how well the persisted model performs on all available data.
     """
     if not MODEL_PATH.exists() or not SCALER_PATH.exists():
@@ -121,20 +121,62 @@ def evaluate_saved_model():
     except Exception as e:
         return {"error": f"Failed to load model: {str(e)}"}
 
+    # Prepare base response with model structure
+    feature_cols = ['rms', 'mav', 'zcr', 'var', 'wl', 'peak', 'range', 'iemg', 'entropy', 'energy']
+    base_response = {
+        "status": "success",
+        "model_path": str(MODEL_PATH),
+        "feature_importances": dict(zip(feature_cols, model.feature_importances_.tolist())),
+        "tree_structure": tree_to_json(model.estimators_[0], feature_cols)
+    }
+
+    # If no table specified or table is None, default to emg_windows
+    if not table_name:
+        table_name = "emg_windows"
+    
+    print(f"[DEBUG] evaluate_saved_model - Using table: {table_name}")
+
     conn = db_manager.connect('EMG')
     try:
-        df = pd.read_sql_query("SELECT * FROM emg_windows", conn)
+        # Check if table exists
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
+        if not cursor.fetchone():
+             print(f"[DEBUG] Table {table_name} NOT FOUND in sqlite_master")
+             conn.close()
+             # Return partial response if table missing
+             return {
+                 **base_response,
+                 "accuracy": None,
+                 "confusion_matrix": None,
+                 "n_samples": 0,
+                 "warning": f"Table {table_name} not found. Evaluation skipped."
+             }
+
+        df = pd.read_sql_query(f"SELECT * FROM {table_name}", conn)
+        print(f"[DEBUG] Loaded {len(df)} rows from {table_name}")
     except Exception as e:
+        print(f"[DEBUG] DB Error: {e}")
         conn.close()
-        return {"error": f"Database read error: {str(e)}"}
+        return {
+             **base_response,
+             "accuracy": None,
+             "confusion_matrix": None,
+             "n_samples": 0,
+             "warning": f"Database read error: {str(e)}"
+        }
     conn.close()
 
     if df.empty:
-        return {"error": "Database is empty."}
+         return {
+             **base_response,
+             "accuracy": None,
+             "confusion_matrix": None,
+             "n_samples": 0,
+             "warning": f"Table {table_name} is empty."
+         }
 
     # Prepare Features
-    feature_cols = ['rms', 'mav', 'zcr', 'var', 'wl', 'peak', 'range', 'iemg', 'entropy', 'energy']
-    
     # Check/Fix columns
     missing_cols = [c for c in feature_cols if c not in df.columns]
     if missing_cols:
@@ -156,13 +198,10 @@ def evaluate_saved_model():
         cm = confusion_matrix(y, y_pred).tolist()
         
         return {
-            "status": "success",
+            **base_response,
             "accuracy": acc,
             "confusion_matrix": cm,
-            "n_samples": len(df),
-            "model_path": str(MODEL_PATH),
-            "feature_importances": dict(zip(feature_cols, model.feature_importances_.tolist())),
-            "tree_structure": tree_to_json(model.estimators_[0], feature_cols)
+            "n_samples": len(df)
         }
     except Exception as e:
         return {"error": f"Inference error: {str(e)}"}

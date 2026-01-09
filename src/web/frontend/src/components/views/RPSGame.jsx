@@ -71,9 +71,22 @@ const RPSGame = ({ wsEvent }) => {
         pickComputerMove();
     }, [pickComputerMove]);
 
+    // Event Log State
+    const [eventLogs, setEventLogs] = useState([]);
+
     // Handle Event via Prop (only if NOT in manual mode)
     useEffect(() => {
         if (!wsEvent) return;
+
+        const eventName = wsEvent.event?.toUpperCase();
+
+        // Add to log (keep last 10)
+        setEventLogs(prev => [{
+            id: Date.now() + Math.random(),
+            time: new Date().toLocaleTimeString(),
+            name: eventName,
+            channel: wsEvent.channel
+        }, ...prev].slice(0, 10));
 
         // Ignore WS events when manual mode is active
         if (manualMode) return;
@@ -81,7 +94,6 @@ const RPSGame = ({ wsEvent }) => {
         // Check if we are in waiting state
         if (gameState !== 'waiting' || processingRef.current) return;
 
-        const eventName = wsEvent.event?.toUpperCase();
 
         // Filter for RPS events
         if (MOVES.includes(eventName)) {
@@ -249,8 +261,32 @@ const RPSGame = ({ wsEvent }) => {
                 </div>
             )}
 
+            {/* Event Log Panel */}
+            <div className="mt-8 w-full max-w-2xl bg-surface/50 border border-white/5 rounded-lg p-4 backdrop-blur-sm">
+                <div className="text-xs font-bold text-muted uppercase tracking-wider mb-2 flex justify-between items-center">
+                    <span>Event Log</span>
+                    <span className="text-[10px] opacity-60">Last 10 events</span>
+                </div>
+                <div className="space-y-1 font-mono text-xs max-h-[150px] overflow-y-auto">
+                    {eventLogs.length === 0 ? (
+                        <div className="text-muted/50 italic py-2 text-center">No events received yet...</div>
+                    ) : (
+                        eventLogs.map((log) => (
+                            <div key={log.id} className="flex gap-3 py-1 border-b border-white/5 last:border-0 hover:bg-white/5 px-2 rounded">
+                                <span className="text-muted">{log.time}</span>
+                                <span className={`font-bold ${log.name === 'ROCK' ? 'text-amber-400' :
+                                    log.name === 'PAPER' ? 'text-blue-400' :
+                                        log.name === 'SCISSORS' ? 'text-pink-400' : 'text-text'
+                                    }`}>
+                                    {log.name}
+                                </span>
+                                <span className="text-muted ml-auto text-[10px]">{log.channel}</span>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
 
-            {/* bottom controls removed — mode selector moved to top */}
         </div>
     );
 };
