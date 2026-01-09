@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import sqlite3
 import joblib
+import json
 from pathlib import Path
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
@@ -25,6 +26,7 @@ MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 MODEL_PATH = MODELS_DIR / "emg_rf.joblib"
 SCALER_PATH = MODELS_DIR / "emg_scaler.joblib"
+META_PATH = MODELS_DIR / "emg_rf_meta.json"
 
 def train_emg_model(n_estimators=100, max_depth=None, test_size=0.2, table_name="emg_windows"):
     """
@@ -51,8 +53,8 @@ def train_emg_model(n_estimators=100, max_depth=None, test_size=0.2, table_name=
         return {"error": "Database is empty. Collect data first."}
 
     # Prepare Features and Labels
-    # DB Columns: rms, mav, zcr, var, wl, peak, range, iemg, entropy, energy
-    feature_cols = ['rms', 'mav', 'zcr', 'var', 'wl', 'peak', 'range', 'iemg', 'entropy', 'energy']
+    # DB Columns: rms, mav, var, wl, peak, range, iemg, entropy, energy, kurtosis, skewness, ssc, wamp
+    feature_cols = ['rms', 'mav', 'var', 'wl', 'peak', 'range', 'iemg', 'entropy', 'energy', 'kurtosis', 'skewness', 'ssc', 'wamp']
     
     # Check if columns exist (handle legacy naming if necessary)
     missing_cols = [c for c in feature_cols if c not in df.columns]
@@ -61,8 +63,8 @@ def train_emg_model(n_estimators=100, max_depth=None, test_size=0.2, table_name=
          if 'range' in missing_cols and 'rng' in df.columns:
              df.rename(columns={'rng': 'range'}, inplace=True)
          
-         # If entropy/energy missing, fill 0 (less ideal but prevents crash)
-         for col in ['entropy', 'energy']:
+         # If entropy/energy/new_feats missing, fill 0 (less ideal but prevents crash)
+         for col in ['entropy', 'energy', 'kurtosis', 'skewness', 'ssc', 'wamp']:
              if col not in df.columns:
                  df[col] = 0.0
 
@@ -92,6 +94,16 @@ def train_emg_model(n_estimators=100, max_depth=None, test_size=0.2, table_name=
     # Save Model
     joblib.dump(rf, MODEL_PATH)
     joblib.dump(scaler, SCALER_PATH)
+    
+    # Save Metadata (Hyperparameters)
+    with open(META_PATH, 'w') as f:
+        json.dump({
+            "n_estimators": n_estimators,
+            "max_depth": max_depth,
+            "test_size": test_size,
+            "table_name": table_name
+        }, f)
+        
     print(f"Model saved to {MODEL_PATH}")
 
     # Tree Visualization (First Estimator)
@@ -103,7 +115,7 @@ def train_emg_model(n_estimators=100, max_depth=None, test_size=0.2, table_name=
         "confusion_matrix": cm,
         "feature_importances": importances,
         "tree_structure": tree_struct,
-        "n_samples": len(df),
+        "n_samples": len(y_test),
         "model_path": str(MODEL_PATH)
     }
 
@@ -122,12 +134,23 @@ def evaluate_saved_model(table_name="emg_windows"):
         return {"error": f"Failed to load model: {str(e)}"}
 
     # Prepare base response with model structure
-    feature_cols = ['rms', 'mav', 'zcr', 'var', 'wl', 'peak', 'range', 'iemg', 'entropy', 'energy']
+    feature_cols = ['rms', 'mav', 'var', 'wl', 'peak', 'range', 'iemg', 'entropy', 'energy', 'kurtosis', 'skewness', 'ssc', 'wamp']
+    
+    # Load Metadata if available
+    hyperparameters = {}
+    if META_PATH.exists():
+        try:
+            with open(META_PATH, 'r') as f:
+                hyperparameters = json.load(f)
+        except Exception:
+            pass
+
     base_response = {
         "status": "success",
         "model_path": str(MODEL_PATH),
         "feature_importances": dict(zip(feature_cols, model.feature_importances_.tolist())),
-        "tree_structure": tree_to_json(model.estimators_[0], feature_cols)
+        "tree_structure": tree_to_json(model.estimators_[0], feature_cols),
+        "hyperparameters": hyperparameters
     }
 
     # If no table specified or table is None, default to emg_windows

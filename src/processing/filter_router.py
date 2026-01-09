@@ -433,7 +433,7 @@ class FilterRouter:
                                     filtered_val = processor.process_sample(raw_val)
                                 else:
                                     # ✅ Channel disabled or unmapped - pass through
-                                    print(f"[Router] [WARNING] Channel {ch_idx} disabled or unmapped - passing through")
+                                    # print(f"[Router] [WARNING] Channel {ch_idx} disabled or unmapped - passing through")
                                     filtered_val = raw_val
                                 
                                 processed_sample.append(filtered_val)
@@ -453,15 +453,14 @@ class FilterRouter:
                             sample_count += 1
                             
                             # Log progress every 512 samples (1 second at 512 Hz)
-                            if sample_count % 512 == 0:
+                            # Log progress every 5 seconds (approx 2560 samples at 512 Hz)
+                            if sample_count % 2560 == 0:
                                 print(f"[Router] ✅ {sample_count} samples processed")
                     
                     except Exception as e:
                         error_count += 1
-                        if error_count <= 5:  # Only log first 5 errors
-                            print(f"[Router] [WARNING] Error processing sample: {e}")
-                        if error_count == 6:
-                            print(f"[Router] [WARNING] (suppressing further error messages)")
+                        # Always log errors as requested
+                        print(f"[Router] [WARNING] Error processing sample: {e}")
         
         except KeyboardInterrupt:
             print("\n[Router] [STOP] Stopping...")

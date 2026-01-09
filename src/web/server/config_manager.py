@@ -112,6 +112,29 @@ def save_config(config: dict) -> bool:
         print(f"[ConfigManager] 💾 Sensor config saved to {CONFIG_PATH}")
         state.config = config
         return True
+        return True
     except Exception as e:
         print(f"[ConfigManager] ❌ Error saving config: {e}")
         return False
+
+DETECTION_STATE_PATH = PROJECT_ROOT / "config" / "detection_state.json"
+
+def get_detection_state() -> bool:
+    """Read detection active state from file."""
+    try:
+        if DETECTION_STATE_PATH.exists():
+            with open(DETECTION_STATE_PATH, 'r') as f:
+                data = json.load(f)
+                return data.get("active", False)
+        return False
+    except:
+        return False
+
+def set_detection_state(active: bool):
+    """Write detection active state to file."""
+    try:
+        DETECTION_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(DETECTION_STATE_PATH, 'w') as f:
+            json.dump({"active": active}, f)
+    except Exception as e:
+        print(f"[ConfigManager] ❌ Error saving detection state: {e}")

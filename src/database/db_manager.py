@@ -48,7 +48,6 @@ class DatabaseManager:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 rms REAL NOT NULL,
                 mav REAL NOT NULL,
-                zcr REAL NOT NULL,
                 var REAL NOT NULL,
                 wl REAL NOT NULL,
                 peak REAL NOT NULL,
@@ -56,6 +55,10 @@ class DatabaseManager:
                 iemg REAL NOT NULL,
                 entropy REAL NOT NULL,
                 energy REAL NOT NULL,
+                kurtosis REAL NOT NULL,
+                skewness REAL NOT NULL,
+                ssc REAL NOT NULL,
+                wamp REAL NOT NULL,
                 label INTEGER NOT NULL,
                 session_id TEXT,
                 timestamp REAL,
@@ -251,14 +254,16 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute(f'''
                 INSERT INTO {table_name} (
-                    rms, mav, zcr, var, wl, peak, range, iemg, entropy, energy,
+                    rms, mav, var, wl, peak, range, iemg, entropy, energy, kurtosis, skewness, ssc, wamp,
                     label, session_id, timestamp
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
-                features.get('rms', 0), features.get('mav', 0), features.get('zcr', 0),
+                features.get('rms', 0), features.get('mav', 0),
                 features.get('var', 0), features.get('wl', 0), features.get('peak', 0),
                 features.get('range', 0), features.get('iemg', 0), features.get('entropy', 0),
-                features.get('energy', 0), label, session_id, features.get('timestamp', 0)
+                features.get('energy', 0), features.get('kurtosis', 0), features.get('skewness', 0),
+                features.get('ssc', 0), features.get('wamp', 0),
+                label, session_id, features.get('timestamp', 0)
             ))
             conn.commit()
             conn.close()

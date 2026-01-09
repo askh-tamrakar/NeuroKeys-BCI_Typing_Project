@@ -287,6 +287,20 @@ class ConfigManager:
         """Save feature configuration."""
         return self.feature_writer.save(config, validate=True, backup=True)
 
+    # ============== DETECTION STATE ==============
+
+    def get_detection_state(self) -> bool:
+        """Read detection active state from file."""
+        state_path = self.config_dir / "detection_state.json"
+        try:
+            if state_path.exists():
+                with open(state_path, 'r') as f:
+                    data = json.load(f)
+                    return data.get("active", False)
+            return False
+        except:
+            return False
+
     # ============== FACADE (UNIFIED) ==============
 
     def get_all_configs(self) -> Dict[str, Any]:

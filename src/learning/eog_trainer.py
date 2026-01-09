@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import joblib
+import json
 from pathlib import Path
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
@@ -24,6 +25,7 @@ MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 MODEL_PATH = MODELS_DIR / "eog_rf.joblib"
 SCALER_PATH = MODELS_DIR / "eog_scaler.joblib"
+META_PATH = MODELS_DIR / "eog_rf_meta.json"
 
 EOG_FEATURES = [
     'amplitude', 'duration_ms', 'rise_time_ms', 'fall_time_ms',
@@ -94,6 +96,16 @@ def train_eog_model(n_estimators=100, max_depth=None, test_size=0.2, table_name=
     # Save Model
     joblib.dump(rf, MODEL_PATH)
     joblib.dump(scaler, SCALER_PATH)
+    
+    # Save Metadata
+    with open(META_PATH, 'w') as f:
+        json.dump({
+            "n_estimators": n_estimators,
+            "max_depth": max_depth,
+            "test_size": test_size,
+            "table_name": table_name
+        }, f)
+
     print(f"EOG Model saved to {MODEL_PATH}")
 
     # Tree Visualization (First Estimator)
@@ -105,7 +117,7 @@ def train_eog_model(n_estimators=100, max_depth=None, test_size=0.2, table_name=
         "confusion_matrix": cm,
         "feature_importances": importances,
         "tree_structure": tree_struct,
-        "n_samples": len(df),
+        "n_samples": len(y_test),
         "model_path": str(MODEL_PATH)
     }
 
@@ -123,11 +135,22 @@ def evaluate_saved_eog_model(table_name="eog_windows"):
         return {"error": f"Failed to load EOG model: {str(e)}"}
 
     # Prepare base response
+    # Load Metadata if available
+    hyperparameters = {}
+    if META_PATH.exists():
+        try:
+            with open(META_PATH, 'r') as f:
+                hyperparameters = json.load(f)
+        except Exception:
+            pass
+
+    # Prepare base response
     base_response = {
         "status": "success",
         "model_path": str(MODEL_PATH),
         "feature_importances": dict(zip(EOG_FEATURES, model.feature_importances_.tolist())),
-        "tree_structure": tree_to_json(model.estimators_[0], EOG_FEATURES)
+        "tree_structure": tree_to_json(model.estimators_[0], EOG_FEATURES),
+        "hyperparameters": hyperparameters
     }
 
     if not table_name:

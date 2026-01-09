@@ -316,7 +316,7 @@ class StreamManagerApp:
                             # Push to LSL
                             self.lsl_stream.push_sample([ch0_uv, ch1_uv])
                             # Optional: Log occasionally?
-                            if self.packet_count % 100 == 0:
+                            if self.packet_count % 2560 == 0:
                                 self.log(f"P: {counter} | {ch0_uv:.2f} uV") 
                             self.packet_count += 1
                             

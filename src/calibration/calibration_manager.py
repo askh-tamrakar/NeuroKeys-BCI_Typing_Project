@@ -120,7 +120,7 @@ class CalibrationManager:
                     if range_val[0] <= val <= range_val[1]:
                         match_count += 1
                     else:
-                        print(f"[Calibration] ❌ Feature Mismatch: {feat_name}={val:.4f} not in {range_val}")
+                        logger.debug(f"[Calibration] ❌ Feature Mismatch: {feat_name}={val:.4f} not in {range_val}")
                 # Check for single minimum (e.g. amplitude > X)
                 elif isinstance(range_val, (int, float)):
                      total_features += 1
@@ -128,7 +128,7 @@ class CalibrationManager:
                      if val >= range_val:
                          match_count += 1
                      else:
-                         print(f"[Calibration] ❌ Threshold Mismatch: {feat_name}={val:.4f} < {range_val}")
+                         logger.debug(f"[Calibration] ❌ Threshold Mismatch: {feat_name}={val:.4f} < {range_val}")
 
         if total_features > 0:
             # Allow some fuzziness? 

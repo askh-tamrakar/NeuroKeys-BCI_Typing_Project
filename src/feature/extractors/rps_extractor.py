@@ -51,28 +51,23 @@ class RPSExtractor:
         # 2. MAV (Mean Absolute Value)
         mav = np.mean(np.abs(data))
         
-        # 3. ZCR (Zero Crossing Rate)
-        # Count sign changes
-        zcr = ((data[:-1] * data[1:]) < 0).sum() / len(data)
-        
-        # 4. Variance
+        # 3. Variance
         var = np.var(data)
         
-        # 5. WL (Waveform Length)
-        # Sum of absolute differences between adjacent samples
-        wl = np.sum(np.abs(np.diff(data)))
+        # 4. WL (Waveform Length)
+        diff = np.diff(data)
+        wl = np.sum(np.abs(diff))
         
-        # 6. Peak (Max Absolute Amplitude)
+        # 5. Peak (Max Absolute Amplitude)
         peak = np.max(np.abs(data))
         
-        # 7. Range (Max - Min)
+        # 6. Range (Max - Min)
         rng = np.ptp(data)
         
-        # 8. IEMG (Integrated EMG)
+        # 7. IEMG (Integrated EMG)
         iemg = np.sum(np.abs(data))
         
-        # 9. Entropy (Approximate entropy via histogram)
-        # Using simple histogram entropy as proxy
+        # 8. Entropy (Approximate entropy via histogram)
         try:
             hist, _ = np.histogram(data, bins=10, density=True)
             # Remove zeros to avoid log(0)
@@ -81,13 +76,27 @@ class RPSExtractor:
         except:
             entropy = 0
         
-        # 10. Energy
+        # 9. Energy
         energy = np.sum(data**2)
+
+        # 10. Kurtosis (Peakedness)
+        kurt = stats.kurtosis(data)
+
+        # 11. Skewness (Asymmetry)
+        skew = stats.skew(data)
+
+        # 12. SSC (Slope Sign Changes)
+        ssc = np.sum(((diff[:-1] * diff[1:]) < 0))
+
+        # 13. WAMP (Willison Amplitude)
+        # Count changes exceeding threshold. 
+        # Lowering to 0.0001 (100uV) assuming data is in Volts or small float range.
+        wamp_threshold = 0.0001
+        wamp = np.sum(np.abs(diff) > wamp_threshold)
         
         features = {
             "rms": float(rms),
             "mav": float(mav),
-            "zcr": float(zcr),
             "var": float(var),
             "wl": float(wl),
             "peak": float(peak),
@@ -95,6 +104,10 @@ class RPSExtractor:
             "iemg": float(iemg),
             "entropy": float(entropy),
             "energy": float(energy),
+            "kurtosis": float(np.nan_to_num(kurt)),
+            "skewness": float(np.nan_to_num(skew)),
+            "ssc": float(ssc),
+            "wamp": float(wamp),
         }
         
         return features

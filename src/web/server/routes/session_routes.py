@@ -190,10 +190,15 @@ def api_emg_clear():
 
 @session_bp.route('/api/emg/predict/<action>', methods=['POST'])
 def api_emg_predict_toggle(action):
+    from src.web.server.config_manager import set_detection_state, get_detection_state
+    
     if action == 'start':
         state.session.prediction_active['EMG'] = True
+        set_detection_state(True)
     elif action == 'stop':
         state.session.prediction_active['EMG'] = False
+        set_detection_state(False)
+        
     return jsonify({"status": "ok", "predicting": state.session.prediction_active['EMG']})
 
 

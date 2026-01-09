@@ -58,17 +58,26 @@ const RPSGame = ({ wsEvent }) => {
         console.log("Computer chose (hidden):", choice, "(difficulty:", difficulty, ")");
     }, [difficulty]);
 
+    const togglePrediction = (active) => {
+        fetch(`/api/emg/predict/${active ? 'start' : 'stop'}`, { method: 'POST' })
+            .catch(err => console.error("Prediction toggle failed:", err));
+    };
+
     const resetGame = useCallback(() => {
         setGameState('idle');
         setPlayerMove(null);
         setResult(null);
         processingRef.current = false;
         pickComputerMove();
+        // Disable prediction when game ends
+        togglePrediction(false);
     }, [pickComputerMove]);
 
     // Connect on mount
     useEffect(() => {
         pickComputerMove();
+        // Ensure prediction is off on mount/unmount
+        return () => togglePrediction(false);
     }, [pickComputerMove]);
 
     // Event Log State
@@ -201,6 +210,10 @@ const RPSGame = ({ wsEvent }) => {
     const handlePlay = () => {
         setGameState('waiting');
         pickComputerMove();
+        // Enable prediction only if not in manual mode
+        if (!manualMode) {
+            togglePrediction(true);
+        }
     };
 
     return (

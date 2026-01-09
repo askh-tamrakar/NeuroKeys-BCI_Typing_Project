@@ -27,13 +27,14 @@ const renderCustomNodeElement = ({ nodeDatum, toggleNode }) => (
 );
 
 // BENTO COMPONENTS
-const AccuracyCard = ({ accuracy, n_samples }) => (
+const AccuracyCard = ({ accuracy, n_samples, source }) => (
     <div className="card h-full flex flex-col justify-center items-center p-6 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-sm hover:shadow-md transition-shadow">
         <h3 className="text-xl font-bold text-[var(--muted)] uppercase tracking-widest mb-2">Model Accuracy</h3>
         {accuracy !== null && accuracy !== undefined ? (
             <>
                 <div className="text-5xl font-black text-[var(--primary)] mb-2">{(accuracy * 100).toFixed(1)}%</div>
                 <p className="text-base text-[var(--text)] opacity-70">on {n_samples} test samples</p>
+                {source && <p className="text-xs text-[var(--muted)] mt-2 font-mono bg-[var(--bg)] px-2 py-1 rounded border border-[var(--border)]">{source}</p>}
             </>
         ) : (
             <div className="text-center">
@@ -92,11 +93,18 @@ const HyperparametersCard = ({ params, onChange }) => (
     </div>
 );
 
-const ConfusionMatrixCard = ({ matrix, labels }) => (
+const ConfusionMatrixCard = ({ matrix, labels, n_samples }) => (
     <div className="card h-full flex flex-col p-4 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-sm">
         <div className="flex justify-between items-center border-b border-[var(--border)] pb-2">
-            <h3 className="text-sm font-bold text-[var(--muted)] uppercase tracking-widest">Confusion Matrix</h3>
-            <span className="text-[10px] text-[var(--muted)] bg-[var(--bg)] px-2 py-0.5 rounded border border-[var(--border)]">Row: Actual | Col: Pred</span>
+            <h3 className="text-sm font-bold text-[var(--muted)] uppercase tracking-widest">
+                Confusion Matrix
+                {n_samples !== undefined && <span className="ml-2 text-xs normal-case opacity-70">({n_samples} samples)</span>}
+            </h3>
+            <div className="flex items-center gap-2 text-[10px] bg-[var(--bg)] px-2 py-0.5 rounded border border-[var(--border)]">
+                <span className="font-bold text-[var(--text)]">Actual</span>
+                <span className="text-[var(--muted)]">→</span>
+                <span className="font-bold text-[var(--primary)]">Pred</span>
+            </div>
         </div>
         <div className="flex-grow overflow-hidden flex flex-col h-full py-4 relative">
             {matrix ? (
@@ -311,6 +319,13 @@ export default function MLTrainingView() {
         setEogParams(prev => ({ ...prev, [name]: name === 'test_size' ? parseFloat(value) : parseInt(value) }));
     };
 
+    const getSourceName = (isTrain) => {
+        const name = selectedSession
+            ? (availableSessions.find(s => s.table === selectedSession)?.name || selectedSession)
+            : 'All Available Data';
+        return `${isTrain ? 'Trained' : 'Evaluated'} on: ${name}`;
+    };
+
     // --- API CALLS ---
 
     // EMG TRAIN
@@ -327,7 +342,7 @@ export default function MLTrainingView() {
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Training failed');
-            setEmgResult(data);
+            setEmgResult({ ...data, source: getSourceName(true) });
         } catch (e) { setError(e.message); } finally { setLoading(false); }
     };
 
@@ -344,7 +359,11 @@ export default function MLTrainingView() {
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Eval failed');
-            setEmgEvalResult(data);
+            setEmgEvalResult({ ...data, source: getSourceName(false) });
+            if (data.hyperparameters) {
+                setEmgParams(prev => ({ ...prev, ...data.hyperparameters }));
+                if (data.hyperparameters.table_name && selectedSession === null) setSelectedSession(data.hyperparameters.table_name);
+            }
         } catch (e) { setError(e.message); } finally { setEvalLoading(false); }
     };
 
@@ -360,7 +379,7 @@ export default function MLTrainingView() {
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Training failed');
-            setEogResult(data);
+            setEogResult({ ...data, source: getSourceName(true) });
         } catch (e) { setError(e.message); } finally { setLoading(false); }
     };
 
@@ -375,7 +394,11 @@ export default function MLTrainingView() {
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Eval failed');
-            setEogEvalResult(data);
+            setEogEvalResult({ ...data, source: getSourceName(false) });
+            if (data.hyperparameters) {
+                setEogParams(prev => ({ ...prev, ...data.hyperparameters }));
+                if (data.hyperparameters.table_name && selectedSession === null) setSelectedSession(data.hyperparameters.table_name);
+            }
         } catch (e) { setError(e.message); } finally { setEvalLoading(false); }
     };
 
@@ -415,6 +438,7 @@ export default function MLTrainingView() {
                                 <AccuracyCard
                                     accuracy={(activeTab === 'EMG' ? (emgResult || emgEvalResult) : (eogResult || eogEvalResult)).accuracy}
                                     n_samples={(activeTab === 'EMG' ? (emgResult || emgEvalResult) : (eogResult || eogEvalResult)).n_samples}
+                                    source={(activeTab === 'EMG' ? (emgResult || emgEvalResult) : (eogResult || eogEvalResult)).source}
                                 />
                             </div>
                         )}
@@ -452,6 +476,7 @@ export default function MLTrainingView() {
                                 <ConfusionMatrixCard
                                     matrix={(activeTab === 'EMG' ? (emgResult || emgEvalResult) : (eogResult || eogEvalResult)).confusion_matrix}
                                     labels={activeTab === 'EMG' ? ['Rest', 'Rock', 'Paper', 'Scissors'] : ['DoubleBlink', 'SingleBlink', 'Rest']}
+                                    n_samples={(activeTab === 'EMG' ? (emgResult || emgEvalResult) : (eogResult || eogEvalResult)).n_samples}
                                 />
                             </div>
                         </>

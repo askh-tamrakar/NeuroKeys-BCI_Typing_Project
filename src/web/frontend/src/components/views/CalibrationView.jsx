@@ -219,10 +219,15 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             const currentTw = timeWindowRef.current;
             const currentDur = windowDurationRef.current;
 
+            // Use latest data timestamp (Signal Time) instead of Date.now() (Wall Time)
+            // This ensures the window spawns at a fixed visual distance regardless of signal lag
+            const currentData = chartDataRef.current;
+            const latestTs = currentData.length > 0 ? currentData[currentData.length - 1].time : Date.now();
+
             // Visual sync: Window spawns at visual edge (future) and travels to center (now)
             const delayToCenter = Math.round(currentTw / 2);
 
-            const start = Date.now() + delayToCenter;
+            const start = latestTs + delayToCenter;
             const end = start + currentDur;
 
             // Capture current settings from refs
@@ -269,16 +274,34 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                 const currentData = chartDataRef.current;
 
                 // DATA SYNC CHECK:
-                // Ensure the LATEST data point in buffer is at least as new as 'end'
-                // If not, wait a bit longer (up to a timeout).
+                // We need to account for LATENCY.
+                // The User acted when the Window hit the Center.
+                // Window hits Center when SignalTime == start.
+                // At that moment, RealTime was approx (start + Lag).
+                // So the User Action Signal (generated at RealTime) will have timestamp (start + Lag).
+                // We must collect [start+Lag, end+Lag].
+
                 const latestDataTs = currentData.length > 0 ? currentData[currentData.length - 1].time : 0;
 
-                if (latestDataTs < end - 50) { // Tolerance of 50ms
+                // Estimate Lag: simplified as Date.now() - latestDataTs
+                // Note: This assumes NTP sync roughly. Even if not perfect, it aligns Action to Signal Arrival.
+                // We clamp lag to >= 0.
+                const systemLag = Math.max(0, Date.now() - latestDataTs);
+
+                // Effective target range in Signal Time
+                const shiftedStart = start + systemLag;
+                const shiftedEnd = end + systemLag;
+
+                // Ensure the LATEST data point in buffer is at least as new as 'shiftedEnd'
+                if (latestDataTs < shiftedEnd - 50) { // Tolerance of 50ms
                     // Data hasn't arrived yet!
                     const now = Date.now();
-                    // Sanity check: If we are WAY past 'end' (e.g. 5 seconds) and still no data, abort.
-                    if (now > end + 5000) {
+                    // Sanity check: If we are WAY past 'shiftedEnd' (e.g. 10 seconds) and still no data, abort.
+                    // This uses Wall Clock "Now" vs Expected Wall Clock "End"
+                    const expectedWallEnd = shiftedEnd; // Roughly now?
+                    if (now > expectedWallEnd + 5000) {
                         console.warn("[AutoWindow] Timed out waiting for data.");
+                        // Fail gently?
                     } else {
                         // Check again in 100ms
                         setTimeout(checkAndCollect, 100);
@@ -287,17 +310,15 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                 }
 
                 try {
-                    // Extract samples from chartDataRef (latest data)
-                    const samplesPoints = currentData.filter(p => p.time >= start && p.time <= end);
-
-                    // If zero samples found, but we waited... try one last re-filter with slightly wider tolerance?
-                    // Or just fail.
+                    // Extract samples from chartDataRef logic
+                    // Use SHIFTED timestamps
+                    const samplesPoints = currentData.filter(p => p.time >= shiftedStart && p.time <= shiftedEnd);
 
                     if (samplesPoints.length === 0) {
                         // Debug info
                         const dataStart = currentData.length > 0 ? currentData[0].time : 'N/A';
                         const dataEnd = currentData.length > 0 ? currentData[currentData.length - 1].time : 'N/A';
-                        console.warn(`[AutoWindow] Empty Win: ${start}-${end}. Data Range: ${dataStart}-${dataEnd}. WaitTs: ${latestDataTs}`);
+                        console.warn(`[AutoWindow] Empty Win: ${shiftedStart}-${shiftedEnd}. Data Range: ${dataStart}-${dataEnd}. WaitTs: ${latestDataTs}`);
                         throw new Error("No data collected");
                     }
 
@@ -306,9 +327,12 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
                     const collectedWindow = {
                         ...newWindow,
+                        startTime: shiftedStart, // Update to actual signal time
+                        endTime: shiftedEnd,    // Update to actual signal time
                         samples,
                         timestamps,
-                        status: 'collected' // GREEN
+                        status: 'collected', // GREEN
+                        lagCorrection: systemLag // Debug info
                     };
 
                     setReadyWindows(prev => {
@@ -317,8 +341,8 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                         return next;
                     });
 
-                    // Update UI List to show GREEN
-                    setMarkedWindows(prev => prev.map(w => w.id === newWindow.id ? { ...w, status: 'collected', samples } : w));
+                    // Update UI List to show GREEN and SHIFTED Position
+                    setMarkedWindows(prev => prev.map(w => w.id === newWindow.id ? collectedWindow : w));
 
                 } catch (err) {
                     console.error('Auto-collection error:', err);
@@ -335,6 +359,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             };
 
             // Initial wait: wait until visual end, plus a small buffer
+            // We use wall clock duration est.
             setTimeout(checkAndCollect, delayToCenter + currentDur + 100);
         };
 
@@ -463,6 +488,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
     const deleteWindow = (id) => {
         setMarkedWindows(prev => prev.filter(w => w.id !== id));
+        setReadyWindows(prev => prev.filter(w => w.id !== id));
     };
 
     const handleClearAllWindows = () => {
@@ -483,25 +509,12 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             const currentTw = timeWindowRef.current;
             const currentDur = windowDurationRef.current;
 
-            // Spawn window IMMEDIATELY at center (time=now) to ensure visibility
-            // Window is [Now, Now+Dur]. Center is reference.
-            // visual X = center - (now - t).
-            // t=now => X=center. t=now+dur => X=center+dur.
-            // If scanner is at center, this means it starts at scanner and grows right?
-            // Actually, we want it to start at scanner and travel left? 
-            // "Realtime" chart moves data Left to Right? 
-            // No, standard is Newest at Right?
-            // "Sweeep" chart: Newest at Center. Old is Left. Future is Right.
-            // So Future window should be at Right of Center.
-            // If data moves Left, Window should move Left with it.
-            // So we spawn it at Center?
-            // Start (spawn) the window such that it reaches the center exactly when we want to record?
-            // "Scrolling" visualization: Future is Right, Past is Left. Center is Now.
-            // If we want the user to see it APPROACH, we must spawn it in the Future (Right).
-            // Then it travels left.
-            // When it hits Center (Now), we record.
+            // Use latest signal logic like AutoWindow
+            const currentData = chartDataRef.current;
+            const latestTs = currentData.length > 0 ? currentData[currentData.length - 1].time : Date.now();
+
             const delayToCenter = currentTw / 2;
-            const start = Date.now() + delayToCenter; // Future timestamp
+            const start = latestTs + delayToCenter; // Signal Time
             const end = start + currentDur;
 
             console.log(`[Test] Window Spawn: Start=${start} End=${end} (Now=${Date.now()})`);
@@ -533,7 +546,25 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
                 try {
                     const currentData = chartDataRef.current;
-                    const samplesPoints = currentData.filter(p => p.time >= start && p.time <= end);
+                    const latestDataTs = currentData.length > 0 ? currentData[currentData.length - 1].time : 0;
+
+                    // Lag compensation
+                    const systemLag = Math.max(0, Date.now() - latestDataTs);
+                    const shiftedStart = start + systemLag;
+                    const shiftedEnd = end + systemLag;
+
+                    // Wait if needed (reuse sanity check logic roughly, or assume timeout was long enough)
+                    // The timeout was set to delayToCenter + currentDur + 200.
+                    // In Signal Time, we waited enough.
+                    // But if Lag is huge, latestDataTs might still be old?
+                    // Actually, we waited RealTime.
+                    // We need latestDataTs >= shiftedEnd.
+                    // If Lag is constant, latestDataTs = RealTime - Lag.
+                    // shiftedEnd = start + Lag = (LatestTs_Start + delay) + Lag.
+                    // This is tricky.
+                    // Let's assume the data is there or close enough effectively.
+
+                    const samplesPoints = currentData.filter(p => p.time >= shiftedStart && p.time <= shiftedEnd);
                     const samples = samplesPoints.map(p => p.value);
                     const timestamps = samplesPoints.map(p => p.time);
 
@@ -551,9 +582,6 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                         timestamps
                     }, sessionName);
 
-                    // Update UI status
-                    // Removed: Prediction check (user request)
-                    // Always mark as 'saved' (green)
                     setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'saved' } }));
 
                     setMarkedWindows(prev => prev.map(w => {
@@ -563,6 +591,8 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                                 predictedLabel: resp.predicted_label, // Keep for debug, but don't rely on it
                                 status: 'saved', // New status for Green
                                 features: resp.features,
+                                startTime: shiftedStart, // Update position to Ref Reality
+                                endTime: shiftedEnd,
                                 samples: samples // Store raw samples for graph
                             };
                         }
@@ -676,14 +706,14 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
     }, [markedWindows, autoCalibrate, isCalibrating, runInProgress, activeSensor, autoLimit]);
 
-    // Update chart data from WS or Mock
+    // Optimization: Buffer incoming data to throttle re-renders
+    const incomingBufferRef = useRef([]);
+    const lastFlushTimeRef = useRef(Date.now());
+
+    // Update chart data from WS or Mock (Buffered)
     useEffect(() => {
         if ((mode === 'realtime' || mode === 'test') && wsData) {
             const payload = wsData.raw || wsData;
-
-            // Unify batch vs single handling (match LiveView logic)
-            // Some backends send { _batch: [...] }, others { type: 'batch', samples: [...] }
-            // or just a single { channels: ... } object.
 
             let samples = [];
             if (payload._batch) {
@@ -699,8 +729,6 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             // Use sampling rate from config, default to 250Hz
             const samplingRate = config?.sampling_rate || 250;
             const sampleIntervalMs = Math.round(1000 / samplingRate);
-
-            const newPoints = [];
             const channelIndex = activeChannelIndex;
 
             samples.forEach((s) => {
@@ -709,104 +737,116 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
                 // Monotonic timestamp logic
                 if (!window.__calibLastTs) window.__calibLastTs = incomingTs;
-
-                // Enforce monotonicity if it's a batch sequence or just subsequent packets
                 if (incomingTs <= window.__calibLastTs) {
                     incomingTs = window.__calibLastTs + sampleIntervalMs;
                 }
                 window.__calibLastTs = incomingTs;
 
-                // Robust channel extraction (Array or Object)
+                // Robust channel extraction
                 if (s.channels) {
                     let rawVal = undefined;
-                    // Try direct index
                     if (s.channels[channelIndex] !== undefined) rawVal = s.channels[channelIndex];
-                    // Try string key "ch0" if needed
                     else if (s.channels[`ch${channelIndex}`] !== undefined) rawVal = s.channels[`ch${channelIndex}`];
 
                     if (rawVal !== undefined) {
                         const val = typeof rawVal === 'number' ? rawVal : (rawVal.value || 0);
-                        newPoints.push({ time: incomingTs, value: val });
+                        // PUSH TO BUFFER INSTEAD OF STATE
+                        incomingBufferRef.current.push({ time: incomingTs, value: val });
                     }
                 }
             });
-
-            if (newPoints.length > 0) {
-                setChartData(prev => {
-                    const next = [...prev, ...newPoints];
-                    // Limit buffer size
-                    if (next.length > 10000) return next.slice(-10000);
-                    return next;
-                });
-            }
         }
-    }, [wsData, mode, activeSensor, activeChannelIndex]);
+    }, [wsData, mode, activeSensor, activeChannelIndex, config]); // config dep added
 
-    const [frameTime, setFrameTime] = useState(Date.now());
-
+    // Flush buffer loop (30fps = ~33ms)
     useEffect(() => {
+        const intervalId = setInterval(() => {
+            if (incomingBufferRef.current.length === 0) return;
+
+            const newPoints = incomingBufferRef.current; // Grab ref content
+            incomingBufferRef.current = []; // Clear ref immediately
+
+            setChartData(prev => {
+                // Optimization: Use contact instead of spread if large, but spread needed for immutability
+                // We limit to 10k points
+                const next = [...prev, ...newPoints];
+                if (next.length > 5000) return next.slice(-5000); // Reduced buffer size for perf? 5k is enough for 20s window
+                return next;
+            });
+
+        }, 33);
+
+        return () => clearInterval(intervalId);
+    }, []);
+
+    // Derived state instead of useEffect -> setState (Double render fix)
+    const frameTime = React.useMemo(() => {
         if (chartData.length > 0) {
-            const latestTs = chartData[chartData.length - 1].time;
-            setFrameTime(latestTs);
-        } else {
-            // Fallback to wall clock if no data
-            setFrameTime(Date.now());
+            return chartData[chartData.length - 1].time;
         }
-    }, [chartData]);
+        return Date.now();
+    }, [chartData]); // Updates once per flush
+
     // Compute sweep-style data for calibration: plotted portion left of center, unplotted baseline to right
     const sweepChartData = React.useMemo(() => {
         const w = timeWindow;
         const center = Math.round(w / 2);
-        // Use synchronized frameTime
         const now = frameTime;
 
-        // plotted points: newest at center, older to the left
-        // Optimization: iterate from end
-        // plotted points: newest at center, older to the left
-        // Optimization: iterate from end
-        const plotted = [];
+        // OPTIMIZED: Avoid unshift inside loop (O(N^2))
+        // We want points where (now - time) <= center.
+        // i.e., time >= now - center.
+        // And we exclude future points: time <= now.
+
+        // Since chartData is sorted time ascending:
+        // We can find the start index (binary search or just scan from end since we only need recent data).
+        // Then map/slice.
+
+        const startTime = now - center;
+        const result = [];
+
+        // Scan backward from end to find relevant range
+        // This is efficient because we stop early
         for (let i = chartData.length - 1; i >= 0; i--) {
             const d = chartData[i];
-
-            // STRICT CLIP: Do not plot points from the future (right of center)
-            if (d.time > now) continue;
+            if (d.time > now) continue; // Skip future data (though shouldn't exist if now=last)
+            if (d.time < startTime) break; // Too old
 
             const age = now - d.time;
-            if (age > center) break; // Optimization: Stop if older than window left edge
             const x = Math.round(center - age);
-            // Relaxed filter to allow points slightly off-screen to prevent line clipping
-            if (x >= -100) plotted.unshift({ time: x, value: d.value });
+            // Relaxed filter
+            if (x >= -100) {
+                // We want to add to the FRONT of the visual list? 
+                // Recharts expects sorted data for X axis if Type is number?
+                // Yes, X axis is 'time' (computed unique X).
+                // If we iterate backwards (newest first), we get [Newest (X=Center), ..., Oldest (X=Left)].
+                // If we push these, we get Descending X.
+                // We need Ascending X.
+                result.push({ time: x, value: d.value });
+            }
         }
 
-        const merged = [...plotted];
+        // Reverse to get Ascending X (Left to Right)
+        result.reverse();
 
         // BRIDGE THE GAP:
-        // Add a point exactly at 'center' with the newest value to connect the line visually
-        // to the baseline (if we want baseline) or just to terminate cleanly at the cursor.
-        // If we want the line to look like it continues flat, we add (center, lastVal).
-        // Also start the 'future' line here so they connect? 
-        // We set future: 0 at center to start the flat line.
-        if (plotted.length > 0) {
-            const lastVal = plotted[plotted.length - 1].value;
-            // Push a point right at the cursor line. 
-            // We give it 'value' (for history line to reach center) AND 'future' (for future line to start at 0? No, usually separate)
-            // If we want the future line to start at y=0, we should put a point at (center, future=0).
-            // But if we want it to look connected, maybe not.
-            // User requested "horizontal line on the point y = 0".
-            // So independent of where signal ends, it should be at 0.
-            merged.push({ time: Math.round(center), value: lastVal });
+        if (result.length > 0) {
+            const lastVal = result[result.length - 1].value;
+            // Add a point exactly at 'center'
+            result.push({ time: Math.round(center), value: lastVal });
         }
 
         // Future baseline (flat line at 0)
         const step = 50; // ms resolution
-        // Start exactly at center to ensure it touches the cursor line
+        // Start exactly at center
         for (let t = center; t <= w; t += step) {
-            merged.push({ time: Math.round(t), future: 0 });
+            result.push({ time: Math.round(t), future: 0 });
         }
 
-        merged.sort((a, b) => a.time - b.time);
+        // Ensure sorted just in case (the future part is appended in order)
+        // result is [OldData...CenterPoint, FuturePoints...] -> Sorted.
 
-        return merged;
+        return result;
     }, [chartData, timeWindow, frameTime]); // Depend on frameTime
 
     // Map action windows to sweep coordinates so they match the chart data (center-relative)

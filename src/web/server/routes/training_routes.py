@@ -59,7 +59,9 @@ def api_train_emg():
         if max_d == 'None' or max_d is None: max_d = None
         else: max_d = int(max_d)
         
-        result = train_emg_model(n_estimators=n_est, max_depth=max_d, table_name=target_table)
+        test_size = float(params.get('test_size', 0.2))
+        
+        result = train_emg_model(n_estimators=n_est, max_depth=max_d, test_size=test_size, table_name=target_table)
         if "error" in result:
              return jsonify(result), 400
         return jsonify(result)
@@ -77,7 +79,9 @@ def api_train_eog():
         if max_d == 'None' or max_d is None: max_d = None
         else: max_d = int(max_d)
         
-        result = train_eog_model(n_estimators=n_est, max_depth=max_d, table_name=table_name)
+        test_size = float(params.get('test_size', 0.2))
+        
+        result = train_eog_model(n_estimators=n_est, max_depth=max_d, test_size=test_size, table_name=table_name)
         if "error" in result:
              return jsonify(result), 400
         return jsonify(result)

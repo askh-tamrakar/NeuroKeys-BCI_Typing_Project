@@ -6,7 +6,9 @@ from scipy import stats as scipy_stats
 from src.web.server.state import state
 from src.web.server.config_manager import load_config
 from src.web.server.session_manager import SessionManager
-from src.feature.detectors.rps_detector import RPSDetector
+
+from src.feature.extractors.rps_extractor import RPSExtractor
+from src.feature.extractors.blink_extractor import BlinkExtractor
 
 try:
     import pylsl
@@ -21,74 +23,11 @@ EVENT_STREAM_NAME = "BioSignals-Events"
 # Helper for features
 def extract_emg_features(samples: list, sr: int = 512) -> dict:
     """Extract EMG features matching RPSExtractor."""
-    if samples is None or len(samples) < 2:
-        return {}
-    
-    data = np.array(samples, dtype=float)
-    
-    # Core EMG features
-    rms = float(np.sqrt(np.mean(data**2)))
-    mav = float(np.mean(np.abs(data)))
-    zcr = float(((data[:-1] * data[1:]) < 0).sum() / len(data))
-    var = float(np.var(data))
-    wl = float(np.sum(np.abs(np.diff(data))))
-    peak = float(np.max(np.abs(data)))
-    rng = float(np.ptp(data))
-    iemg = float(np.sum(np.abs(data)))
-    energy = float(np.sum(data**2))
-    
-    # Entropy via histogram
-    try:
-        hist, _ = np.histogram(data, bins=10, density=True)
-        hist = hist[hist > 0]
-        entropy = float(-np.sum(hist * np.log2(hist))) if len(hist) > 0 else 0.0
-    except Exception:
-        entropy = 0.0
-    
-    return {
-        "rms": rms,
-        "mav": mav,
-        "zcr": zcr,
-        "var": var,
-        "wl": wl,
-        "peak": peak,
-        "range": rng,
-        "iemg": iemg,
-        "entropy": entropy,
-        "energy": energy
-    }
+    return RPSExtractor.extract_features(samples, sr)
 
 def extract_eog_features(samples: list, sr: int = 512) -> dict:
     """Extract EOG blink features matching BlinkExtractor."""
-    if samples is None or len(samples) < 2:
-        return {}
-    
-    data = np.array(samples, dtype=float)
-    abs_data = np.abs(data)
-    n = len(data)
-    
-    peak_idx = int(np.argmax(abs_data))
-    peak_amp = float(abs_data[peak_idx])
-    
-    duration_ms = float((n / sr) * 1000.0)
-    rise_time_ms = float((peak_idx / sr) * 1000.0)
-    fall_time_ms = float(((n - peak_idx) / sr) * 1000.0)
-    
-    asymmetry = float(rise_time_ms / (fall_time_ms + 1e-6))
-    
-    # Statistical features
-    kurt = float(scipy_stats.kurtosis(data))
-    skew = float(scipy_stats.skew(data))
-    
-    return {
-        "amplitude": peak_amp,
-        "duration_ms": duration_ms,
-        "rise_time_ms": rise_time_ms,
-        "fall_time_ms": fall_time_ms,
-        "asymmetry": asymmetry,
-        "kurtosis": kurt,
-        "skewness": skew
-    }
+    return BlinkExtractor.extract_features(samples, sr)
 
 def create_channel_mapping(lsl_info) -> dict:
     """Create channel mapping from LSL stream info."""
@@ -314,7 +253,7 @@ def broadcast_data(socketio):
                     batch_buffer = []
                     last_batch_time = now
 
-                    if state.sample_count % 512 == 0:
+                    if state.sample_count % 2560 == 0:
                          print(f"[LSLService] ✅ {state.sample_count} samples broadcast")
 
         except Exception as e:
