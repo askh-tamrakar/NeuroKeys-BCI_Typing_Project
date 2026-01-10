@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import TimeSeriesZoomChart from '../charts/TimeSeriesZoomChart';
+import WorkerTimeSeriesChart from '../charts/WorkerTimeSeriesChart';
 import WindowListPanel from '../calibration/WindowListPanel';
 import ConfigPanel from '../calibration/ConfigPanel';
 import SessionManagerPanel from '../calibration/SessionManagerPanel';
@@ -22,7 +22,9 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     const [autoCalibrate, setAutoCalibrate] = useState(false); // Auto-calibration toggle
 
     // Data states
-    const [chartData, setChartData] = useState([]);
+    // Data states (chartData removed for Worker optimization)
+    // const [chartData, setChartData] = useState([]); // REMOVED
+
     const [markedWindows, setMarkedWindows] = useState([]);
     const [readyWindows, setReadyWindows] = useState([]); // Windows waiting to be appended
     const [bufferWindows, setBufferWindows] = useState([]); // History of processed windows
@@ -43,7 +45,10 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     const [dataLastUpdated, setDataLastUpdated] = useState(0);
 
     // Refs for accessing latest state inside interval/timeouts
-    const chartDataRef = useRef(chartData);
+    // const chartDataRef = useRef(chartData); // REMOVED
+    const chartRef = useRef(null); // Access to Worker Chart
+    const latestSignalTimeRef = useRef(Date.now()); // Track latest TS for logic
+
     const activeSensorRef = useRef(activeSensor);
     const activeChannelIndexRef = useRef(activeChannelIndex); // Ref for channel
     const targetLabelRef = useRef(targetLabel);
@@ -51,7 +56,8 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     const readyWindowsRef = useRef(readyWindows);
 
     // Keep refs in sync
-    useEffect(() => { chartDataRef.current = chartData; }, [chartData]);
+    // useEffect(() => { chartDataRef.current = chartData; }, [chartData]);
+
     useEffect(() => { activeSensorRef.current = activeSensor; }, [activeSensor]);
     useEffect(() => { activeChannelIndexRef.current = activeChannelIndex; }, [activeChannelIndex]);
     useEffect(() => { targetLabelRef.current = targetLabel; }, [targetLabel]);
@@ -142,7 +148,13 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                         value: point.channels[`ch${targetChIdx}`] || point.channels[targetChIdx] || 0
                     }));
 
-                    setChartData(formattedData);
+                    // Wait for chartRef to be ready?
+                    if (chartRef.current) {
+                        chartRef.current.clearData();
+                        chartRef.current.addData(formattedData);
+                    }
+                    latestSignalTimeRef.current = formattedData.length > 0 ? formattedData[formattedData.length - 1].time : Date.now();
+
                     console.log(`[CalibrationView] Loaded ${formattedData.length} samples for ${activeSensor} Ch${targetChIdx}`);
                 }
             } catch (error) {
@@ -175,7 +187,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
     const [windowDuration, setWindowDuration] = useState(1500); // ms
     const GAP_DURATION = 500; // ms
     const [timeWindow, setTimeWindow] = useState(5000); // visible sweep window length for calibration plot
-    const MAX_WINDOWS = 50;
+    const MAX_WINDOWS = autoCalibrate ? 50 : 2000;
 
     // Additional Refs for windowing logic (Defined here to avoid TDZ)
     const timeWindowRef = useRef(timeWindow);
@@ -195,56 +207,31 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
         else if (sensor === 'EEG') setTargetLabel('Concentration');
     };
 
-    const handleStartCalibration = async () => {
-        setIsCalibrating(true);
-
-        await CalibrationApi.startCalibration(activeSensor, mode, targetLabel, windowDuration, sessionName);
-
-        if (mode === 'realtime') {
-            // Start auto-windowing logic
-            startAutoWindowing();
-        }
-    };
-
-    const handleStopCalibration = async () => {
-        setIsCalibrating(false);
-        if (windowIntervalRef.current) clearInterval(windowIntervalRef.current);
-        await CalibrationApi.stopCalibration(activeSensor);
-        setActiveWindow(null);
-    };
-
-    const startAutoWindowing = () => {
+    const startAutoWindowing = useCallback(() => {
         const createNextWindow = () => {
-            // Access latest config from refs
             const currentTw = timeWindowRef.current;
             const currentDur = windowDurationRef.current;
 
-            // Use latest data timestamp (Signal Time) instead of Date.now() (Wall Time)
-            // This ensures the window spawns at a fixed visual distance regardless of signal lag
-            const currentData = chartDataRef.current;
-            const latestTs = currentData.length > 0 ? currentData[currentData.length - 1].time : Date.now();
+            // Use latest signal timestamp tracked via WS
+            const latestTs = latestSignalTimeRef.current;
 
-            // Visual sync: Window spawns at visual edge (future) and travels to center (now)
+            // Visual sync spawn
             const delayToCenter = Math.round(currentTw / 2);
-
             const start = latestTs + delayToCenter;
             const end = start + currentDur;
 
-            // Capture current settings from refs
             const sensorForWindow = activeSensorRef.current;
             const labelForWindow = targetLabelRef.current;
-            const channelForWindow = activeChannelIndexRef.current; // Use Ref
-
+            const channelForWindow = activeChannelIndexRef.current;
             const limit = autoLimitRef.current;
+
+            // Count pending/collected matching label
             const currentBatchCount = markedWindowsRef.current.filter(w =>
                 w.label === labelForWindow &&
                 (w.status === 'pending' || w.status === 'collected')
             ).length;
 
-            console.log(`[AutoWindow] Limit: ${limit}, Current Batch: ${currentBatchCount}`);
-
             if (autoCalibrate && currentBatchCount >= limit) {
-                // Do not spawn new window if batch target reached (wait for save)
                 return;
             }
 
@@ -255,70 +242,43 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                 startTime: start,
                 endTime: end,
                 label: labelForWindow,
-                channel: channelForWindow, // Store channel in window metadata
-                status: 'pending', // Added immediately to list
+                channel: channelForWindow,
+                status: 'pending',
                 samples: []
             };
 
-            // Add to list IMMEDIATELY so it appears and travels with the chart
             setMarkedWindows(prev => [...prev, newWindow].slice(-MAX_WINDOWS));
-            setActiveWindow(newWindow); // Keep track for logic, but maybe not render separately?
+            setActiveWindow(newWindow);
 
-            // Function to wait for data to arrive
             const checkAndCollect = async () => {
-                // Check if window still exists (was not deleted)
-                if (!markedWindowsRef.current.find(w => w.id === newWindow.id)) {
-                    return;
-                }
+                // Check if still valid
+                if (!markedWindowsRef.current.find(w => w.id === newWindow.id)) return;
 
-                const currentData = chartDataRef.current;
-
-                // DATA SYNC CHECK:
-                // We need to account for LATENCY.
-                // The User acted when the Window hit the Center.
-                // Window hits Center when SignalTime == start.
-                // At that moment, RealTime was approx (start + Lag).
-                // So the User Action Signal (generated at RealTime) will have timestamp (start + Lag).
-                // We must collect [start+Lag, end+Lag].
-
-                const latestDataTs = currentData.length > 0 ? currentData[currentData.length - 1].time : 0;
-
-                // Estimate Lag: simplified as Date.now() - latestDataTs
-                // Note: This assumes NTP sync roughly. Even if not perfect, it aligns Action to Signal Arrival.
-                // We clamp lag to >= 0.
+                // Sync check
+                const latestDataTs = latestSignalTimeRef.current;
                 const systemLag = Math.max(0, Date.now() - latestDataTs);
 
-                // Effective target range in Signal Time
                 const shiftedStart = start + systemLag;
                 const shiftedEnd = end + systemLag;
 
-                // Ensure the LATEST data point in buffer is at least as new as 'shiftedEnd'
-                if (latestDataTs < shiftedEnd - 50) { // Tolerance of 50ms
-                    // Data hasn't arrived yet!
+                if (latestDataTs < shiftedEnd - 50) {
+                    // Wait slightly longer
                     const now = Date.now();
-                    // Sanity check: If we are WAY past 'shiftedEnd' (e.g. 10 seconds) and still no data, abort.
-                    // This uses Wall Clock "Now" vs Expected Wall Clock "End"
-                    const expectedWallEnd = shiftedEnd; // Roughly now?
-                    if (now > expectedWallEnd + 5000) {
-                        console.warn("[AutoWindow] Timed out waiting for data.");
-                        // Fail gently?
-                    } else {
-                        // Check again in 100ms
-                        setTimeout(checkAndCollect, 100);
-                        return;
+                    if (now > shiftedEnd + 5000) {
+                        console.warn("[AutoWindow] Timeout waiting for data");
+                        return; // Abort
                     }
+                    setTimeout(checkAndCollect, 100);
+                    return;
                 }
 
                 try {
-                    // Extract samples from chartDataRef logic
-                    // Use SHIFTED timestamps
-                    const samplesPoints = currentData.filter(p => p.time >= shiftedStart && p.time <= shiftedEnd);
+                    // ASYNC FETCH FROM WORKER
+                    if (!chartRef.current) throw new Error("Chart not ready");
 
-                    if (samplesPoints.length === 0) {
-                        // Debug info
-                        const dataStart = currentData.length > 0 ? currentData[0].time : 'N/A';
-                        const dataEnd = currentData.length > 0 ? currentData[currentData.length - 1].time : 'N/A';
-                        console.warn(`[AutoWindow] Empty Win: ${shiftedStart}-${shiftedEnd}. Data Range: ${dataStart}-${dataEnd}. WaitTs: ${latestDataTs}`);
+                    const samplesPoints = await chartRef.current.getSamples(shiftedStart, shiftedEnd);
+
+                    if (!samplesPoints || samplesPoints.length === 0) {
                         throw new Error("No data collected");
                     }
 
@@ -327,12 +287,12 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
                     const collectedWindow = {
                         ...newWindow,
-                        startTime: shiftedStart, // Update to actual signal time
-                        endTime: shiftedEnd,    // Update to actual signal time
+                        startTime: shiftedStart,
+                        endTime: shiftedEnd,
                         samples,
                         timestamps,
-                        status: 'collected', // GREEN
-                        lagCorrection: systemLag // Debug info
+                        status: 'collected',
+                        lagCorrection: systemLag
                     };
 
                     setReadyWindows(prev => {
@@ -341,14 +301,12 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                         return next;
                     });
 
-                    // Update UI List to show GREEN and SHIFTED Position
                     setMarkedWindows(prev => prev.map(w => w.id === newWindow.id ? collectedWindow : w));
 
                 } catch (err) {
                     console.error('Auto-collection error:', err);
                     setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'error', message: String(err) } }));
 
-                    // Error -> BLACK -> Buffer (History)
                     const errorWindow = { ...newWindow, status: 'error', error: String(err) };
                     setBufferWindows(prev => [...prev, errorWindow]);
                     setMarkedWindows(prev => prev.map(w => w.id === newWindow.id ? { ...w, status: 'error' } : w));
@@ -358,17 +316,36 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                 }
             };
 
-            // Initial wait: wait until visual end, plus a small buffer
-            // We use wall clock duration est.
+            // Initial wait
             setTimeout(checkAndCollect, delayToCenter + currentDur + 100);
         };
 
         createNextWindow();
         windowIntervalRef.current = setInterval(createNextWindow, windowDuration + GAP_DURATION);
-    };
+    }, [windowDuration, GAP_DURATION, activeSensor, targetLabel, activeChannelIndex, autoLimit, autoCalibrate]);
 
-    const handleManualWindowSelect = async (start, end) => {
-        // Create window object
+    const handleStartCalibration = useCallback(async () => {
+        setIsCalibrating(true);
+
+        await CalibrationApi.startCalibration(activeSensor, mode, targetLabel, windowDuration, sessionName);
+
+        if (mode === 'realtime') {
+            // Start auto-windowing logic
+            startAutoWindowing();
+        }
+    }, [activeSensor, mode, targetLabel, windowDuration, sessionName, startAutoWindowing]);
+
+    const handleStopCalibration = useCallback(async () => {
+        setIsCalibrating(false);
+        if (windowIntervalRef.current) clearInterval(windowIntervalRef.current);
+        await CalibrationApi.stopCalibration(activeSensor);
+        setActiveWindow(null);
+    }, [activeSensor]);
+
+
+
+
+    const handleManualWindowSelect = useCallback(async (start, end) => {
         const newWindow = {
             id: Math.random().toString(36).substr(2, 9),
             sensor: activeSensor,
@@ -377,48 +354,52 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             endTime: end,
             label: targetLabel,
             channel: activeChannelIndex,
-            status: 'recording', // Initially Yellow
+            status: 'recording',
             samples: []
         };
 
+        setMarkedWindows(prev => [...prev, newWindow].slice(-MAX_WINDOWS));
+        setActiveWindow(newWindow);
+
+        // Fetch Data immediately
         try {
-            // Extract samples from chartDataRef
-            const currentData = chartDataRef.current;
-            const samplesPoints = currentData.filter(p => p.time >= start && p.time <= end);
+            if (!chartRef.current) throw new Error("Chart not ready");
+
+            const samplesPoints = await chartRef.current.getSamples(start, end);
 
             if (!samplesPoints || samplesPoints.length === 0) {
-                // Throw to enter catch block -> Buffer as Error
-                throw new Error("No data in selected range");
+                // Warn but maybe keep window?
+                console.warn("Manual selection has no data");
             }
 
-            const samples = samplesPoints.map(p => p.value);
-            const timestamps = samplesPoints.map(p => p.time);
+            const samples = samplesPoints ? samplesPoints.map(p => p.value) : [];
+            const timestamps = samplesPoints ? samplesPoints.map(p => p.time) : [];
 
-            newWindow.samples = samples;
-            newWindow.timestamps = timestamps;
-            newWindow.status = 'collected'; // GREEN
+            const collectedWindow = {
+                ...newWindow,
+                samples,
+                timestamps,
+                status: 'collected'
+            };
 
-            // Add to READY list
-            setReadyWindows(prev => [...prev, newWindow]);
+            setReadyWindows(prev => [...prev, collectedWindow]);
 
-            // Add to UI List (if not already there) and set as collected
             setMarkedWindows(prev => {
                 const existing = prev.find(w => w.id === newWindow.id);
                 if (existing) {
-                    return prev.map(w => w.id === newWindow.id ? { ...w, status: 'collected', samples } : w);
+                    return prev.map(w => w.id === newWindow.id ? collectedWindow : w);
                 }
-                // If manual was not in list, add it
-                return [...prev, newWindow].slice(-50);
+                return [...prev, collectedWindow].slice(-MAX_WINDOWS);
             });
 
         } catch (err) {
-            console.warn("Manual selection error:", err);
-            newWindow.status = 'error'; // BLACK
-
-            // Add to BUFFER as Error history
-            setBufferWindows(prev => [...prev, newWindow]);
+            console.error("Manual selection error:", err);
+            setMarkedWindows(prev => prev.filter(w => w.id !== newWindow.id));
         }
-    };
+    }, [activeSensor, activeChannelIndex, targetLabel, MAX_WINDOWS]);
+
+
+
 
     /**
      * Saves all 'collected' (Green) windows from readyWindows to the database.
@@ -502,22 +483,16 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
         setMarkedWindows(prev => prev.map(w => w.id === id ? { ...w, isMissedActual: !w.isMissedActual } : w));
     };
 
-    // Test Mode Handler: Spawns a window, waits, extracts, sends, returns prediction.
+    // Test Mode Handler
     const handleTestRecord = async (targetGestureLabel) => {
-        console.log("[Test] Spawning window for:", targetGestureLabel);
         return new Promise((resolve, reject) => {
             const currentTw = timeWindowRef.current;
             const currentDur = windowDurationRef.current;
-
-            // Use latest signal logic like AutoWindow
-            const currentData = chartDataRef.current;
-            const latestTs = currentData.length > 0 ? currentData[currentData.length - 1].time : Date.now();
+            const latestTs = latestSignalTimeRef.current; // Ref
 
             const delayToCenter = currentTw / 2;
-            const start = latestTs + delayToCenter; // Signal Time
+            const start = latestTs + delayToCenter;
             const end = start + currentDur;
-
-            console.log(`[Test] Window Spawn: Start=${start} End=${end} (Now=${Date.now()})`);
 
             const newWindow = {
                 id: Math.random().toString(36).substr(2, 9),
@@ -525,56 +500,39 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                 mode: 'test',
                 startTime: start,
                 endTime: end,
-                label: targetGestureLabel, // "Rock" etc.
+                label: targetGestureLabel,
                 channel: activeChannelIndex,
                 status: 'pending',
-                samples: [] // Will be filled
+                samples: []
             };
 
-            // Add to list so user sees it coming
             setMarkedWindows(prev => [...prev, newWindow].slice(-MAX_WINDOWS));
             setActiveWindow(newWindow);
             setRunInProgress(true); // Locks UI slightly
 
-            // Wait for window to pass center
             setTimeout(async () => {
-                // Check if window still exists
                 if (!markedWindowsRef.current.find(w => w.id === newWindow.id)) {
                     reject(new Error("Window deleted"));
                     return;
                 }
 
                 try {
-                    const currentData = chartDataRef.current;
-                    const latestDataTs = currentData.length > 0 ? currentData[currentData.length - 1].time : 0;
-
-                    // Lag compensation
+                    const latestDataTs = latestSignalTimeRef.current;
                     const systemLag = Math.max(0, Date.now() - latestDataTs);
                     const shiftedStart = start + systemLag;
                     const shiftedEnd = end + systemLag;
 
-                    // Wait if needed (reuse sanity check logic roughly, or assume timeout was long enough)
-                    // The timeout was set to delayToCenter + currentDur + 200.
-                    // In Signal Time, we waited enough.
-                    // But if Lag is huge, latestDataTs might still be old?
-                    // Actually, we waited RealTime.
-                    // We need latestDataTs >= shiftedEnd.
-                    // If Lag is constant, latestDataTs = RealTime - Lag.
-                    // shiftedEnd = start + Lag = (LatestTs_Start + delay) + Lag.
-                    // This is tricky.
-                    // Let's assume the data is there or close enough effectively.
+                    // ASYNC FETCH
+                    if (!chartRef.current) throw new Error("Chart not ready");
+                    const samplesPoints = await chartRef.current.getSamples(shiftedStart, shiftedEnd);
 
-                    const samplesPoints = currentData.filter(p => p.time >= shiftedStart && p.time <= shiftedEnd);
+                    if (!samplesPoints || samplesPoints.length === 0) throw new Error("No data collected");
+
                     const samples = samplesPoints.map(p => p.value);
                     const timestamps = samplesPoints.map(p => p.time);
 
-                    if (samples.length === 0) throw new Error("No data collected");
-
                     setWindowProgress(prev => ({ ...prev, [newWindow.id]: { status: 'saving' } }));
 
-                    // Send to backend with action="Test" or similar to imply we want a blind prediction if possible
-                    // Actually we can pass the real label so backend can ALSO check 'detected'
-                    // But we want the blind label too.
                     const resp = await CalibrationApi.sendWindow(activeSensor, {
                         action: targetGestureLabel,
                         channel: activeChannelIndex,
@@ -588,18 +546,17 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                         if (w.id === newWindow.id) {
                             return {
                                 ...w,
-                                predictedLabel: resp.predicted_label, // Keep for debug, but don't rely on it
-                                status: 'saved', // New status for Green
+                                predictedLabel: resp.predicted_label,
+                                status: 'saved',
                                 features: resp.features,
-                                startTime: shiftedStart, // Update position to Ref Reality
+                                startTime: shiftedStart,
                                 endTime: shiftedEnd,
-                                samples: samples // Store raw samples for graph
+                                samples: samples
                             };
                         }
                         return w;
                     }));
 
-                    // Resolve promise for TestPanel
                     resolve({ detected: resp.detected, predicted_label: resp.predicted_label });
 
                 } catch (e) {
@@ -610,7 +567,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                     setRunInProgress(false);
                     setActiveWindow(null);
                 }
-            }, delayToCenter + currentDur + 200); // +200ms buffer
+            }, delayToCenter + currentDur + 200);
         });
     };
 
@@ -706,11 +663,10 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
     }, [markedWindows, autoCalibrate, isCalibrating, runInProgress, activeSensor, autoLimit]);
 
-    // Optimization: Buffer incoming data to throttle re-renders
+    // Optimization: Flusing directly to Worker
     const incomingBufferRef = useRef([]);
-    const lastFlushTimeRef = useRef(Date.now());
 
-    // Update chart data from WS or Mock (Buffered)
+    // Update chart data from WS or Mock (Buffered and sent to Worker)
     useEffect(() => {
         if ((mode === 'realtime' || mode === 'test') && wsData) {
             const payload = wsData.raw || wsData;
@@ -726,7 +682,6 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
             if (samples.length === 0) return;
 
-            // Use sampling rate from config, default to 250Hz
             const samplingRate = config?.sampling_rate || 250;
             const sampleIntervalMs = Math.round(1000 / samplingRate);
             const channelIndex = activeChannelIndex;
@@ -750,162 +705,51 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
                     if (rawVal !== undefined) {
                         const val = typeof rawVal === 'number' ? rawVal : (rawVal.value || 0);
-                        // PUSH TO BUFFER INSTEAD OF STATE
+                        // PUSH TO LOCAL BUFFER
                         incomingBufferRef.current.push({ time: incomingTs, value: val });
                     }
                 }
             });
-        }
-    }, [wsData, mode, activeSensor, activeChannelIndex, config]); // config dep added
 
-    // Flush buffer loop (30fps = ~33ms)
+            // Update latest time reference immediately if we have data
+            if (incomingBufferRef.current.length > 0) {
+                latestSignalTimeRef.current = incomingBufferRef.current[incomingBufferRef.current.length - 1].time;
+            }
+        }
+    }, [wsData, mode, activeSensor, activeChannelIndex, config]);
+
+    // Flush to Worker loop (30fps)
     useEffect(() => {
         const intervalId = setInterval(() => {
             if (incomingBufferRef.current.length === 0) return;
 
-            const newPoints = incomingBufferRef.current; // Grab ref content
+            const newPoints = incomingBufferRef.current;
             incomingBufferRef.current = []; // Clear ref immediately
 
-            setChartData(prev => {
-                // Optimization: Use contact instead of spread if large, but spread needed for immutability
-                // We limit to 10k points
-                const next = [...prev, ...newPoints];
-                if (next.length > 5000) return next.slice(-5000); // Reduced buffer size for perf? 5k is enough for 20s window
-                return next;
-            });
-
-        }, 33);
-
+            // Send to Worker
+            if (chartRef.current) {
+                chartRef.current.addData(newPoints);
+            }
+        }, 16); // 60fps flush for smoother scrolling
         return () => clearInterval(intervalId);
     }, []);
 
+    // Sync Windows to Worker
+    useEffect(() => {
+        if (chartRef.current) {
+            chartRef.current.updateWindows(markedWindows);
+        }
+    }, [markedWindows]);
+
     // Derived state instead of useEffect -> setState (Double render fix)
     const frameTime = React.useMemo(() => {
-        if (chartData.length > 0) {
-            return chartData[chartData.length - 1].time;
-        }
-        return Date.now();
-    }, [chartData]); // Updates once per flush
+        // The WorkerTimeSeriesChart will manage its own internal time,
+        // but we still need a 'now' for mapping windows.
+        // We can use the latestSignalTimeRef for this.
+        return latestSignalTimeRef.current;
+    }, [latestSignalTimeRef.current]); // Updates when latestSignalTimeRef changes
 
-    // Compute sweep-style data for calibration: plotted portion left of center, unplotted baseline to right
-    const sweepChartData = React.useMemo(() => {
-        const w = timeWindow;
-        const center = Math.round(w / 2);
-        const now = frameTime;
-
-        // OPTIMIZED: Avoid unshift inside loop (O(N^2))
-        // We want points where (now - time) <= center.
-        // i.e., time >= now - center.
-        // And we exclude future points: time <= now.
-
-        // Since chartData is sorted time ascending:
-        // We can find the start index (binary search or just scan from end since we only need recent data).
-        // Then map/slice.
-
-        const startTime = now - center;
-        const result = [];
-
-        // Scan backward from end to find relevant range
-        // This is efficient because we stop early
-        for (let i = chartData.length - 1; i >= 0; i--) {
-            const d = chartData[i];
-            if (d.time > now) continue; // Skip future data (though shouldn't exist if now=last)
-            if (d.time < startTime) break; // Too old
-
-            const age = now - d.time;
-            const x = Math.round(center - age);
-            // Relaxed filter
-            if (x >= -100) {
-                // We want to add to the FRONT of the visual list? 
-                // Recharts expects sorted data for X axis if Type is number?
-                // Yes, X axis is 'time' (computed unique X).
-                // If we iterate backwards (newest first), we get [Newest (X=Center), ..., Oldest (X=Left)].
-                // If we push these, we get Descending X.
-                // We need Ascending X.
-                result.push({ time: x, value: d.value });
-            }
-        }
-
-        // Reverse to get Ascending X (Left to Right)
-        result.reverse();
-
-        // BRIDGE THE GAP:
-        if (result.length > 0) {
-            const lastVal = result[result.length - 1].value;
-            // Add a point exactly at 'center'
-            result.push({ time: Math.round(center), value: lastVal });
-        }
-
-        // Future baseline (flat line at 0)
-        const step = 50; // ms resolution
-        // Start exactly at center
-        for (let t = center; t <= w; t += step) {
-            result.push({ time: Math.round(t), future: 0 });
-        }
-
-        // Ensure sorted just in case (the future part is appended in order)
-        // result is [OldData...CenterPoint, FuturePoints...] -> Sorted.
-
-        return result;
-    }, [chartData, timeWindow, frameTime]); // Depend on frameTime
-
-    // Map action windows to sweep coordinates so they match the chart data (center-relative)
-    const mappedWindows = React.useMemo(() => {
-        // Use SAME synchronized frameTime
-        const now = frameTime;
-        const w = timeWindow;
-        const center = Math.round(w / 2);
-
-        const mapped = markedWindows.map(win => {
-            const ageStart = now - win.startTime;
-            const ageEnd = now - win.endTime;
-
-            const x1 = Math.round(center - ageEnd);     // Right edge
-            const x2 = Math.round(center - ageStart);   // Left edge
-
-            return {
-                ...win,
-                startTime: x2,
-                endTime: x1
-            };
-        });
-
-        if (markedWindows.length > 0 && Math.random() < 0.05) {
-            console.log("[CalibrationView] Mapped:", mapped.length, "First:", mapped[0]);
-        }
-
-        return mapped;
-    }, [markedWindows, timeWindow, frameTime]); // Depend on frameTime
-
-    // Active/Pending Window
-    const activeWindowMapped = React.useMemo(() => {
-        if (!activeWindow) return null;
-        // Use SAME synchronized frameTime
-        const now = frameTime;
-        const w = timeWindow;
-        const center = Math.round(w / 2);
-
-        const x1 = Math.round(center - (now - activeWindow.endTime));
-        const x2 = Math.round(center - (now - activeWindow.startTime));
-
-        return { ...activeWindow, startTime: x2, endTime: x1 };
-    }, [activeWindow, timeWindow, frameTime]);
-
-    // Highlighted Window (for inspection)
-    const highlightedWindowMapped = React.useMemo(() => {
-        if (!highlightedWindow) return null;
-        const now = frameTime;
-        const w = timeWindow;
-        const center = Math.round(w / 2);
-
-        const x1 = Math.round(center - (now - highlightedWindow.endTime));
-        const x2 = Math.round(center - (now - highlightedWindow.startTime));
-
-        return { ...highlightedWindow, startTime: x2, endTime: x1, color: '#ff00ff' }; // magenta highlight
-    }, [highlightedWindow, timeWindow, frameTime]);
-
-
-    const scannerValue = chartData.length ? chartData[chartData.length - 1].value : 0;
+    const scannerValue = 0; // Worker chart handles scanner internally
 
     // Cleanup
     useEffect(() => {
@@ -914,13 +758,53 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
         };
     }, []);
 
+    // Keyboard Controls
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            // Ignore if typing in an input
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+
+            switch (e.key.toLowerCase()) {
+                case 's':
+                    if (isCalibrating) handleStopCalibration();
+                    else handleStartCalibration();
+                    break;
+                case 'a':
+                    setAutoCalibrate(prev => !prev);
+                    break;
+                case 'arrowup':
+                    e.preventDefault();
+                    setAutoLimit(prev => Math.min(prev + 5, 2000)); // Cap at 2000
+                    break;
+                case 'arrowdown':
+                    e.preventDefault();
+                    setAutoLimit(prev => Math.max(prev - 5, 5)); // Floor at 5
+                    break;
+                default:
+                    break;
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isCalibrating, handleStartCalibration, handleStopCalibration]);
+
+    // Memoize chart config to prevent spurious worker updates
+    const chartConfig = React.useMemo(() => ({
+        yMin: currentYDomain[0],
+        yMax: currentYDomain[1],
+        lineColor: activeSensor === 'EMG' ? '#3b82f6' : (activeSensor === 'EOG' ? '#10b981' : '#f59e0b'),
+        bgColor: 'transparent',
+        gridColor: '#444'
+    }), [currentYDomain, activeSensor]);
+
     return (
         <div className="flex flex-col h-[calc(100dvh-120px)] bg-bg text-text animate-in fade-in duration-500 overflow-hidden">
 
             {/* TOP ROW: SIDEBAR + CHART (50%) */}
-            <div className="h-[50%] flex-none flex min-h-0 p-2 gap-2">
+            <div className="h-[50%] flex-none flex min-h-0 px-2 pb-2 pt-2 gap-2">
                 {/* SIDEBAR CARD */}
-                <div className="w-[260px] flex-none flex flex-col bg-surface border border-border rounded-xl shadow-sm overflow-hidden">
+                <div className="w-[260px] flex-none flex flex-col bg-surface border-border border-2 rounded-xl shadow-sm overflow-hidden">
                     {/* Sidebar Header */}
                     <div className="p-3 border-b border-border flex items-center gap-2 bg-surface/50">
                         <div className="p-1.5 bg-primary/10 rounded-lg border border-primary/20 shrink-0">
@@ -1025,7 +909,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                 </div>
 
                 {/* CHART CARD */}
-                <div className="flex-grow min-w-0 bg-surface border border-border rounded-xl shadow-sm overflow-hidden flex flex-col relative group">
+                <div className="flex-grow min-w-0 bg-surface border-2 border-border rounded-xl shadow-sm overflow-hidden flex flex-col relative group">
                     {/* Status Badge Overlay */}
                     <div className="absolute top-1.5 right-3 z-10">
                         <div className={`px-2 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider border backdrop-blur-sm shadow-sm ${isCalibrating
@@ -1088,20 +972,13 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
 
                     <div className="flex-grow relative">
                         <div className="absolute inset-0 p-2">
-                            <TimeSeriesZoomChart
-                                data={sweepChartData}
-                                title=""
-                                mode={mode}
-                                height="100%"
-                                markedWindows={mappedWindows}
-                                activeWindow={null}
+                            <WorkerTimeSeriesChart
+                                ref={chartRef}
+                                timeWindow={timeWindow}
+                                activeSensor={activeSensor}
+                                activeChannelIndex={activeChannelIndex}
+                                config={chartConfig}
                                 onWindowSelect={handleManualWindowSelect}
-                                yDomain={currentYDomain}
-                                scannerX={Math.round(timeWindow / 2)}
-                                scannerValue={scannerValue}
-                                timeWindowMs={timeWindow}
-                                color={activeSensor === 'EMG' ? '#3b82f6' : (activeSensor === 'EOG' ? '#10b981' : '#f59e0b')}
-                                curveType="natural"
                             />
                         </div>
                     </div>
@@ -1109,9 +986,9 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
             </div>
 
             {/* BOTTOM ROW: SESSION + WINDOW LIST (50%) */}
-            <div className="h-[50%] flex-none min-h-0 p-2 pt-0 grid grid-cols-1 lg:grid-cols-12 gap-2">
+            <div className="h-[50%] flex-none min-h-0 px-2 pb-2 pt-0 grid grid-cols-1 lg:grid-cols-12 gap-2">
                 {/* Session Panel */}
-                <div className="lg:col-span-9 h-full min-h-0 overflow-hidden rounded-xl border border-border shadow-sm">
+                <div className="lg:col-span-9 h-full min-h-0 overflow-hidden shadow-sm">
                     {mode === 'realtime' ? (
                         <SessionManagerPanel
                             activeSensor={activeSensor}
@@ -1125,7 +1002,7 @@ export default function CalibrationView({ wsData, wsEvent, config: initialConfig
                 </div>
 
                 {/* Window List */}
-                <div className="lg:col-span-3 h-full min-h-0 overflow-hidden rounded-xl border border-border shadow-sm">
+                <div className="lg:col-span-3 h-full min-h-0 overflow-hidden shadow-sm">
                     <WindowListPanel
                         windows={markedWindows}
                         onDelete={deleteWindow}

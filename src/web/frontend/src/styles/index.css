@@ -723,17 +723,10 @@ body {
   -moz-osx-font-smoothing: grayscale;
   background: var(--bg);
   color: var(--text);
-  cursor: url('/cursor.svg') 16 16, auto;
 }
 
-/* Force custom cursor on everything to prevent reverting */
-* {
-  cursor: url('/cursor.svg') 16 16, auto !important;
-}
+/* Cursor is handled dynamically by CursorHandler.jsx */
 
-button, a, [role="button"], input[type="submit"], input[type="button"], label, select, .cursor-pointer {
-  cursor: url('/cursor.svg') 16 16, pointer !important;
-}
 
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;

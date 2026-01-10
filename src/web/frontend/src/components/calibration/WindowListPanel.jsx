@@ -54,7 +54,7 @@ export default function WindowListPanel({
     const progress = Math.min(100, (activeCount / targetCount) * 100);
 
     return (
-        <div className="flex flex-col h-full bg-surface border border-border rounded-xl overflow-hidden shadow-card animate-in fade-in duration-300">
+        <div className="flex flex-col h-full bg-surface border-2 border-border rounded-xl overflow-hidden shadow-card animate-in fade-in duration-300">
             {/* Header with stats and controls */}
             <div className="px-5 py-4 border-b border-border bg-bg/50 flex flex-col gap-2">
                 <div className="flex justify-between items-center">

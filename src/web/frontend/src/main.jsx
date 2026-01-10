@@ -9,7 +9,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
       <ClickSpark
-        sparkColor='var(--muted)'
+        sparkColor='var(--primary)'
         sparkSize={10}
         sparkRadius={15}
         sparkCount={8}

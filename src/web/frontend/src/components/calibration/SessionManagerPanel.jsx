@@ -199,7 +199,7 @@ export default function SessionManagerPanel({
     };
 
     return (
-        <div className="flex h-full bg-surface border border-border rounded-xl overflow-hidden shadow-card p-1 gap-1">
+        <div className="flex h-full bg-surface border-2 border-border rounded-xl overflow-hidden shadow-card p-1 gap-1">
 
             {/* LEFT PANE: Selected Session Table View */}
             <div className="flex-grow flex flex-col min-w-0 bg-bg/50 rounded-lg border border-muted overflow-hidden relative">

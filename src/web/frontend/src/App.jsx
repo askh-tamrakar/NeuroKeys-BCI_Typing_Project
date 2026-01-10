@@ -35,11 +35,14 @@ function AppContent() {
   return user ? <Dashboard /> : <LoginPage />
 }
 
+import CursorHandler from './components/ui/CursorHandler';
+
 import { ThemeProvider } from './contexts/ThemeContext'
 
 export default function App() {
   return (
     <ThemeProvider>
+      <CursorHandler />
       <AuthProvider>
         <AppContent />
       </AuthProvider>

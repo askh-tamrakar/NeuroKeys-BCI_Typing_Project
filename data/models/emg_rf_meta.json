@@ -1,1 +1,1 @@
-{"n_estimators": 10, "max_depth": 4, "test_size": 0.15, "table_name": "emg_session_neuro"}
+{"n_estimators": 10, "max_depth": 4, "test_size": 0.15, "table_name": "emg_session_lucifer"}
