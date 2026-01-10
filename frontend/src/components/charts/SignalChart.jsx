@@ -1,6 +1,8 @@
 // SignalChart.jsx
-import React, { useMemo } from 'react'
+import React, { useMemo, useRef } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceDot, ReferenceArea } from 'recharts'
+import { ChartSpline, ZoomIn, ArrowUpDown, ArrowDown, ArrowUp, Sigma, Clock, Minus, Plus, Ban } from 'lucide-react'
+import ElasticSlider from '../ui/ElasticSlider'
 import '../../styles/live/SignalChart.css'
 
 const DEFAULT_PALETTE = [
@@ -30,7 +32,10 @@ export default function SignalChart({
   currentZoom = 1,
   currentManual = "",
   onZoomChange = null,
-  onRangeChange = null
+  onRangeChange = null,
+  onTimeWindowChange = null,
+  onColorChange = null,
+  disabled = false
 }) {
   const merged = useMemo(() => {
     if (!byChannel || typeof byChannel !== 'object') {
@@ -180,26 +185,60 @@ export default function SignalChart({
     for (let i = 0; i < tickCount; i++) {
       result.push(min + (i * step))
     }
-    // Ensure 0 is included if it's within range (snap nearest tick to 0 if close, or just rely on math)
-    // For symmetric domains like [-500, 500] with 7 ticks, 0 will be perfectly in the middle.
     return result
   }, [finalYDomain, tickCount])
 
+  const colorInputRef = useRef(null)
+
   return (
-    <div className="signal-chart-container">
+    <div className={`signal-chart-container ${disabled ? 'signal-chart-disabled' : ''}`}>
+
       <div className="chart-header">
         <h3 className="chart-title">
-          <span className="title-indicator" style={{ backgroundColor: color }}></span>
+          <button
+            onClick={() => colorInputRef.current?.click()}
+            className="p-1 hover:bg-muted/10 rounded-full transition-colors cursor-pointer group"
+            title="Change Graph Color"
+          >
+            <ChartSpline size={32} strokeWidth={3} style={{ color: color }} className="mr-2 group-hover:scale-110 transition-transform" />
+          </button>
+
+          {/* Hidden Color Input */}
+          <input
+            type="color"
+            ref={colorInputRef}
+            value={color.length === 7 ? color : "#3b82f6"} // Ensure valid hex code if possible, though browser handles rgb usually
+            onChange={(e) => onColorChange && onColorChange(e.target.value)}
+            style={{ display: 'none' }}
+          />
+
           {graphNo}
           <span className="channel-color-dot" style={{ backgroundColor: color }}></span>
           {title}
         </h3>
 
-        {/* Channel Controls */}
         <div className="channel-controls">
+          {/* Time Window Control (New) */}
+          <div className="time-window-control">
+            <span className="control-label"><Clock size={24} /> Time</span>
+            <div className="w-64">
+              <ElasticSlider
+                defaultValue={(timeWindowMs || 10000) / 1000}
+                startingValue={1}
+                maxValue={30}
+                stepSize={1}
+                isStepped={true}
+                onChange={(val) => onTimeWindowChange && onTimeWindowChange(val * 1000)}
+                leftIcon={<Minus size={18} className="text-muted" />}
+                rightIcon={<Plus size={18} className="text-muted" />}
+                className="w-full h-6"
+              />
+            </div>
+          </div>
+
           {/* Zoom Buttons */}
           <div className="zoom-controls">
-            <span className="control-label">ZOOM</span>
+            <span className="control-label flex items-center gap-1"><ZoomIn size={24} /> ZOOM</span>
             {[1, 2, 3, 5, 10, 25, 50].map(z => (
               <button
                 key={z}
@@ -215,7 +254,7 @@ export default function SignalChart({
 
           {/* Manual Range Input */}
           <div className="range-input-container">
-            <span className="control-label">RANGE</span>
+            <span className="control-label flex items-center gap-1"><ArrowUpDown size={24} /> RANGE</span>
             <input
               type="number"
               placeholder="+/-"
@@ -232,21 +271,22 @@ export default function SignalChart({
           </div>
         </div>
 
+        {/* Stats */}
         <div className="chart-stats">
           {dataArray.length > 0 && (
             <>
               <div className="stat-item">
-                <span className="stat-label">Min</span>
+                <span className="stat-label-chart"><ArrowDown size={18} /> Min</span>
                 <span className="stat-value">{min.toFixed(2)}</span>
               </div>
               <div className="stat-separator"></div>
               <div className="stat-item">
-                <span className="stat-label">Max</span>
+                <span className="stat-label-chart"><ArrowUp size={18} /> Max</span>
                 <span className="stat-value">{max.toFixed(2)}</span>
               </div>
               <div className="stat-separator"></div>
               <div className="stat-item">
-                <span className="stat-label">Mean</span>
+                <span className="stat-label-chart"><Sigma size={18} /> Mean</span>
                 <span className="stat-value">{mean.toFixed(2)}</span>
               </div>
             </>

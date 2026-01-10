@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import { Cable, Zap, Plug } from 'lucide-react'
 import ElectricBorder from './ElectricBorder.jsx'
+import { soundHandler } from '../../handlers/SoundHandler.js'
 
 export function ConnectionButton({ status, latency, connect, disconnect }) {
     const [isConnectingClicked, setIsConnectingClicked] = useState(false)
     const [isSimulatedConnecting, setIsSimulatedConnecting] = useState(false)
 
     const handleConnectClick = () => {
+        soundHandler.playConnectionZap()
         setIsConnectingClicked(true)
         setTimeout(() => setIsConnectingClicked(false), 200)
 
