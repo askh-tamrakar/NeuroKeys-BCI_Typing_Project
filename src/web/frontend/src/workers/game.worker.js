@@ -804,47 +804,6 @@ function drawDino(x, y) {
     ctx.restore();
 }
 
-<<<<<<< HEAD:frontend/src/workers/game.worker.js
-function drawCactus(x, y, width, height) {
-    ctx.save();
-    ctx.save();
-    ctx.fillStyle = CURRENT_COLORS.obstacle; // Semantic Obstacle Color
-    ctx.strokeStyle = CURRENT_COLORS.obstacle; // Solid look for high contrast
-    ctx.lineWidth = 2;
-
-    // Main trunk
-    const trunkWidth = Math.floor(width * 0.6);
-    const trunkX = Math.floor(x + (width - trunkWidth) / 2);
-    const trunkH = Math.floor(height);
-    const _y = Math.floor(y);
-
-    ctx.fillRect(trunkX, _y, trunkWidth, trunkH);
-    ctx.strokeRect(trunkX, _y, trunkWidth, trunkH);
-
-    // Left arm
-    const armHeight = Math.floor(height * 0.4);
-    const armWidth = Math.floor(width * 0.3);
-    const leftArmX = Math.floor(trunkX - armWidth);
-    const leftArmY = Math.floor(y + height * 0.3);
-    const armConnW = Math.floor(trunkWidth * 0.3);
-
-    ctx.fillRect(leftArmX, leftArmY, armWidth, armHeight);
-    ctx.strokeRect(leftArmX, leftArmY, armWidth, armHeight);
-    ctx.fillRect(leftArmX + armWidth, leftArmY, armConnW, armWidth);
-    ctx.strokeRect(leftArmX + armWidth, leftArmY, armConnW, armWidth);
-
-    // Right arm
-    const rightArmX = Math.floor(trunkX + trunkWidth);
-    const rightArmY = Math.floor(y + height * 0.5);
-    const rightArmH = Math.floor(armHeight * 0.8);
-
-    ctx.fillRect(rightArmX, rightArmY, armWidth, rightArmH);
-    ctx.strokeRect(rightArmX, rightArmY, armWidth, rightArmH);
-    ctx.fillRect(Math.floor(trunkX + trunkWidth * 0.7), rightArmY, armConnW, armWidth);
-    ctx.strokeRect(Math.floor(trunkX + trunkWidth * 0.7), rightArmY, armConnW, armWidth);
-
-    ctx.restore();
-=======
 const drawCactus = (ctx, x, y, width, height, color, borderColor) => {
     ctx.save()
     ctx.fillStyle = color
@@ -897,7 +856,6 @@ const drawCactus = (ctx, x, y, width, height, color, borderColor) => {
     ctx.stroke()
 
     ctx.restore()
->>>>>>> rps-implement:src/web/frontend/src/workers/game.worker.js
 }
 
 function draw() {
@@ -947,11 +905,7 @@ function draw() {
 
         // Obstacles
         obstacles.forEach(obs => {
-<<<<<<< HEAD:frontend/src/workers/game.worker.js
-            drawCactus(obs.x, groundY - obs.height, obs.width, obs.height);
-=======
             drawCactus(ctx, obs.x, groundY - obs.height, obs.width, obs.height, CURRENT_COLORS.obstacle, COLORS.obstacleBorder);
->>>>>>> rps-implement:src/web/frontend/src/workers/game.worker.js
         });
 
         // Visual Bushes (Front Layer - Layer 4)
