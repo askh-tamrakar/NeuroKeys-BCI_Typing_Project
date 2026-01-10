@@ -9,6 +9,9 @@ import numpy as np
 import sys
 import os
 import queue
+import subprocess # Added explicit import
+import struct
+
 
 
 # Ensure we can import sibling packages
@@ -36,6 +39,14 @@ try:
     SCIPY_AVAILABLE = True
 except Exception:
     SCIPY_AVAILABLE = False
+
+# pylsl import
+try:
+    import pylsl
+    LSL_AVAILABLE = True
+except ImportError:
+    pylsl = None
+    LSL_AVAILABLE = False
 
 # UTF-8 encoding
 try:
@@ -76,9 +87,23 @@ class AcquisitionApp:
         self.is_acquiring = False
         self.is_paused = False
         self.is_recording = False
+        self.is_recording = False
         self.session_start_time = None
         self.packet_count = 0
+        self.retry_counter = 0
         self.last_packet_counter = None
+
+        self.pipeline_process = None # Process handle for filter_router
+        
+        # Stream Manager Connection
+        self.stream_socket = None
+        self.stream_connected = False
+
+
+        # Processed Data Stream State
+        self.processed_inlet = None
+        self.processed_stream_name = "BioSignals-Processed"
+        self.searching_processed = False
         
         # Channel mapping
         channel_map = self.config.get("channel_mapping", {})
@@ -99,8 +124,10 @@ class AcquisitionApp:
             self.config.get("sampling_rate", 512) * self.window_seconds
         )
         
+        # Ring buffers (Raw)
         self.ch0_buffer = np.zeros(self.buffer_size)
         self.ch1_buffer = np.zeros(self.buffer_size)
+<<<<<<< HEAD
         self.ch2_buffer = np.zeros(self.buffer_size)
         self.ch3_buffer = np.zeros(self.buffer_size)
         
@@ -109,8 +136,15 @@ class AcquisitionApp:
         self.ch1_processed = np.zeros(self.buffer_size)
         self.ch2_processed = np.zeros(self.buffer_size)
         self.ch3_processed = np.zeros(self.buffer_size)
+=======
+        
+        # Ring buffers (Processed)
+        self.ch0_proc_buffer = np.zeros(self.buffer_size)
+        self.ch1_proc_buffer = np.zeros(self.buffer_size)
+>>>>>>> rps-implement
         
         self.buffer_ptr = 0
+        self.proc_buffer_ptr = 0  # Separate pointer for processed stream if rates differ slightly
         
         # View State
         self.show_processed = tk.BooleanVar(value=True)
@@ -130,6 +164,9 @@ class AcquisitionApp:
         
         # Start Sync Thread
         self.start_sync_thread()
+        
+        # Start Processed Stream Discovery
+        self.start_processed_discovery()
 
         # Start main loop
         self.main_loop()
@@ -361,18 +398,33 @@ class AcquisitionApp:
         def loop():
             import urllib.request
             last_check = 0
+            consecutive_errors = 0
+            
             while True:
-                time.sleep(2)
+                # Exponential backoff for sleep: 2s normal, up to 30s max on error
+                sleep_time = min(30, 2 * (1.5 ** consecutive_errors)) if consecutive_errors > 0 else 2
+                time.sleep(sleep_time)
+                
                 try:
                     # Don't interrupt if we are actively recording/streaming to avoid jitter
                     # (optional trade-off)
                     
+<<<<<<< HEAD
                     # (optional trade-off)
                     
                     port = self.config.get("server_port", 5000)
                     url = f"http://localhost:{port}/api/config"
                     with urllib.request.urlopen(url, timeout=1) as response:
+=======
+                    url = "http://localhost:5000/api/config"
+                    # Short timeout to avoid blocking threads for long
+                    with urllib.request.urlopen(url, timeout=0.2) as response:
+>>>>>>> rps-implement
                         if response.status == 200:
+                            if consecutive_errors > 0:
+                                print(f"[App] ✅ Sync connection restored")
+                            consecutive_errors = 0
+                            
                             new_cfg = json.loads(response.read().decode())
                             
                             # Simple check if channel mapping changed
@@ -381,13 +433,40 @@ class AcquisitionApp:
                             
                             if json.dumps(current_map, sort_keys=True) != json.dumps(new_map, sort_keys=True):
                                 print(f"[App] 🔄 Remote config change detected!")
-                                print(f"[App] Local: {current_map}")
-                                print(f"[App] Remote: {new_map}")
                                 self.root.after(0, self.update_config_from_remote, new_cfg)
+                                
                 except Exception as e:
-                    print(f"[App] Sync loop error: {e}")
+                    consecutive_errors += 1
+                    # Only print the error the first time it happens (or if it changes), to avoid spam
+                    if consecutive_errors == 1:
+                        print(f"[App] Sync loop warning: {e} (Supressing further errors until connection restored)")
         
         threading.Thread(target=loop, daemon=True).start()
+
+    def start_processed_discovery(self):
+        """Start a thread to find the processed stream"""
+        if not LSL_AVAILABLE:
+            return
+
+        def discover():
+            self.searching_processed = True
+            print("[App] 🔍 Searching for Processed Stream...")
+            while self.processed_inlet is None:
+                streams = pylsl.resolve_streams(wait_time=1.0)
+                for s in streams:
+                    if s.name() == self.processed_stream_name:
+                        try:
+                            self.processed_inlet = pylsl.StreamInlet(s, max_buflen=5)
+                            print(f"[App] ✅ Connected to {self.processed_stream_name}")
+                            # Only enable toggle if we found the stream
+                            self.root.after(0, lambda: self.view_toggle.config(state="normal"))
+                            return
+                        except Exception as e:
+                            print(f"[App] Error connecting to processed stream: {e}")
+                time.sleep(2)
+            self.searching_processed = False
+
+        threading.Thread(target=discover, daemon=True).start()
 
     def update_config_from_remote(self, new_config):
         """Update UI and internal state from remote config"""
@@ -443,8 +522,26 @@ class AcquisitionApp:
         scrollbar.pack(side="right", fill="y")
         return scrollable_frame
 
+        return scrollable_frame
+
     def _build_control_panel(self, parent):
         """Build left control panel"""
+        # GRAPH CONTROLS
+        view_frame = ttk.LabelFrame(parent, text="👁️ View Settings", padding=10)
+        view_frame.pack(fill="x", pady=5)
+        
+        self.view_var = tk.StringVar(value="Raw")
+        self.view_toggle = ttk.Checkbutton(
+            view_frame, 
+            text="Show Processed Data", 
+            variable=self.view_var, 
+            onvalue="Processed", 
+            offvalue="Raw",
+            state="disabled", # Disabled until stream found
+            command=self.on_view_toggle
+        )
+        self.view_toggle.pack(anchor="w")
+        
         # CONNECTION SECTION
         conn_frame = ttk.LabelFrame(parent, text="🔌 Connection", padding=10)
         conn_frame.pack(fill="x", pady=5)
@@ -559,6 +656,14 @@ class AcquisitionApp:
         self.recording_label = ttk.Label(status_frame, text="❌ No", foreground="red")
         self.recording_label.pack(anchor="w")
 
+    def on_view_toggle(self):
+        """Handle view toggle change"""
+        mode = self.view_var.get()
+        print(f"[App] View switched to: {mode}")
+        if mode == "Processed" and self.processed_inlet is None:
+            messagebox.showwarning("Stream Not Found", "Processed stream not connected yet.")
+            self.view_var.set("Raw")
+
     def _build_graph_panel(self, parent):
         """Build right graph panel - FIXED: No overlapping labels"""
         fig = Figure(figsize=(12, 8), dpi=100)
@@ -646,6 +751,11 @@ class AcquisitionApp:
             return
         
         self.serial_reader.start()
+        
+        # Send Handshake to trigger "Connected" state (Yellow LED)
+        time.sleep(0.1) # Brief pause to ensure thread is ready
+        self.serial_reader.send_command("WHORU")
+        
         self.is_connected = True
         
         # Update UI
@@ -659,6 +769,7 @@ class AcquisitionApp:
         self.ch1_type = self.ch1_var.get()
         
         # Create LSL outlets if available
+<<<<<<< HEAD
         if LSL_AVAILABLE:
             ch_types = [self.ch0_type, self.ch1_type, self.ch2_var.get(), self.ch3_var.get()]
             ch_labels = [f"{self.ch0_type}_0", f"{self.ch1_type}_1", f"{self.ch2_var.get()}_2", f"{self.ch3_var.get()}_3"]
@@ -681,6 +792,26 @@ class AcquisitionApp:
             
             # Reset filter states on connect
             self._init_filters()
+=======
+        
+        # Connect to Stream Manager
+        self._connect_to_stream_manager()
+        
+    def _connect_to_stream_manager(self):
+        """Connect to local Stream Manager for raw data streaming"""
+        try:
+            import socket
+            self.stream_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            # Port 6000 is for RAW data as defined in stream_manager.py
+            self.stream_socket.connect(('localhost', 6000))
+            self.stream_connected = True
+            print("[App] ✅ Connected to Stream Manager (Raw)")
+        except Exception as e:
+            print(f"[App] ⚠️ Could not connect to Stream Manager: {e}")
+            self.stream_connected = False
+            self.stream_socket = None
+
+>>>>>>> rps-implement
         
     def disconnect_device(self):
         """Disconnect from Arduino"""
@@ -690,6 +821,16 @@ class AcquisitionApp:
         self.is_connected = False
         if self.serial_reader:
             self.serial_reader.disconnect()
+            
+        if self.stream_socket:
+            try:
+                self.stream_socket.close()
+            except:
+                pass
+            self.stream_socket = None
+            self.stream_connected = False
+            print("[App] Disconnected from Stream Manager")
+
         
         self.status_label.config(text="❌ Disconnected", foreground="red")
         self.connect_btn.config(state="normal")
@@ -714,9 +855,15 @@ class AcquisitionApp:
         # Clear buffers
         self.ch0_buffer.fill(0)
         self.ch1_buffer.fill(0)
+<<<<<<< HEAD
         self.ch2_buffer.fill(0)
         self.ch3_buffer.fill(0)
+=======
+        self.ch0_proc_buffer.fill(0)
+        self.ch1_proc_buffer.fill(0)
+>>>>>>> rps-implement
         self.buffer_ptr = 0
+        self.proc_buffer_ptr = 0
         
         # Update UI
         self.start_btn.config(state="disabled")
@@ -814,16 +961,17 @@ class AcquisitionApp:
         
         messagebox.showinfo("Saved", f"Saved {len(self.session_data)} packets to {filepath}")
 
+
     def main_loop(self):
         """Main acquisition and update loop (Optimized)"""
         try:
-            if self.is_acquiring and not self.is_paused and self.serial_reader:
-                # 1. Collect all packets currently in queue
-                batch_raw = []
+            # --- 0. CHECK ARDUINO MESSAGES (Switches) ---
+            if self.serial_reader:
                 while True:
-                    pkt_bytes = self.serial_reader.get_packet(timeout=0)
-                    if pkt_bytes is None:
+                    msg = self.serial_reader.get_message()
+                    if not msg:
                         break
+<<<<<<< HEAD
                     batch_raw.append(pkt_bytes)
                 
                 if batch_raw:
@@ -893,6 +1041,121 @@ class AcquisitionApp:
                         
                         self.ch3_buffer = np.roll(self.ch3_buffer, -count)
                         self.ch3_buffer[-count:] = u3
+=======
+                    
+                    # DEBUG: Print everything we get
+                    print(f"[App] DEBUG: Processing message '{msg}'")
+
+                    if "SWITCH_2_PRESSED" in msg:
+                        # SW2: Start Acquisition & Pipeline
+                        print("[App] 🎮 Switch 2 Pressed -> Starting...")
+                        if not self.is_acquiring:
+                            self.start_acquisition()
+                        
+                        # Start Pipeline if not running
+                        if self.pipeline_process is None:
+                            try:
+                                print("[App] 🚀 Launching Full Pipeline (pipeline.py)...")
+                                # Launch independent python process
+                                cmd = [sys.executable, "pipeline.py"]
+                                self.pipeline_process = subprocess.Popen(
+                                    cmd, 
+                                    cwd=str(self.save_path.parent.parent.parent), # Project root
+                                    creationflags=subprocess.CREATE_NEW_CONSOLE # Windows specific: Open new terminal
+                                )
+                            except Exception as e:
+                                print(f"[App] ❌ Failed to launch pipeline: {e}")
+
+                    elif "SWITCH_1_PRESSED" in msg:
+                        # SW1: Stop Acquisition & Pipeline
+                        print("[App] 🛑 Switch 1 Pressed -> Stopping...")
+                        if self.is_acquiring:
+                            self.stop_acquisition()
+                        
+                        # Kill Pipeline
+                        if self.pipeline_process:
+                            print("[App] 💀 Killing Filter Pipeline...")
+                            self.pipeline_process.terminate()
+                            self.pipeline_process = None
+
+            if self.is_acquiring and not self.is_paused:
+                # --- RAW DATA Handling ---
+                if self.serial_reader:
+                    # 1. Collect all packets currently in queue
+                    batch_raw = []
+                    while True:
+                        pkt_bytes = self.serial_reader.get_packet(timeout=0)
+                        if pkt_bytes is None:
+                            break
+                        batch_raw.append(pkt_bytes)
+                    
+                    if batch_raw:
+                        # 2. Batch parse
+                        ctrs, r0, r1 = self.packet_parser.parse_batch(batch_raw)
+                        
+                        # 3. Convert to uV
+                        u0 = adc_to_uv(r0)
+                        u1 = adc_to_uv(r1)
+                        
+                        # 4. Push to Stream Manager (Chunks)
+                        if self.stream_connected and self.stream_socket:
+                            try:
+                                # Fix: Send RAW bytes (with sync headers) not floats.
+                                # Stream Manager expects [Sync1][Sync2][Counter][...][End]
+                                # batch_raw contains exactly these raw packets.
+                                byte_data = b"".join(batch_raw)
+                                self.stream_socket.sendall(byte_data)
+                            except Exception as e:
+                                print(f"[App] Stream send error: {e}")
+                                self.stream_connected = False
+
+                        
+                        # 5. Update buffers efficiently
+                        n = len(u0)
+                        for i in range(n):
+                            # Simple duplicate check (last counter)
+                            if self.last_packet_counter == ctrs[i]:
+                                continue
+                            self.last_packet_counter = ctrs[i]
+                            
+                            self.ch0_buffer[self.buffer_ptr] = u0[i]
+                            self.ch1_buffer[self.buffer_ptr] = u1[i]
+                            self.buffer_ptr = (self.buffer_ptr + 1) % self.buffer_size
+                            
+                            if self.is_recording:
+                                # Still using dict for now, but batching parser already saved time
+                                self.session_data.append({
+                                    "packet_seq": int(ctrs[i]),
+                                    "ch0_raw_adc": int(r0[i]),
+                                    "ch1_raw_adc": int(r1[i]),
+                                    "ch0_uv": float(u0[i]),
+                                    "ch1_uv": float(u1[i])
+                                })
+                            
+                            self.packet_count += 1
+
+            # --- PROCESSED DATA Handling ---
+            if self.processed_inlet:
+                try:
+                    # Pull all available processed samples
+                    chunk, timestamps = self.processed_inlet.pull_chunk(timeout=0.0)
+                    if chunk:
+                        n_proc = len(chunk)
+                        chunk = np.array(chunk) # Shape (n_samples, n_channels)
+                        
+                        # Assuming CH0 is index 0, CH1 is index 1
+                        p0 = chunk[:, 0]
+                        p1 = chunk[:, 1]
+                        
+                        # Update Processed Buffers
+                        for i in range(n_proc):
+                            self.ch0_proc_buffer[self.proc_buffer_ptr] = p0[i]
+                            self.ch1_proc_buffer[self.proc_buffer_ptr] = p1[i]
+                            self.proc_buffer_ptr = (self.proc_buffer_ptr + 1) % self.buffer_size
+                            
+                except Exception as e:
+                    print(f"[App] Processed stream error: {e}")
+>>>>>>> rps-implement
 
                         # Update Processed Buffers
                         self.ch0_processed = np.roll(self.ch0_processed, -count)
@@ -931,6 +1194,7 @@ class AcquisitionApp:
         
         # Schedule next update
         if self.root.winfo_exists():
+<<<<<<< HEAD
             self.root.after(20, self.main_loop)
             
     def _init_filters(self):
@@ -954,6 +1218,44 @@ class AcquisitionApp:
             # 1. Look for channel-specific config first (e.g. "ch0")
             ch_key = f"ch{i}"
             cfg = filter_cfg.get(ch_key)
+=======
+            self.root.after(30, self.main_loop)
+            
+        # Retry connection if needed (approx every 2 seconds)
+        self.retry_counter = (self.retry_counter + 1) % 60
+        if self.retry_counter == 0 and not self.stream_connected:
+             self._connect_to_stream_manager()
+
+
+    def update_plots(self):
+        """Update the plot lines (Optimized)"""
+        try:
+            if not self.is_acquiring or self.is_paused:
+                return
+
+            # Rotate buffers so latest data is on the right
+            if self.view_var.get() == "Processed" and self.processed_inlet:
+                # Use Processed Buffers
+                ch0_rotated = np.roll(self.ch0_proc_buffer, -self.proc_buffer_ptr)
+                ch1_rotated = np.roll(self.ch1_proc_buffer, -self.proc_buffer_ptr)
+                color0, color1 = 'darkred', 'darkblue' # Darker colors for processed
+                title_suffix = " (Processed)"
+            else:
+                # Use Raw Buffers
+                ch0_rotated = np.roll(self.ch0_buffer, -self.buffer_ptr)
+                ch1_rotated = np.roll(self.ch1_buffer, -self.buffer_ptr)
+                color0, color1 = 'red', 'blue'
+                title_suffix = " (Raw)"
+            
+            # Update line data
+            self.line0.set_ydata(ch0_rotated)
+            self.line0.set_color(color0)
+            self.ax0.set_title(f"📍 Channel 0 (EMG){title_suffix}")
+            
+            self.line1.set_ydata(ch1_rotated)
+            self.line1.set_color(color1)
+            self.ax1.set_title(f"📍 Channel 1 (EOG){title_suffix}")
+>>>>>>> rps-implement
             
             # 2. Fallback to sensor type config (e.g. "EMG")
             if not cfg and sensor_type:

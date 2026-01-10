@@ -4,7 +4,11 @@
     "enabled": true,
     "offset": 0.0,
     "gain": 1.0,
+<<<<<<< HEAD
     "calibration_date": "2025-12-31",
+=======
+    "calibration_date": "2025-12-27",
+>>>>>>> rps-implement
     "calibrated": true
   },
   "ch1": {
@@ -12,6 +16,7 @@
     "enabled": true,
     "offset": 0.0,
     "gain": 1.0,
+<<<<<<< HEAD
     "calibration_date": "2025-12-31",
     "calibrated": true
   },
@@ -29,6 +34,9 @@
     "offset": 0.0,
     "gain": 1.0,
     "calibration_date": "2025-12-31",
+=======
+    "calibration_date": "2025-12-27",
+>>>>>>> rps-implement
     "calibrated": true
   }
 }

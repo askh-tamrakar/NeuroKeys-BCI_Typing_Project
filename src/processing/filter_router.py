@@ -12,6 +12,9 @@ import threading
 import hashlib
 import sys
 import os
+import socket
+import struct
+
 from typing import List, Tuple, Dict, Optional
 
 # UTF-8 encoding for standard output to avoid UnicodeEncodeError in some terminals
@@ -38,7 +41,6 @@ try:
     from .emg_processor import EMGFilterProcessor
     from .eog_processor import EOGFilterProcessor
     from .eeg_processor import EEGFilterProcessor
-    from ..utils.config import config_manager
 except ImportError:
     print("[Router] Running from different context, using local imports")
     import sys
@@ -46,17 +48,65 @@ except ImportError:
     from src.processing.emg_processor import EMGFilterProcessor
     from src.processing.eog_processor import EOGFilterProcessor
     from src.processing.eeg_processor import EEGFilterProcessor
-    from src.utils.config import config_manager
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+CONFIG_PATH = PROJECT_ROOT / "config" / "sensor_config.json"
+FILTER_CONFIG_PATH = PROJECT_ROOT / "config" / "filter_config.json"
 RAW_STREAM_NAME = "BioSignals-Raw-uV"
 PROCESSED_STREAM_NAME = "BioSignals-Processed"
 RELOAD_INTERVAL = 2.0
 DEFAULT_SR = 512
 
+
 def load_config() -> dict:
-    """Load fully merged config using ConfigManager."""
-    return config_manager.get_all_configs()
+    """Load config from sensor_config.json and filter_config.json with safe fallback defaults."""
+    defaults = {
+        "sampling_rate": DEFAULT_SR,
+        "channel_mapping": {
+            "ch0": {"sensor": "EMG", "enabled": True},
+            "ch1": {"sensor": "EOG", "enabled": True}
+        },
+        "filters": {
+            "EMG": {"cutoff": 70.0, "order": 4, "notch_enabled": False, "notch_freq": 50, "bandpass_enabled": False, "bandpass_low": 20, "bandpass_high": 250, "envelope_enabled": True, "envelope_cutoff": 10.0, "envelope_order": 4},
+            "EOG": {"cutoff": 10.0, "order": 4},
+            "EEG": {
+                "filters": [
+                    {"type": "notch", "freq": 50.0, "Q": 30},
+                    {"type": "bandpass", "low": 0.5, "high": 45.0, "order": 4}
+                ]
+            }
+        }
+    }
+    
+    cfg = defaults.copy()
+
+    # 1. Load Sensor Config
+    if CONFIG_PATH.exists():
+        try:
+            with open(CONFIG_PATH, "r") as f:
+                sensor_cfg = json.load(f)
+            
+            if "sampling_rate" in sensor_cfg:
+                cfg["sampling_rate"] = sensor_cfg["sampling_rate"]
+            if "channel_mapping" in sensor_cfg:
+                cfg["channel_mapping"] = sensor_cfg["channel_mapping"]
+        except Exception as e:
+            print(f"[Router] Failed to load sensor config ({CONFIG_PATH}): {e} — using defaults")
+
+    # 2. Load Filter Config
+    if FILTER_CONFIG_PATH.exists():
+        try:
+            with open(FILTER_CONFIG_PATH, "r") as f:
+                filter_cfg = json.load(f)
+            
+            if "filters" in filter_cfg:
+                cfg["filters"] = filter_cfg["filters"]
+        except Exception as e:
+            print(f"[Router] Failed to load filter config ({FILTER_CONFIG_PATH}): {e} — using defaults")
+    else:
+        print(f"[Router] Filter config not found ({FILTER_CONFIG_PATH}) — using defaults")
+
+    return cfg
 
 
 def get_config_hash(cfg: dict) -> str:
@@ -114,7 +164,11 @@ class FilterRouter:
         self.config = load_config()
         self.sr = int(self.config.get("sampling_rate", DEFAULT_SR))
         self.inlet = None
-        self.outlet = None
+        self.inlet = None
+        # self.outlet = None  # Replaced by stream_socket
+        self.stream_socket = None
+        self.stream_connected = False
+
         self.raw_index_map: List[Tuple[int, str, str]] = []
         self.channel_processors: Dict[int, object] = {}
         self.channel_mapping: Dict[int, Dict] = {}
@@ -219,10 +273,23 @@ class FilterRouter:
         self.channel_mapping = {}
         
         # ========== IMPROVED: Explicitly close old outlet ==========
-        if self.outlet is not None:
-            print("[Router] 🔄 Closing old LSL outlet...")
-            del self.outlet
-            self.outlet = None
+        # Connect to Stream Manager (Processed)
+        if self.stream_socket:
+            try:
+                self.stream_socket.close()
+            except:
+                pass
+        self.stream_socket = None
+        self.stream_connected = False
+        
+        try:
+            self.stream_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.stream_socket.connect(('localhost', 6001))
+            self.stream_connected = True
+            print(f"[Router] ✅ Connected to Stream Manager (Processed)")
+        except Exception as e:
+            print(f"[Router] ⚠️ Could not connect to Stream Manager: {e}")
+
             time.sleep(0.2)  # Small delay to let LSL unregister from network
         
         mapping_cfg = self.config.get("channel_mapping", {})
@@ -320,19 +387,24 @@ class FilterRouter:
                     ch.append_child_value("type", ch_info.get("sensor", "UNKNOWN"))
                     ch.append_child_value("enabled", "true" if ch_info.get("enabled", True) else "false")
                 
-                self.outlet = pylsl.StreamOutlet(info)
-                print(f"[Router] [OUTLET] Publishing unified stream: {PROCESSED_STREAM_NAME}")
-                print(f"[Router]    Channels: {num_channels} @ {self.sr} Hz")
-                print(f"[Router] [OK] Pipeline configured successfully")
+                # self.outlet = pylsl.StreamOutlet(info)
+                # print(f"[Router] [OUTLET] Publishing unified stream: {PROCESSED_STREAM_NAME}")
+                # print(f"[Router]    Channels: {num_channels} @ {self.sr} Hz")
+                print(f"[Router] [OK] Pipeline configured successfully (Routing to Stream Manager)")
                 
             except Exception as e:
-                print(f"[Router] [ERROR] Error creating outlet: {e}")
+                print(f"[Router] [ERROR] Error configuring pipeline: {e}")
+
     
     def run(self):
         """Main processing loop."""
-        if not self.inlet or not self.outlet:
-            print("[Router] [ERROR] Error: Inlet or outlet not ready!")
+        if not self.inlet:
+            print("[Router] [ERROR] Error: Inlet not ready!")
             return
+            
+        if not self.stream_connected:
+             print("[Router] [WARNING] Not connected to Stream Manager - data will not be published")
+
         
         self.running = True
         print("[Router] [START] Starting processing loop...")
@@ -366,20 +438,29 @@ class FilterRouter:
                                 
                                 processed_sample.append(filtered_val)
                             
-                            # ✅ Push ALL channels in single sample with same timestamp
-                            self.outlet.push_sample(processed_sample, ts)
+                            # ✅ Push ALL channels to Stream Manager
+                            if self.stream_connected and self.stream_socket:
+                                try:
+                                    # Protocol: [0xAA] [Count] [Floats...]
+                                    count = len(processed_sample)
+                                    header = struct.pack('<BB', 0xAA, count)
+                                    payload = struct.pack(f'<{count}f', *processed_sample)
+                                    self.stream_socket.sendall(header + payload)
+                                except Exception as e:
+                                    print(f"[Router] Stream push error: {e}")
+                                    self.stream_connected = False
+
                             sample_count += 1
                             
                             # Log progress every 512 samples (1 second at 512 Hz)
-                            if sample_count % 512 == 0:
+                            # Log progress every 5 seconds (approx 2560 samples at 512 Hz)
+                            if sample_count % 2560 == 0:
                                 print(f"[Router] ✅ {sample_count} samples processed")
                     
                     except Exception as e:
                         error_count += 1
-                        if error_count <= 5:  # Only log first 5 errors
-                            print(f"[Router] [WARNING] Error processing sample: {e}")
-                        if error_count == 6:
-                            print(f"[Router] [WARNING] (suppressing further error messages)")
+                        # Always log errors as requested
+                        print(f"[Router] [WARNING] Error processing sample: {e}")
         
         except KeyboardInterrupt:
             print("\n[Router] [STOP] Stopping...")
@@ -394,13 +475,13 @@ class FilterRouter:
                 except:
                     pass
             
-            if self.outlet:
+            if self.stream_socket:
                 try:
-                    # StreamOutlet is closed on destruction in pylsl
-                    del self.outlet
-                    self.outlet = None
+                    self.stream_socket.close()
+                    self.stream_socket = None
                 except:
                     pass
+
             
             print("[Router] [OK] Cleanup complete")
     

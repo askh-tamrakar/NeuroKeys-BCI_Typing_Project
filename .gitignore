@@ -5,7 +5,7 @@ node_modules/
 .env
 .DS_Store
 .venv/
-__pycache__/
+*__pycache__/
 *.pyc
 .vscode/
 .idea/
@@ -18,9 +18,9 @@ htmlcov/
 .pytest_cache/
 .ipynb_checkpoints/
 *.sqlite3
-*.db
 *.bak
 data/processed/windows
+<<<<<<< HEAD
 __pycache__
 src/feature/__pycache__/router.cpython-311.pyc
 src/feature/detectors/__pycache__/rps_detector.cpython-311.pyc
@@ -34,3 +34,6 @@ src/utils/__pycache__/__init__.cpython-311.pyc
 src/web/__pycache__/web_server.cpython-311.pyc
 
 DIY-Muscle-BioAmp-Shield-main
+=======
+DIY-Muscle-BioAmp-Shield-main/
+>>>>>>> rps-implement

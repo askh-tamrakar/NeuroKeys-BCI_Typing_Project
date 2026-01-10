@@ -21,10 +21,10 @@ jobs:
           node-version: 20
 
       - name: Install Dependencies
-        run: cd frontend && npm ci
+        run: cd src/web/frontend && npm ci
 
       - name: Build React App
-        run: cd frontend && npm run build
+        run: cd src/web/frontend && npm run build
 
       - name: Deploy via SSH to cPanel
         uses: easingthemes/ssh-deploy@v5.0.1
@@ -32,7 +32,7 @@ jobs:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           REMOTE_HOST: ${{ secrets.CPANEL_HOST }}
           REMOTE_USER: ${{ secrets.CPANEL_USER }}
-          SOURCE: "frontend/dist/"
+          SOURCE: "src/web/frontend/dist/"
           TARGET: ${{secrets.CPANEL_PATH}}
           ARGS: "-avz --delete"
           SSH_ARGS: "-o IdentitiesOnly=yes -o StrictHostKeyChecking=no"

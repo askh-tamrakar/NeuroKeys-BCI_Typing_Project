@@ -64,6 +64,11 @@ class FeatureRouter:
         # Map channel_index -> (Extractor Instance, Detector Instance)
         self.pipeline = {} 
         self.channel_labels = []
+        
+        # State tracking
+        self.sample_counter = 0
+        self.detection_active = False # Start disabled/passive
+        self.last_event_state = {} # Key: ch_idx_type -> event_name
 
         self._config_lock = threading.Lock()
         self._start_config_watcher()
@@ -204,6 +209,7 @@ class FeatureRouter:
                 sample, ts = self.inlet.pull_sample(timeout=1.0)
                 
                 if sample:
+<<<<<<< HEAD
                     current_time = time.time()
                     
                     # 1. Processing Loop
@@ -217,12 +223,24 @@ class FeatureRouter:
                     # This simple inhibition only blocks EMG *after* a blink is detected.
                     # Better than nothing: Prevents "Double triggering" or trailing artifacts.
                     
+=======
+                    # Check detection state (cached for performance?)
+                    # For now we check every time; file I/O on tmpfs/OS cache is fast enough for 512Hz?
+                    # Maybe throttle check to 5Hz (every ~100 samples) or just rely on OS.
+                    # Let's add simple throttling to be safe.
+                    self.sample_counter += 1
+                    if self.sample_counter % 50 == 0: # Check every ~0.1s
+                         self.detection_active = config_manager.get_detection_state()
+
+                    # Route to pipeline
+>>>>>>> rps-implement
                     for ch_idx, val in enumerate(sample):
                         if ch_idx in self.pipeline:
                             extractor, detector, sensor_type = self.pipeline[ch_idx]
                             features = extractor.process(val)
                             
                             if features:
+                                # Feature Extractor produced a window -> Run Detector
                                 detection_result = detector.detect(features)
                                 
                                 if detection_result:
@@ -242,13 +260,33 @@ class FeatureRouter:
 
                                     # Determine event name
                                     if sensor_type == "EOG":
-                                        event_name = detection_result # "SingleBlink" or "DoubleBlink"
+                                        event_name = detection_result # SingleBlink/DoubleBlink
                                     elif sensor_type == "EMG":
-                                        event_name = detection_result # e.g. "ROCK", "PAPER", "SCISSORS"
+                                        # Only emit RPS events if game is active!
+                                        if not self.detection_active:
+                                            # If not active, we still get 'Rest' or gestures, but we ignore them
+                                            # UNLESS it's something critical? No.
+                                            continue
+                                        event_name = detection_result 
                                     elif sensor_type == "EEG":
-                                        event_name = detection_result # e.g. "CONCENTRATION", "RELAXATION"
+                                        event_name = detection_result 
                                     else:
                                         event_name = "UNKNOWN_EVENT"
+
+                                    # De-duplication for continuous states (like Rest)
+                                    # Make a unique key for channel+event
+                                    state_key = f"{ch_idx}_{sensor_type}"
+                                    last_event = self.last_event_state.get(state_key)
+
+                                    # If it's a "state" type event (like Rest), dedup.
+                                    # Blinks are discrete events, so always emit.
+                                    is_discrete = sensor_type == "EOG" 
+                                    
+                                    if not is_discrete and event_name == last_event:
+                                         # Skip duplicate log/emit
+                                         continue
+                                    
+                                    self.last_event_state[state_key] = event_name
 
                                     # emit event
                                     event_data = {
@@ -258,6 +296,10 @@ class FeatureRouter:
                                         "features": features
                                     }
                                     formatted_event = json.dumps(event_data)
+<<<<<<< HEAD
+=======
+                                    print(f"[Feature Router] [EVENT] {event_name} created")
+>>>>>>> rps-implement
                                     self.outlet.push_sample([formatted_event])
 
             except Exception as e:

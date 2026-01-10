@@ -1,6 +1,10 @@
 import pandas as pd
 import numpy as np
 import joblib
+<<<<<<< HEAD
+=======
+import json
+>>>>>>> rps-implement
 from pathlib import Path
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
@@ -24,12 +28,17 @@ MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 MODEL_PATH = MODELS_DIR / "eog_rf.joblib"
 SCALER_PATH = MODELS_DIR / "eog_scaler.joblib"
+<<<<<<< HEAD
+=======
+META_PATH = MODELS_DIR / "eog_rf_meta.json"
+>>>>>>> rps-implement
 
 EOG_FEATURES = [
     'amplitude', 'duration_ms', 'rise_time_ms', 'fall_time_ms',
     'asymmetry', 'peak_count', 'kurtosis', 'skewness'
 ]
 
+<<<<<<< HEAD
 def train_eog_model(n_estimators=100, max_depth=None, test_size=0.2):
     """
     Trains a Random Forest classifier on EOG data from the database.
@@ -46,6 +55,28 @@ def train_eog_model(n_estimators=100, max_depth=None, test_size=0.2):
              return {"error": "EOG table does not exist. Collect data first."}
 
         df = pd.read_sql_query("SELECT * FROM eog_windows", conn)
+=======
+def train_eog_model(n_estimators=100, max_depth=None, test_size=0.2, table_name="eog_windows"):
+    """
+    Trains a Random Forest classifier on EOG data from the database.
+    """
+    conn = db_manager.connect('EOG') # Fixed: Explicit sensor type
+    
+    # Load data from DB
+    # Load data from DB
+    try:
+        if not table_name: table_name = "eog_windows"
+        if table_name == "undefined" or table_name == "null": table_name = "eog_windows"
+
+        # Check if table exists first
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
+        if not cursor.fetchone():
+             conn.close()
+             return {"error": f"Table {table_name} does not exist. Collect data first."}
+
+        df = pd.read_sql_query(f"SELECT * FROM {table_name}", conn)
+>>>>>>> rps-implement
     except Exception as e:
         conn.close()
         return {"error": f"Database read error: {str(e)}"}
@@ -90,6 +121,19 @@ def train_eog_model(n_estimators=100, max_depth=None, test_size=0.2):
     # Save Model
     joblib.dump(rf, MODEL_PATH)
     joblib.dump(scaler, SCALER_PATH)
+<<<<<<< HEAD
+=======
+    
+    # Save Metadata
+    with open(META_PATH, 'w') as f:
+        json.dump({
+            "n_estimators": n_estimators,
+            "max_depth": max_depth,
+            "test_size": test_size,
+            "table_name": table_name
+        }, f)
+
+>>>>>>> rps-implement
     print(f"EOG Model saved to {MODEL_PATH}")
 
     # Tree Visualization (First Estimator)
@@ -101,6 +145,7 @@ def train_eog_model(n_estimators=100, max_depth=None, test_size=0.2):
         "confusion_matrix": cm,
         "feature_importances": importances,
         "tree_structure": tree_struct,
+<<<<<<< HEAD
         "n_samples": len(df),
         "model_path": str(MODEL_PATH)
     }
@@ -108,6 +153,15 @@ def train_eog_model(n_estimators=100, max_depth=None, test_size=0.2):
 def evaluate_saved_eog_model():
     """
     Evaluates the currently saved EOG model against the FULL database.
+=======
+        "n_samples": len(y_test),
+        "model_path": str(MODEL_PATH)
+    }
+
+def evaluate_saved_eog_model(table_name="eog_windows"):
+    """
+    Evaluates the currently saved EOG model against the specified database table.
+>>>>>>> rps-implement
     """
     if not MODEL_PATH.exists() or not SCALER_PATH.exists():
         return {"error": "EOG Model not found. Train one first."}
@@ -118,6 +172,7 @@ def evaluate_saved_eog_model():
     except Exception as e:
         return {"error": f"Failed to load EOG model: {str(e)}"}
 
+<<<<<<< HEAD
     conn = db_manager.connect()
     try:
         df = pd.read_sql_query("SELECT * FROM eog_windows", conn)
@@ -128,6 +183,64 @@ def evaluate_saved_eog_model():
 
     if df.empty:
         return {"error": "EOG Database is empty."}
+=======
+    # Prepare base response
+    # Load Metadata if available
+    hyperparameters = {}
+    if META_PATH.exists():
+        try:
+            with open(META_PATH, 'r') as f:
+                hyperparameters = json.load(f)
+        except Exception:
+            pass
+
+    # Prepare base response
+    base_response = {
+        "status": "success",
+        "model_path": str(MODEL_PATH),
+        "feature_importances": dict(zip(EOG_FEATURES, model.feature_importances_.tolist())),
+        "tree_structure": tree_to_json(model.estimators_[0], EOG_FEATURES),
+        "hyperparameters": hyperparameters
+    }
+
+    if not table_name:
+        table_name = "eog_windows"
+
+    conn = db_manager.connect()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
+        if not cursor.fetchone():
+             conn.close()
+             return {
+                 **base_response,
+                 "accuracy": None,
+                 "confusion_matrix": None,
+                 "n_samples": 0,
+                 "warning": f"Table {table_name} not found."
+             }
+
+        df = pd.read_sql_query(f"SELECT * FROM {table_name}", conn)
+    except Exception as e:
+        conn.close()
+        return {
+             **base_response,
+             "accuracy": None,
+             "confusion_matrix": None,
+             "n_samples": 0,
+             "warning": f"Database read error: {str(e)}"
+        }
+    conn.close()
+
+    if df.empty:
+         return {
+             **base_response,
+             "accuracy": None,
+             "confusion_matrix": None,
+             "n_samples": 0,
+             "warning": f"Table {table_name} is empty."
+         }
+>>>>>>> rps-implement
 
     X = df[EOG_FEATURES]
     y = df['label']
@@ -141,11 +254,18 @@ def evaluate_saved_eog_model():
         cm = confusion_matrix(y, y_pred).tolist()
         
         return {
+<<<<<<< HEAD
             "status": "success",
             "accuracy": acc,
             "confusion_matrix": cm,
             "n_samples": len(df),
             "model_path": str(MODEL_PATH)
+=======
+            **base_response,
+            "accuracy": acc,
+            "confusion_matrix": cm,
+            "n_samples": len(df)
+>>>>>>> rps-implement
         }
     except Exception as e:
         return {"error": f"Inference error: {str(e)}"}

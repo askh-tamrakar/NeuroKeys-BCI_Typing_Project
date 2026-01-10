@@ -19,10 +19,17 @@ class BlinkExtractor:
         
         # Load thresholds from config
         eog_cfg = config.get("features", {}).get("EOG", {})
+<<<<<<< HEAD
         # User reported ~3uV blinks, so 1.5 threshold is reasonable
         self.amp_threshold = eog_cfg.get("amp_threshold", 50.0) 
         self.min_duration_ms = eog_cfg.get("min_duration_ms", 100.0)
         self.max_duration_ms = eog_cfg.get("max_duration_ms", 800.0) # Increased for double blinks
+=======
+        # User collected data shows ~1000uV blinks, so 300 threshold is reasonable
+        self.amp_threshold = eog_cfg.get("amp_threshold", 300.0) 
+        self.min_duration_ms = eog_cfg.get("min_duration_ms", 50.0)
+        self.max_duration_ms = eog_cfg.get("max_duration_ms", 800.0)
+>>>>>>> rps-implement
         
         # Buffer for signal (approx 1 second of data)
         self.buffer_size = sr 

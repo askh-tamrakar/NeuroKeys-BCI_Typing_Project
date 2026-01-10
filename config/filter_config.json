@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
   "EMG": {
     "type": "high_pass",
     "cutoff": 70,
@@ -31,5 +32,42 @@
   "ch0": {
     "bandpass_enabled": true,
     "notch_enabled": true
+=======
+  "filters": {
+    "EEG": {
+      "filters": [
+        {
+          "Q": 30,
+          "freq": 50,
+          "type": "notch"
+        },
+        {
+          "high": 45,
+          "low": 0.5,
+          "order": 4,
+          "type": "bandpass"
+        }
+      ]
+    },
+    "EMG": {
+      "bandpass_enabled": true,
+      "bandpass_high": 250,
+      "bandpass_low": 70,
+      "cutoff": 20.1,
+      "notch_enabled": true,
+      "order": 4,
+      "type": "high_pass",
+      "notch_freq": 0
+    },
+    "EOG": {
+      "bandpass_enabled": true,
+      "bandpass_high": 10,
+      "bandpass_low": 0.4,
+      "cutoff": 10,
+      "notch_enabled": true,
+      "order": 4,
+      "type": "low_pass"
+    }
+>>>>>>> rps-implement
   }
 }

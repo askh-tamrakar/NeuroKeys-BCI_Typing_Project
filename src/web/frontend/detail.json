@@ -1,0 +1,45 @@
+[
+  {
+<<<<<<< HEAD:frontend/detail.json
+    "email": "orchid.artist.ak@gmail.comggy",
+    "password": "yuguyguyg",
+    "type": "signup",
+    "timestamp": 1767173417612
+  },
+  {
+    "email": "orchid.artist.ak@gmail.comggy",
+    "password": "yuguyguyg",
+    "type": "login",
+    "timestamp": 1767173418817
+  },
+  {
+    "email": "lucifer@venus.star",
+    "password": "morningstar",
+    "type": "login",
+    "timestamp": 1767173597151
+  },
+  {
+    "email": "xghh@gmail.com",
+    "password": "cgyuuf6",
+    "type": "login",
+    "timestamp": 1767176985860
+  },
+  {
+    "email": "orchid.artist.ak@gmail.com",
+    "password": "bbbbbbbb",
+    "type": "login",
+    "timestamp": 1767205831062
+=======
+    "email": "user@eample.com",
+    "password": "asdfghasdfgh",
+    "type": "login",
+    "timestamp": 1767584116348
+  },
+  {
+    "email": "orchid.artist.ak@gmail.com",
+    "password": "hjhjhjhj",
+    "type": "login",
+    "timestamp": 1767605800703
+>>>>>>> rps-implement:src/web/frontend/detail.json
+  }
+]

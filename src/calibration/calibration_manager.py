@@ -107,6 +107,7 @@ class CalibrationManager:
         Use the appropriate detector to predict the signal label.
         """
         sensor = sensor.upper()
+<<<<<<< HEAD
         try:
             if sensor == "EMG":
                 detector = RPSDetector(config)
@@ -120,6 +121,38 @@ class CalibrationManager:
         except Exception as e:
             logger.error(f"Prediction error: {e}")
         return None
+=======
+        sensor_cfg = config.get("features", {}).get(sensor, {})
+        
+        action_profile = sensor_cfg.get(action, {})
+        
+        if not action_profile:
+            # If no profile, maybe it's a global threshold (like EOG above)?
+            # If not, return False
+            return False
+        
+        match_count = 0
+        total_features = 0
+        
+        for feat_name, range_val in action_profile.items():
+            if feat_name in features:
+                # Check for [min, max] range
+                if isinstance(range_val, list) and len(range_val) == 2:
+                    total_features += 1
+                    val = features[feat_name]
+                    if range_val[0] <= val <= range_val[1]:
+                        match_count += 1
+                    else:
+                        logger.debug(f"[Calibration] ❌ Feature Mismatch: {feat_name}={val:.4f} not in {range_val}")
+                # Check for single minimum (e.g. amplitude > X)
+                elif isinstance(range_val, (int, float)):
+                     total_features += 1
+                     val = features[feat_name]
+                     if val >= range_val:
+                         match_count += 1
+                     else:
+                         logger.debug(f"[Calibration] ❌ Threshold Mismatch: {feat_name}={val:.4f} < {range_val}")
+>>>>>>> rps-implement
 
     def detect_signal(self, sensor: str, action: str, features: Dict[str, Any], config: Dict[str, Any]) -> Optional[str]:
         """
