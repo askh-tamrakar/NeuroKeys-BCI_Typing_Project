@@ -22,12 +22,8 @@
     "react-router-dom": "^7.10.0",
     "recharts": "^2.5.0",
     "tailwind-merge": "^3.4.0",
-<<<<<<< HEAD:frontend/package.json
-    "tailwindcss-animate": "^1.0.7"
-=======
     "tailwindcss-animate": "^1.0.7",
     "socket.io-client": "^4.7.4"
->>>>>>> rps-implement:src/web/frontend/package.json
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.0.0",
