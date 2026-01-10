@@ -1,10 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-<<<<<<< HEAD:frontend/src/components/ui/CameraPanel.jsx
-import { Camera, CameraOff, SwitchCamera } from 'lucide-react';
-=======
 // Imports
 import { Camera, CameraOff, SwitchCamera, ZoomIn } from 'lucide-react';
->>>>>>> rps-implement:src/web/frontend/src/components/ui/CameraPanel.jsx
 import '../../styles/ui/CameraPanel.css';
 
 const CameraPanel = () => {
@@ -13,10 +9,7 @@ const CameraPanel = () => {
     const [devices, setDevices] = useState([]);
     const [currentDeviceIndex, setCurrentDeviceIndex] = useState(0);
     const [isCameraOn, setIsCameraOn] = useState(true);
-<<<<<<< HEAD:frontend/src/components/ui/CameraPanel.jsx
-=======
     const [zoom, setZoom] = useState(1);
->>>>>>> rps-implement:src/web/frontend/src/components/ui/CameraPanel.jsx
 
     // Enumerate devices on mount
     useEffect(() => {
@@ -133,15 +126,6 @@ const CameraPanel = () => {
 
             {/* Video or Placeholder */}
             {isCameraOn ? (
-<<<<<<< HEAD:frontend/src/components/ui/CameraPanel.jsx
-                <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="camera-video"
-                />
-=======
                 <div className="relative overflow-hidden rounded-[10px] border border-border" style={{ aspectRatio: '16/9' }}>
                     <video
                         ref={videoRef}
@@ -152,15 +136,12 @@ const CameraPanel = () => {
                         style={{ transform: `scaleX(-1) scale(${zoom})`, transformOrigin: 'center center' }}
                     />
                 </div>
->>>>>>> rps-implement:src/web/frontend/src/components/ui/CameraPanel.jsx
             ) : (
                 <div className="camera-placeholder">
                     <CameraOff size={32} className="text-muted opacity-20" />
                     <span className="text-xs text-muted font-mono mt-2 uppercase tracking-widest">Camera Off</span>
                 </div>
             )}
-<<<<<<< HEAD:frontend/src/components/ui/CameraPanel.jsx
-=======
 
             {/* Zoom Control */}
             {isCameraOn && (
@@ -177,7 +158,6 @@ const CameraPanel = () => {
                     />
                 </div>
             )}
->>>>>>> rps-implement:src/web/frontend/src/components/ui/CameraPanel.jsx
         </div>
     );
 };

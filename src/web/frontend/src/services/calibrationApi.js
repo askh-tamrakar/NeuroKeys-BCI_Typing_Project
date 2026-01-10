@@ -252,8 +252,6 @@ export const CalibrationApi = {
             console.error('[CalibrationApi] Error getting EMG status:', error);
             return null;
         }
-<<<<<<< HEAD:frontend/src/services/calibrationApi.js
-=======
     },
 
     /**
@@ -270,7 +268,6 @@ export const CalibrationApi = {
         } catch (error) {
             console.error(`[CalibrationApi] Error toggling ${sensorType} prediction:`, error);
         }
->>>>>>> rps-implement:src/web/frontend/src/services/calibrationApi.js
     }
 };
 

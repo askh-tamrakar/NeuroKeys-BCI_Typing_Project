@@ -210,13 +210,10 @@ const RPSGame = ({ wsEvent }) => {
     const handlePlay = () => {
         setGameState('waiting');
         pickComputerMove();
-<<<<<<< HEAD:frontend/src/components/views/RPSGame.jsx
-=======
         // Enable prediction only if not in manual mode
         if (!manualMode) {
             togglePrediction(true);
         }
->>>>>>> rps-implement:src/web/frontend/src/components/views/RPSGame.jsx
     };
 
     return (
@@ -277,10 +274,6 @@ const RPSGame = ({ wsEvent }) => {
                 </div>
             )}
 
-<<<<<<< HEAD:frontend/src/components/views/RPSGame.jsx
-
-            {/* bottom controls removed — mode selector moved to top */}
-=======
             {/* Event Log Panel */}
             <div className="mt-8 w-full max-w-2xl bg-surface/50 border border-white/5 rounded-lg p-4 backdrop-blur-sm">
                 <div className="text-xs font-bold text-muted uppercase tracking-wider mb-2 flex justify-between items-center">
@@ -307,7 +300,6 @@ const RPSGame = ({ wsEvent }) => {
                 </div>
             </div>
 
->>>>>>> rps-implement:src/web/frontend/src/components/views/RPSGame.jsx
         </div>
     );
 };

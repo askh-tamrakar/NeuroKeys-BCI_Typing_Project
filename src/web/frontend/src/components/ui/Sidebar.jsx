@@ -175,53 +175,6 @@ export default function Sidebar({
                         />
                     </div>
 
-<<<<<<< HEAD:frontend/src/components/ui/Sidebar.jsx
-                    {/* Channel 2 */}
-                    <div className="mb-4">
-                        <div className="flex justify-between items-center mb-1">
-                            <label className="text-xs font-medium text-text flex items-center gap-1"><Activity size={14} className="text-orange-500" /> Graph 3</label>
-                            <label className={`text-[10px] flex items-center gap-1 cursor-pointer ${config.channel_mapping?.ch2?.enabled !== false ? 'text-primary' : 'text-red-500'}`}>
-                                <input
-                                    type="checkbox"
-                                    checked={config.channel_mapping?.ch2?.enabled !== false}
-                                    onChange={(e) => handleChannelToggle('ch2', e.target.checked)}
-                                    className="accent-primary hidden"
-                                />
-                                <Power size={14} className={config.channel_mapping?.ch2?.enabled !== false ? "stroke-2" : ""} />
-                                {config.channel_mapping?.ch2?.enabled !== false ? 'ON' : 'OFF'}
-                            </label>
-                        </div>
-                        <SensorSelector
-                            value={getSensorTypeForChannel('ch2')}
-                            onChange={(val) => handleChannelMapping('ch2', val)}
-                            disabled={config.channel_mapping?.ch2?.enabled === false}
-                        />
-                    </div>
-
-                    {/* Channel 3 */}
-                    <div className="mb-4">
-                        <div className="flex justify-between items-center mb-1">
-                            <label className="text-xs font-medium text-text flex items-center gap-1"><Activity size={14} className="text-purple-500" /> Graph 4</label>
-                            <label className={`text-[10px] flex items-center gap-1 cursor-pointer ${config.channel_mapping?.ch3?.enabled !== false ? 'text-primary' : 'text-red-500'}`}>
-                                <input
-                                    type="checkbox"
-                                    checked={config.channel_mapping?.ch3?.enabled !== false}
-                                    onChange={(e) => handleChannelToggle('ch3', e.target.checked)}
-                                    className="accent-primary hidden"
-                                />
-                                <Power size={14} className={config.channel_mapping?.ch3?.enabled !== false ? "stroke-2" : ""} />
-                                {config.channel_mapping?.ch3?.enabled !== false ? 'ON' : 'OFF'}
-                            </label>
-                        </div>
-                        <SensorSelector
-                            value={getSensorTypeForChannel('ch3')}
-                            onChange={(val) => handleChannelMapping('ch3', val)}
-                            disabled={config.channel_mapping?.ch3?.enabled === false}
-                        />
-                    </div>
-=======
-
->>>>>>> rps-implement:src/web/frontend/src/components/ui/Sidebar.jsx
 
                     <MapButton onSave={onSave} />
                 </section>

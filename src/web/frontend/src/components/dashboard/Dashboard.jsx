@@ -1,10 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
-<<<<<<< HEAD:frontend/src/components/dashboard/Dashboard.jsx
-=======
 import { useTheme } from '../../contexts/ThemeContext'
->>>>>>> rps-implement:src/web/frontend/src/components/dashboard/Dashboard.jsx
 import { Github, UserPlus } from 'lucide-react'
 import LiveDashboard from '../views/LiveDashboard'
 import DinoView from '../views/DinoView'
@@ -30,17 +27,10 @@ export default function Dashboard() {
 
   // WebSocket modal state and preset URLs
   const [wsModalOpen, setWsModalOpen] = useState(false)
-<<<<<<< HEAD:frontend/src/components/dashboard/Dashboard.jsx
-  const [localWs, setLocalWs] = useState(import.meta.env.VITE_WS_URL)
-  const [ngrokWs, setNgrokWs] = useState(import.meta.env.VITE_NGROK_WS_URL)
-  const [theme, setTheme] = React.useState(() => localStorage.getItem('theme') || 'theme-yellow-dark');
-  const [navColors, setNavColors] = React.useState({ base: '#000000', pill: '#ffffff', pillText: '#000000', hoverText: '#ffffff' });
-=======
   const [localWs, setLocalWs] = useState(import.meta.env.VITE_WS_URL || 'http://localhost:5000')
   const [ngrokWs, setNgrokWs] = useState(import.meta.env.VITE_NGROK_WS_URL || 'wss://squelchingly-thriftier-cecile.ngrok-free.dev')
 
   const { themes, currentTheme, currentThemeId, setTheme } = useTheme();
->>>>>>> rps-implement:src/web/frontend/src/components/dashboard/Dashboard.jsx
   const [authView, setAuthView] = useState(null);
   const isAuthenticated = !!user;
 
@@ -221,11 +211,7 @@ export default function Dashboard() {
               {currentPage === 'live' && <LiveDashboard wsData={lastMessage} wsConfig={lastConfig} wsEvent={lastEvent} sendMessage={sendMessage} />}
               {currentPage === 'dino' && <DinoView wsData={lastMessage} wsEvent={lastEvent} isPaused={false} />}
               {currentPage === 'ssvep' && <SSVEPView />}
-<<<<<<< HEAD:frontend/src/components/dashboard/Dashboard.jsx
-              {currentPage === 'test' && <TestView wsData={lastMessage} wsEvent={lastEvent} config={lastConfig} />}
-=======
               {/* {currentPage === 'test' && <TestView wsData={lastMessage} wsEvent={lastEvent} config={lastConfig} />} */}
->>>>>>> rps-implement:src/web/frontend/src/components/dashboard/Dashboard.jsx
               {currentPage === 'rps' && <RPSGame wsEvent={lastEvent} />}
               {currentPage === 'calibration' && <CalibrationView wsData={lastMessage} wsEvent={lastEvent} config={lastConfig} />}
               {currentPage === 'ml_training' && <MLTrainingView />}

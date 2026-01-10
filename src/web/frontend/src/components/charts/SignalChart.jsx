@@ -1,9 +1,5 @@
 // SignalChart.jsx
-<<<<<<< HEAD:frontend/src/components/charts/SignalChart.jsx
-import React, { useMemo, useRef } from 'react'
-=======
 import React, { useMemo, useRef, useState } from 'react'
->>>>>>> rps-implement:src/web/frontend/src/components/charts/SignalChart.jsx
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceDot, ReferenceArea } from 'recharts'
 import { ChartSpline, ZoomIn, ArrowUpDown, ArrowDown, ArrowUp, Sigma, Clock, Minus, Plus, Ban } from 'lucide-react'
 import ElasticSlider from '../ui/ElasticSlider'
@@ -30,14 +26,8 @@ export default function SignalChart({
   channelColors = null,
   markedWindows = [],
   activeWindow = null,
-<<<<<<< HEAD:frontend/src/components/charts/SignalChart.jsx
-  tickCount = 7, // Default to 7
-  curveType = "monotone", // Default to monotone (smooth)
-  // New props for controls
-=======
   tickCount = 7,
   curveType = "monotone",
->>>>>>> rps-implement:src/web/frontend/src/components/charts/SignalChart.jsx
   currentZoom = 1,
   currentManual = "",
   onZoomChange = null,
@@ -195,22 +185,10 @@ export default function SignalChart({
     return result
   }, [finalYDomain, tickCount])
 
-<<<<<<< HEAD:frontend/src/components/charts/SignalChart.jsx
-  const colorInputRef = useRef(null)
-
-=======
->>>>>>> rps-implement:src/web/frontend/src/components/charts/SignalChart.jsx
   return (
     <div className={`signal-chart-container ${disabled ? 'signal-chart-disabled' : ''}`}>
 
       <div className="chart-header">
-<<<<<<< HEAD:frontend/src/components/charts/SignalChart.jsx
-        <h3 className="chart-title">
-          <button
-            onClick={() => colorInputRef.current?.click()}
-            className="p-1 hover:bg-muted/10 rounded-full transition-colors cursor-pointer group"
-            title="Change Graph Color"
-=======
         <h3 className="chart-title" style={{ position: 'relative' }}>
           <button
             onClick={(e) => {
@@ -223,23 +201,10 @@ export default function SignalChart({
             }}
             className="p-1 hover:bg-muted/10 rounded-full transition-colors cursor-pointer group"
             title="Click to Cycle Color"
->>>>>>> rps-implement:src/web/frontend/src/components/charts/SignalChart.jsx
           >
             <ChartSpline size={32} strokeWidth={3} style={{ color: color }} className="mr-2 group-hover:scale-110 transition-transform" />
           </button>
 
-<<<<<<< HEAD:frontend/src/components/charts/SignalChart.jsx
-          {/* Hidden Color Input */}
-          <input
-            type="color"
-            ref={colorInputRef}
-            value={color.length === 7 ? color : "#3b82f6"} // Ensure valid hex code if possible, though browser handles rgb usually
-            onChange={(e) => onColorChange && onColorChange(e.target.value)}
-            style={{ display: 'none' }}
-          />
-
-=======
->>>>>>> rps-implement:src/web/frontend/src/components/charts/SignalChart.jsx
           {graphNo}
           <span className="channel-color-dot" style={{ backgroundColor: color }}></span>
           {title}
