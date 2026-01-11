@@ -7,9 +7,12 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, confusion_matrix
-
 import sys
 from pathlib import Path
+
+# Standard Labels for EOG (Must match frontend)
+# 0, 1, 2 corresponding to DoubleBlink, SingleBlink, Rest
+STANDARD_LABELS = [0, 1, 2]
 
 # Add project root to sys.path to allow imports from src
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -88,7 +91,10 @@ def train_eog_model(n_estimators=100, max_depth=None, test_size=0.2, table_name=
     # Evaluate
     y_pred = rf.predict(X_test_scaled)
     acc = accuracy_score(y_test, y_pred)
-    cm = confusion_matrix(y_test, y_pred).tolist()
+    y_pred = rf.predict(X_test_scaled)
+    acc = accuracy_score(y_test, y_pred)
+    # Use standard labels to ensure matrix is aligned with frontend
+    cm = confusion_matrix(y_test, y_pred, labels=STANDARD_LABELS).tolist()
     
     # Feature Importance
     importances = dict(zip(EOG_FEATURES, rf.feature_importances_.tolist()))
@@ -114,7 +120,9 @@ def train_eog_model(n_estimators=100, max_depth=None, test_size=0.2, table_name=
     return {
         "status": "success",
         "accuracy": acc,
+        "accuracy": acc,
         "confusion_matrix": cm,
+        "labels": STANDARD_LABELS,
         "feature_importances": importances,
         "tree_structure": tree_struct,
         "n_samples": len(y_test),
@@ -200,12 +208,15 @@ def evaluate_saved_eog_model(table_name="eog_windows"):
         y_pred = model.predict(X_scaled)
         
         acc = accuracy_score(y, y_pred)
-        cm = confusion_matrix(y, y_pred).tolist()
+        # Use standard labels
+        cm = confusion_matrix(y, y_pred, labels=STANDARD_LABELS).tolist()
         
         return {
             **base_response,
             "accuracy": acc,
+            "accuracy": acc,
             "confusion_matrix": cm,
+            "labels": STANDARD_LABELS,
             "n_samples": len(df)
         }
     except Exception as e:

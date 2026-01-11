@@ -87,7 +87,7 @@ const RPSGame = ({ wsEvent }) => {
     useEffect(() => {
         if (!wsEvent) return;
 
-        const eventName = wsEvent.event?.toUpperCase();
+        const eventName = String(wsEvent.event || '').toUpperCase();
 
         // Add to log (keep last 10)
         setEventLogs(prev => [{

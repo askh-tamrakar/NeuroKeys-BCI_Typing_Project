@@ -42,12 +42,12 @@ class RPSDetector:
             if model_path.exists() and scaler_path.exists():
                 self.model = joblib.load(model_path)
                 self.scaler = joblib.load(scaler_path)
-                print(f"[RPSDetector] ✅ Loaded ML Model from {model_path}")
+                print(f"[RPSDetector] [OK] Loaded ML Model from {model_path}")
             else:
-                print(f"[RPSDetector] ⚠️ Model not found at {model_path}")
+                print(f"[RPSDetector] [WARN] Model not found at {model_path}")
                 
         except Exception as e:
-            print(f"[RPSDetector] ❌ Error loading model: {e}")
+            print(f"[RPSDetector] [ERROR] Error loading model: {e}")
         
     def _predict_instant(self, features: dict) -> tuple[str, float]:
         """

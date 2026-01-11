@@ -8,9 +8,12 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, confusion_matrix
-
 import sys
 from pathlib import Path
+
+# Standard Labels for Confusion Matrix alignment (Indices)
+# 0=Rest, 1=Rock, 2=Paper, 3=Scissors (Assumed based on usage)
+STANDARD_LABELS = [0, 1, 2, 3]
 
 # Add project root to sys.path to allow imports from src
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -86,7 +89,8 @@ def train_emg_model(n_estimators=100, max_depth=None, test_size=0.2, table_name=
     # Evaluate
     y_pred = rf.predict(X_test_scaled)
     acc = accuracy_score(y_test, y_pred)
-    cm = confusion_matrix(y_test, y_pred).tolist()
+    # Use standard labels to ensure matrix is always 4x4 and aligned with frontend
+    cm = confusion_matrix(y_test, y_pred, labels=STANDARD_LABELS).tolist()
     
     # Feature Importance
     importances = dict(zip(feature_cols, rf.feature_importances_.tolist()))
@@ -112,7 +116,9 @@ def train_emg_model(n_estimators=100, max_depth=None, test_size=0.2, table_name=
     return {
         "status": "success",
         "accuracy": acc,
+        "accuracy": acc,
         "confusion_matrix": cm,
+        "labels": STANDARD_LABELS,
         "feature_importances": importances,
         "tree_structure": tree_struct,
         "n_samples": len(y_test),
@@ -218,12 +224,14 @@ def evaluate_saved_model(table_name="emg_windows"):
         y_pred = model.predict(X_scaled)
         
         acc = accuracy_score(y, y_pred)
-        cm = confusion_matrix(y, y_pred).tolist()
+        # Use standard labels
+        cm = confusion_matrix(y, y_pred, labels=STANDARD_LABELS).tolist()
         
         return {
             **base_response,
             "accuracy": acc,
             "confusion_matrix": cm,
+            "labels": STANDARD_LABELS,
             "n_samples": len(df)
         }
     except Exception as e:

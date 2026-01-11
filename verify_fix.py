@@ -1,54 +1,78 @@
-
-import sys
-import os
+import pandas as pd
+import numpy as np
+import sqlite3
+import json
 from pathlib import Path
+from src.learning.emg_trainer import train_emg_model, STANDARD_LABELS
 
-# Add project root to path
-project_root = str(Path(os.getcwd()))
-sys.path.append(project_root)
+# Setup test DB
+TEST_DB = "test_emg.db"
+TABLE_NAME = "emg_test_rock_only"
 
-try:
-    from src.processing.emg_processor import EMGFilterProcessor
-except ImportError as e:
-    print(f"Import failed: {e}")
-    sys.exit(1)
-
-def test_fix():
-    print("Testing EMGFilterProcessor with Notch Freq = 0...")
+def create_mock_data():
+    conn = sqlite3.connect(TEST_DB)
     
-    # Config with Notch Enabled but Freq 0 (Problematic usage)
-    config = {
-        "filters": {
-            "EMG": {
-                "cutoff": 20.1,
-                "order": 4,
-                "notch_enabled": True,
-                "notch_freq": 0,  # THE CULPRIT
-                "bandpass_enabled": False,
-                "envelope_enabled": True,
-                "envelope_cutoff": 10.0
-            }
-        }
-    }
+    feature_cols = ['rms', 'mav', 'var', 'wl', 'peak', 'range', 'iemg', 'entropy', 'energy', 'kurtosis', 'skewness', 'ssc', 'wamp']
     
-    try:
-        processor = EMGFilterProcessor(config, sr=512, channel_key="ch0")
-        print("Initialization: OK")
+    columns = ", ".join([f"{c} REAL" for c in feature_cols])
+    # Label is INTEGER now
+    conn.execute(f"CREATE TABLE IF NOT EXISTS {TABLE_NAME} (id INTEGER PRIMARY KEY, {columns}, label INTEGER, timestamp REAL)")
+    
+    data = []
+    # 50 Rock samples (Label 1)
+    for i in range(50):
+        row = [np.random.random() for _ in feature_cols]
+        row.append(1) # Label 1
+        row.append(0.0)
+        data.append(tuple(row))
         
-        # Test update_config as well
-        new_config = config.copy()
-        new_config["filters"]["EMG"]["notch_freq"] = 0
-        processor.update_config(new_config, sr=512)
-        print("Update Config: OK")
-        
-        # Test processing
-        val = processor.process_sample(100.0)
-        print(f"Process Sample: OK (Order Check: {val:.4f})")
-        
-    except Exception as e:
-        print(f"TEST FAILED with error: {e}")
-        import traceback
-        traceback.print_exc()
+    # 50 Rest samples (Label 0)
+    for i in range(50):
+        row = [np.random.random() for _ in feature_cols]
+        row.append(0) # Label 0
+        row.append(0.0)
+        data.append(tuple(row))
+
+    placeholders = ", ".join(["?"] * (len(feature_cols) + 2))
+    conn.executemany(f"INSERT INTO {TABLE_NAME} ({', '.join(feature_cols)}, label, timestamp) VALUES ({placeholders})", data)
+    conn.commit()
+    conn.close()
+    print(f"Created {TABLE_NAME} with Rock (1) and Rest (0) samples.")
+
+def verify_fix():
+    # Monkeypatch db_manager
+    from src.database.db_manager import db_manager
+    original_connect = db_manager.connect
+    db_manager.connect = lambda name: sqlite3.connect(TEST_DB)
+    
+    print("\nRunning Training...")
+    result = train_emg_model(table_name=TABLE_NAME)
+    
+    db_manager.connect = original_connect
+    
+    if "error" in result:
+        print(f"FAILED: {result['error']}")
+        return
+
+    cm = result.get("confusion_matrix")
+    labels = result.get("labels")
+    
+    print(f"\nLabels used: {labels}")
+    print(f"Confusion Matrix: {cm}")
+    
+    if len(cm) != 4:
+        print("FAILED: Confusion Matrix is not 4x4.")
+    elif labels != [0, 1, 2, 3]:
+        print(f"FAILED: Labels mismatch. Got {labels}, expected [0, 1, 2, 3]")
+    elif cm[0][0] > 0 and cm[1][1] > 0:
+         print("SUCCESS: 4x4 Matrix with correct data indices.")
+    else:
+         print("FAILED: Data alignment seems wrong.")
 
 if __name__ == "__main__":
-    test_fix()
+    create_mock_data()
+    verify_fix()
+    try:
+        Path(TEST_DB).unlink()
+    except:
+        pass

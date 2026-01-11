@@ -75,7 +75,7 @@ class FeatureRouter:
             return False
 
         print(f"[FeatureRouter] [SEARCH] Searching for {INPUT_STREAM_NAME}...")
-        streams = pylsl.resolve_byprop('name', INPUT_STREAM_NAME, timeout=5.0)
+        streams = pylsl.resolve_byprop('name', INPUT_STREAM_NAME, timeout=1.0)
         if not streams:
             print("[FeatureRouter] [ERROR] Stream not found")
             return False
@@ -176,11 +176,7 @@ class FeatureRouter:
                                     if sensor_type == "EOG":
                                         event_name = detection_result # SingleBlink/DoubleBlink
                                     elif sensor_type == "EMG":
-                                        # Only emit RPS events if game is active!
-                                        if not self.detection_active:
-                                            # If not active, we still get 'Rest' or gestures, but we ignore them
-                                            # UNLESS it's something critical? No.
-                                            continue
+                                        # Emit RPS events continuously (game logic handled by frontend)
                                         event_name = detection_result 
                                     elif sensor_type == "EEG":
                                         event_name = detection_result 
@@ -196,8 +192,11 @@ class FeatureRouter:
                                     # Blinks are discrete events, so always emit.
                                     is_discrete = sensor_type == "EOG" 
                                     
-                                    if not is_discrete and event_name == last_event:
-                                         # Skip duplicate log/emit
+                                    # User requested to log "Rest" always. 
+                                    # We allow "Rest" to duplicate, or we can just remove dedup for EMG?
+                                    # Let's specifically allow "Rest" to pass through.
+                                    if not is_discrete and event_name == last_event and event_name != "Rest":
+                                         # Skip duplicate log/emit (unless it's Rest)
                                          continue
                                     
                                     self.last_event_state[state_key] = event_name

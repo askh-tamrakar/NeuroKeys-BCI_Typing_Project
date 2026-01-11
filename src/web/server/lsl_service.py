@@ -72,7 +72,7 @@ def resolve_lsl_stream() -> bool:
 
     try:
         print("[LSLService] 🔍 Searching for LSL stream...")
-        streams = pylsl.resolve_streams(wait_time=1.0)
+        streams = pylsl.resolve_streams(wait_time=0.1)
         
         target = None
 
